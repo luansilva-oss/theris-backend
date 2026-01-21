@@ -1,0 +1,28 @@
+node_modules
+dist
+.env
+npm-debug.log
+# Dependências do Node (PESADO - Nunca envie isso)
+node_modules/
+
+# Arquivos de Build (Gerados automaticamente pelo TypeScript)
+dist/
+
+# Variáveis de Ambiente (SEGURANÇA - Contém suas senhas)
+.env
+
+# Logs de erro (Sujeira do sistema)
+npm-debug.log
+*.log
+
+# Arquivos de Sistema (Lixo do Mac/Windows)
+.DS_Store
+Thumbs.db
+
+# Cobertura de Testes (Se usarmos no futuro)
+coverage/node_modules/
+dist/
+.env
+*.log
+.DS_Store
+/src/generated/prisma
