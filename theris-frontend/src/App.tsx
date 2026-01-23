@@ -3,13 +3,14 @@ import {
   LayoutDashboard, Users, Briefcase, FileText, Clock, 
   CheckCircle, XCircle, ShieldCheck, Server, ChevronRight, 
   ChevronDown, LogOut, Lock, User, MapPin, Award,
-  Bird, // O Pássaro!
+  Bird, // Ícone do Pássaro (Marca)
   Activity, TrendingUp, AlertCircle, Calendar, Zap
 } from 'lucide-react';
+// Importação simplificada para evitar erros de tipagem
 import { GoogleLogin } from '@react-oauth/google';
 import './App.css';
 
-// --- CONFIGURAÇÕES VISUAIS ---
+// --- CONFIGURAÇÕES DO SISTEMA ---
 const LEADER_KEYWORDS = ['Líder', 'Head', 'Tech Lead', 'Coordenador', 'Gerente', 'Gestor'];
 
 const DEPT_ORDER = [
@@ -19,7 +20,7 @@ const DEPT_ORDER = [
   'Pessoas e Cultura', 'Administrativo'
 ];
 
-// --- INTERFACES ---
+// --- INTERFACES DE DADOS ---
 interface Manager { id: string; name: string; }
 interface User { id: string; name: string; role: { name: string }; departmentId: string; manager?: Manager; }
 interface Role { id: string; name: string; users: User[]; }
@@ -27,30 +28,33 @@ interface Department { id: string; name: string; roles: Role[]; }
 interface Tool { id: string; name: string; owner: { name: string; id: string }; accessLevels: { create: { name: string }[] } | null; }
 interface Request { id: string; requesterId: string; requester: { name: string }; lastApprover?: { name: string }; type: string; status: string; currentApproverRole: string; details: string; justification: string; createdAt: string; }
 
+// Perfis de Acesso (RBAC)
 type SystemProfile = 'ADMIN' | 'APPROVER' | 'VIEWER';
 
 export default function App() {
-  // --- ESTADOS ---
+  // --- ESTADOS GLOBAIS ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [systemProfile, setSystemProfile] = useState<SystemProfile>('VIEWER');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const [activeTab, setActiveTab] = useState('DASHBOARD');
   const [expandedDepts, setExpandedDepts] = useState<string[]>([]);
+  
+  // --- DADOS DO BACKEND ---
   const [structure, setStructure] = useState<Department[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
 
-  // Form States
+  // --- FORMULÁRIOS ---
   const [formType, setFormType] = useState('CHANGE_ROLE');
   const [formDetails, setFormDetails] = useState('');
   const [formJustification, setFormJustification] = useState('');
 
-  // --- DATA ATUAL (Para o Header) ---
+  // Data atual para o Header
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  // --- CARREGAMENTO ---
+  // --- CARREGAMENTO DE DADOS (Load) ---
   const loadData = async () => {
     try {
       const [resStruct, resTools, resUsers, resReqs] = await Promise.all([
@@ -65,6 +69,7 @@ export default function App() {
       const dTools = await resTools.json();
       const dReqs = await resReqs.json();
 
+      // Lógica de Organograma: Separar Líderes vs Operacional
       const finalStructure: Department[] = [];
       const leadershipRoles: Role[] = [];
       const boardDept = rawStruct.find(d => d.name === 'Board');
@@ -73,12 +78,16 @@ export default function App() {
       rawStruct.filter(d => d.name !== 'Board').forEach(dept => {
         const leaders = dept.roles.filter(r => LEADER_KEYWORDS.some(k => r.name.includes(k)));
         const staff = dept.roles.filter(r => !LEADER_KEYWORDS.some(k => r.name.includes(k)));
+        
+        // Adiciona líderes na aba virtual "Lideranças"
         if (leaders.length > 0) leaders.forEach(l => leadershipRoles.push({ ...l, name: `${l.name} (${dept.name})` }));
+        // Mantém depto original se tiver staff
         if (staff.length > 0) finalStructure.push({ ...dept, roles: staff });
       });
 
       if (leadershipRoles.length > 0) finalStructure.push({ id: 'liderancas-virtual-id', name: 'Lideranças & Gestão', roles: leadershipRoles });
 
+      // Ordenação Enterprise
       finalStructure.sort((a, b) => {
         let idxA = DEPT_ORDER.indexOf(a.name);
         let idxB = DEPT_ORDER.indexOf(b.name);
@@ -89,32 +98,46 @@ export default function App() {
       setTools(dTools);
       setAllUsers(dUsers);
       setRequests(dReqs);
-    } catch (e) { console.error("Erro:", e); }
+    } catch (e) { console.error("Erro crítico ao carregar dados:", e); }
   };
 
   useEffect(() => { loadData(); }, []);
 
-  // --- LOGIN ---
+  // --- AUTENTICAÇÃO SSO GOOGLE ---
   const responseGoogle = async (credentialResponse: any) => {
     try {
       const res = await fetch('http://localhost:3000/api/login/google', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: credentialResponse.credential, clientId: credentialResponse.clientId })
+        body: JSON.stringify({
+          credential: credentialResponse.credential,
+          clientId: credentialResponse.clientId
+        })
       });
+
       const data = await res.json();
+
       if (res.ok) {
         setCurrentUser(data.user);
         setSystemProfile(data.profile);
         setIsLoggedIn(true);
         setActiveTab(data.profile === 'VIEWER' ? 'PROFILE' : 'DASHBOARD');
-      } else { alert(`❌ Acesso Negado: ${data.error}`); }
-    } catch (error) { console.error(error); alert("Falha de conexão."); }
+      } else {
+        alert(`❌ Acesso Negado: ${data.error}`);
+      }
+    } catch (error) {
+      console.error("Erro no login:", error);
+      alert("Falha de conexão com o servidor.");
+    }
   };
 
-  const handleLogout = () => { setIsLoggedIn(false); setCurrentUser(null); setSystemProfile('VIEWER'); };
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setSystemProfile('VIEWER');
+  };
 
-  // --- ACTIONS ---
+  // --- AÇÕES DE NEGÓCIO ---
   const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
@@ -122,7 +145,7 @@ export default function App() {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ requesterId: currentUser.id, type: formType, details: { info: formDetails }, justification: formJustification })
     });
-    alert("Solicitação enviada!"); setFormDetails(''); setFormJustification(''); loadData(); 
+    alert("Solicitação enviada com sucesso!"); setFormDetails(''); setFormJustification(''); loadData(); 
   };
 
   const handleApprove = async (id: string, action: 'APROVAR' | 'REPROVAR') => {
@@ -131,10 +154,10 @@ export default function App() {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ status: action === 'APROVAR' ? 'APROVADO' : 'REPROVADO', approverId: currentUser.id })
     });
-    if (res.ok) loadData(); else alert("Erro/Compliance.");
+    if (res.ok) loadData(); else alert("Erro: Permissão negada ou violação de Compliance.");
   };
 
-  // --- SUB-COMPONENTS ---
+  // --- SUB-COMPONENTES DE UI ---
 
   const StatCard = ({ title, value, icon, color, subtext }: any) => (
     <div className="glass-card" style={{position: 'relative', overflow: 'hidden'}}>
@@ -148,7 +171,7 @@ export default function App() {
           {icon}
         </div>
       </div>
-      {/* Elemento Decorativo de Fundo */}
+      {/* Decoração de fundo */}
       <div style={{position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.1, transform: 'scale(2.5)', color: color}}>
         {icon}
       </div>
@@ -180,25 +203,87 @@ export default function App() {
     </div>
   );
 
-  // --- RENDER ---
+  // --- RENDERIZAÇÃO PRINCIPAL ---
+
+  // TELA 1: LOGIN (LAYOUT SPLIT SCREEN PREMIUM)
   if (!isLoggedIn) {
     return (
-      <div className="login-container">
-        <div className="login-card" style={{textAlign:'center'}}>
-          <Bird size={56} color="#0ea5e9" strokeWidth={1.5} style={{marginBottom:'15px'}}/>
-          <h1 style={{fontSize:'2rem', color:'white', fontWeight: 300, marginBottom:'5px'}}>THERIS</h1>
-          <p style={{color:'#64748b', fontSize:'0.9rem', marginBottom:'30px', letterSpacing:'2px', textTransform:'uppercase'}}>Identity Governance</p>
-          <div style={{display:'flex', justifyContent:'center'}}>
-            <GoogleLogin onSuccess={responseGoogle} onError={() => alert('Erro')} theme="filled_black" shape="pill" text="signin_with"/>
+      <div className="login-wrapper">
+        
+        {/* LADO ESQUERDO: BRANDING & MARKETING */}
+        <div className="login-brand-section">
+          <div className="brand-content">
+            <div style={{display:'flex', alignItems:'center', gap:'15px', marginBottom:'30px'}}>
+               <div style={{background:'white', padding:'10px', borderRadius:'12px', display:'flex'}}>
+                 <Bird size={32} color="#0ea5e9" strokeWidth={2}/>
+               </div>
+               <span style={{fontSize:'2rem', fontWeight: 700, letterSpacing:'-1px', color:'white'}}>THERIS</span>
+            </div>
+            
+            <h1 style={{fontSize:'3.5rem', lineHeight:'1.1', marginBottom:'20px', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>
+              Governança de <br/>Identidade Inteligente.
+            </h1>
+            
+            <p style={{fontSize:'1.1rem', color:'#cbd5e1', maxWidth:'500px', lineHeight:'1.6'}}>
+              Centralize acessos, automatize auditorias e garanta compliance em toda a organização com a plataforma líder do Grupo 3C.
+            </p>
+
+            <div style={{marginTop:'40px', display:'flex', gap:'30px'}}>
+               <div>
+                 <h3 style={{color:'white', fontSize:'1.5rem', fontWeight:700}}>+100</h3>
+                 <span style={{color:'#64748b'}}>Colaboradores</span>
+               </div>
+               <div>
+                 <h3 style={{color:'white', fontSize:'1.5rem', fontWeight:700}}>100%</h3>
+                 <span style={{color:'#64748b'}}>Auditável</span>
+               </div>
+               <div>
+                 <h3 style={{color:'white', fontSize:'1.5rem', fontWeight:700}}>24/7</h3>
+                 <span style={{color:'#64748b'}}>Monitoramento</span>
+               </div>
+            </div>
+          </div>
+          
+          {/* Elemento Decorativo (Pássaro Gigante) */}
+          <Bird className="giant-bg-icon" size={600} strokeWidth={0.5} color="white"/>
+        </div>
+
+        {/* LADO DIREITO: LOGIN FORM */}
+        <div className="login-form-section">
+          <div className="login-box">
+             <div style={{textAlign:'center', marginBottom:'40px'}}>
+               <h2 style={{fontSize:'2rem', color:'white', marginBottom:'10px'}}>Acesse sua conta</h2>
+               <p style={{color:'#64748b'}}>Utilize suas credenciais corporativas</p>
+             </div>
+
+             <div className="google-btn-wrapper">
+               <GoogleLogin
+                  onSuccess={responseGoogle}
+                  onError={() => alert('Falha no Login')}
+                  theme="filled_black"
+                  shape="pill"
+                  size="large"
+                  text="continue_with"
+                  width="100%"
+               />
+             </div>
+
+             <div style={{marginTop:'30px', textAlign:'center', fontSize:'0.8rem', color:'#475569'}}>
+               <Lock size={12} style={{verticalAlign:'middle', marginRight:'5px'}}/>
+               Ambiente Seguro & Criptografado
+               <br/>
+               © 2025 Grupo 3C - Tecnologia
+             </div>
           </div>
         </div>
       </div>
     );
   }
 
+  // TELA 2: SISTEMA INTERNO (DASHBOARD)
   return (
     <div className="app-layout">
-      {/* SIDEBAR PREMIUM */}
+      {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="brand" style={{display:'flex', flexDirection:'column', alignItems:'start', gap:'0px', paddingBottom:'20px'}}>
           <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
@@ -236,9 +321,9 @@ export default function App() {
         <button onClick={handleLogout} className="logout-btn"><LogOut size={16}/> Sair</button>
       </aside>
 
-      {/* MAIN CONTENT */}
+      {/* ÁREA PRINCIPAL */}
       <main className="main-area">
-        {/* HEADER LIMPO */}
+        {/* HEADER */}
         <header className="header-bar">
            <div>
              <h2 style={{color:'white', fontSize:'1.2rem'}}>
@@ -257,10 +342,10 @@ export default function App() {
 
         <div className="content-scroll">
           
-          {/* DASHBOARD REDESIGN */}
+          {/* --- CONTEÚDO: DASHBOARD --- */}
           {activeTab === 'DASHBOARD' && systemProfile !== 'VIEWER' && (
             <div className="dashboard-grid">
-               {/* 1. HERO SECTION */}
+               {/* 1. HERO BANNER */}
                <div className="hero-banner">
                  <div>
                    <h1>Olá, {currentUser?.name.split(' ')[0]}! 👋</h1>
@@ -271,7 +356,7 @@ export default function App() {
                  </div>
                </div>
 
-               {/* 2. STATS ROW */}
+               {/* 2. CARDS DE MÉTRICAS */}
                <div className="stats-container">
                  <StatCard 
                     title="Total de Colaboradores" 
@@ -303,7 +388,7 @@ export default function App() {
                  />
                </div>
 
-               {/* 3. MAIN CONTENT SPLIT */}
+               {/* 3. DIVISÃO: FORMULÁRIO + FEED */}
                <div className="dashboard-split">
                   <div className="glass-card" id="req-form">
                     <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}>
@@ -345,7 +430,7 @@ export default function App() {
             </div>
           )}
 
-          {/* OUTRAS TELAS (Visualmente Limpas) */}
+          {/* --- CONTEÚDO: SOLICITAÇÕES --- */}
           {activeTab === 'REQUESTS' && systemProfile !== 'VIEWER' && (
             <div className="glass-card full-height">
                <table className="modern-table">
@@ -369,6 +454,7 @@ export default function App() {
             </div>
           )}
 
+          {/* --- CONTEÚDO: ORGANOGRAMA --- */}
           {activeTab === 'ORG' && systemProfile === 'ADMIN' && (
             <div className="glass-card">
               {structure.map(dept => (
@@ -394,7 +480,7 @@ export default function App() {
             </div>
           )}
 
-          {/* PERFIL (VIEWER) */}
+          {/* --- CONTEÚDO: PERFIL (VIEWER) --- */}
           {activeTab === 'PROFILE' && (
             <div className="profile-container">
               <div className="glass-card profile-header-card">
@@ -409,7 +495,7 @@ export default function App() {
                  <div className="access-list">
                     <div className="access-item">
                       <div className="icon"><Lock size={16}/></div>
-                      <div className="info">Email Corporativo</div>
+                      <div className="info">Email Corporativo (@grupo-3c.com)</div>
                       <div className="status active">Ativo</div>
                     </div>
                     {requests.filter(r => r.requesterId === currentUser?.id && r.status === 'APROVADO').map(access => (
@@ -422,6 +508,19 @@ export default function App() {
                  </div>
               </div>
             </div>
+          )}
+          
+          {/* TABS SIMPLES PARA ADMIN (FERRAMENTAS/HISTORICO) - Opcionais para visual */}
+          {activeTab === 'TOOLS' && systemProfile === 'ADMIN' && (
+             <div className="glass-card">
+                <h3>Catálogo de Ferramentas</h3>
+                <table className="modern-table" style={{marginTop:'20px'}}>
+                   <thead><tr><th>NOME</th><th>OWNER</th></tr></thead>
+                   <tbody>
+                      {tools.map(t => (<tr key={t.id}><td>{t.name}</td><td>{t.owner?.name}</td></tr>))}
+                   </tbody>
+                </table>
+             </div>
           )}
         </div>
       </main>
