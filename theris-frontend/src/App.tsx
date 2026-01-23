@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, Briefcase, FileText, Clock, 
   CheckCircle, XCircle, ShieldCheck, Server, ChevronRight, 
   ChevronDown, LogOut, Lock, User, MapPin, Award,
-  Bird, // Ícone da Marca
+  Bird, 
   Activity, TrendingUp, AlertCircle, Calendar, Zap
 } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
@@ -43,9 +43,14 @@ export default function App() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
 
+  // --- ESTADOS DO FORMULÁRIO ---
   const [formType, setFormType] = useState('CHANGE_ROLE');
-  const [formDetails, setFormDetails] = useState('');
+  const [formDetails, setFormDetails] = useState(''); // Para ferramentas ou texto livre
   const [formJustification, setFormJustification] = useState('');
+  
+  // Novos Estados para Seleção de Cargo/Depto
+  const [targetDept, setTargetDept] = useState('');
+  const [targetRole, setTargetRole] = useState('');
 
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -117,11 +122,37 @@ export default function App() {
   const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
+
+    // Monta a string de detalhes baseada no tipo de formulário
+    let finalDetails = '';
+    
+    if (formType === 'CHANGE_ROLE') {
+      if (!targetDept || !targetRole) return alert("Selecione o Departamento e o Cargo de destino.");
+      finalDetails = `Mudança para: ${targetRole} (${targetDept})`;
+    } else {
+      if (!formDetails) return alert("Selecione a ferramenta.");
+      finalDetails = formDetails;
+    }
+
+    if (!formJustification) return alert("A justificativa é obrigatória.");
+
     await fetch('http://localhost:3000/api/solicitacoes', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ requesterId: currentUser.id, type: formType, details: { info: formDetails }, justification: formJustification })
+      body: JSON.stringify({ 
+        requesterId: currentUser.id, 
+        type: formType, 
+        details: { info: finalDetails }, 
+        justification: formJustification 
+      })
     });
-    alert("Solicitação enviada!"); setFormDetails(''); setFormJustification(''); loadData(); 
+    
+    alert("Solicitação enviada!"); 
+    // Limpa campos
+    setFormDetails(''); 
+    setTargetDept('');
+    setTargetRole('');
+    setFormJustification(''); 
+    loadData(); 
   };
 
   const handleApprove = async (id: string, action: 'APROVAR' | 'REPROVAR') => {
@@ -132,6 +163,15 @@ export default function App() {
     });
     if (res.ok) loadData(); else alert("Erro/Compliance.");
   };
+
+  // --- HELPER: Filtrar Cargos por Departamento Selecionado ---
+  // Nota: Usamos a 'structure' original carregada da API para ter os cargos corretos
+  // Como 'structure' no state já está alterada (agrupada), vamos buscar na lista original
+  // ou simplesmente iterar o que temos visualmente se o cargo existir lá.
+  // Para simplificar, vou iterar a structure visual mesmo.
+  const availableRoles = targetDept 
+    ? structure.find(d => d.name === targetDept)?.roles || [] 
+    : [];
 
   // --- COMPONENTS ---
   const StatCard = ({ title, value, icon, color, subtext }: any) => (
@@ -175,14 +215,13 @@ export default function App() {
   if (!isLoggedIn) {
     return (
       <div className="login-wrapper">
-        {/* Camada de Fundo Animado (Céu) */}
         <div className="ambient-background">
-          <div className="orb orb-1"></div>
-          <div className="orb orb-2"></div>
-          <div className="orb orb-3"></div>
+          <div className="cloud cloud-1"></div>
+          <div className="cloud cloud-2"></div>
+          <div className="cloud cloud-3"></div>
         </div>
+        <div className="fog-layer"></div>
         
-        {/* Painel Esquerdo de Vidro */}
         <div className="login-brand-section glass-panel-left">
           <div className="brand-content">
             <div style={{display:'flex', alignItems:'center', gap:'15px', marginBottom:'30px'}}>
@@ -191,49 +230,33 @@ export default function App() {
                </div>
                <span style={{fontSize:'2rem', fontWeight: 700, letterSpacing:'-1px', color:'white', textShadow:'0 2px 10px rgba(0,0,0,0.3)'}}>THERIS</span>
             </div>
-            
             <h1 style={{fontSize:'3.5rem', lineHeight:'1.1', marginBottom:'20px', color:'white', textShadow:'0 4px 20px rgba(0,0,0,0.5)'}}>
               Governança de <br/>Identidade <span style={{color:'#38bdf8'}}>Inteligente.</span>
             </h1>
-            
             <p style={{fontSize:'1.1rem', color:'#e2e8f0', maxWidth:'500px', lineHeight:'1.6', textShadow:'0 2px 5px rgba(0,0,0,0.5)'}}>
               Centralize acessos, automatize auditorias e garanta compliance com a plataforma líder do Grupo 3C.
             </p>
-
             <div style={{marginTop:'50px', display:'flex', gap:'40px', borderTop:'1px solid rgba(255,255,255,0.1)', paddingTop:'30px'}}>
-               <div>
-                 <h3 style={{color:'white', fontSize:'1.8rem', fontWeight:700, marginBottom:'0'}}>+100</h3>
-                 <span style={{color:'#94a3b8', fontSize:'0.9rem'}}>Colaboradores</span>
-               </div>
-               <div>
-                 <h3 style={{color:'white', fontSize:'1.8rem', fontWeight:700, marginBottom:'0'}}>100%</h3>
-                 <span style={{color:'#94a3b8', fontSize:'0.9rem'}}>Auditável</span>
-               </div>
+               <div><h3 style={{color:'white', fontSize:'1.8rem', fontWeight:700, marginBottom:'0'}}>+100</h3><span style={{color:'#94a3b8', fontSize:'0.9rem'}}>Colaboradores</span></div>
+               <div><h3 style={{color:'white', fontSize:'1.8rem', fontWeight:700, marginBottom:'0'}}>100%</h3><span style={{color:'#94a3b8', fontSize:'0.9rem'}}>Auditável</span></div>
             </div>
           </div>
           <Bird className="giant-bg-icon" size={700} strokeWidth={0.3} color="white"/>
         </div>
 
-        {/* Painel Direito de Vidro */}
         <div className="login-form-section glass-panel-right">
           <div className="login-box">
              <div style={{textAlign:'center', marginBottom:'40px'}}>
                <h2 style={{fontSize:'2rem', color:'white', marginBottom:'10px', fontWeight:600}}>Acesse sua conta</h2>
                <p style={{color:'#94a3b8', fontSize:'1rem'}}>Utilize suas credenciais corporativas</p>
              </div>
-
              <div className="google-btn-wrapper">
                <GoogleLogin
                   onSuccess={responseGoogle}
                   onError={() => alert('Falha no Login')}
-                  theme="filled_black"
-                  shape="pill"
-                  size="large"
-                  text="continue_with"
-                  width="100%"
+                  theme="filled_black" shape="pill" size="large" text="continue_with" width="100%"
                />
              </div>
-
              <div style={{marginTop:'40px', textAlign:'center', fontSize:'0.85rem', color:'#64748b', borderTop:'1px solid rgba(255,255,255,0.05)', paddingTop:'20px'}}>
                <Lock size={14} style={{verticalAlign:'middle', marginRight:'6px', color:'#0ea5e9'}}/>
                Ambiente Seguro & Criptografado
@@ -320,10 +343,71 @@ export default function App() {
                <div className="dashboard-split">
                   <div className="glass-card" id="req-form">
                     <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}><Zap size={20} color="#f59e0b"/> Ações Rápidas</h3>
+                    
                     <form onSubmit={handleCreateRequest} className="modern-form">
-                       <div className="form-group"><label>Tipo de Acesso</label><select onChange={e=>setFormType(e.target.value)} className="modern-input"><option value="CHANGE_ROLE">Alteração de Cargo</option><option value="ACCESS_TOOL">Acesso a Ferramenta</option></select></div>
-                       <div className="form-group"><label>Detalhes do Pedido</label>{formType === 'ACCESS_TOOL' ? (<select onChange={e=>setFormDetails(e.target.value)} className="modern-input"><option value="">Selecione a Ferramenta...</option>{tools.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}</select>) : (<input placeholder="Ex: Promoção para Pleno" onChange={e=>setFormDetails(e.target.value)} className="modern-input"/>)}</div>
-                       <div className="form-group full-width"><label>Justificativa (Compliance)</label><input placeholder="Motivo da solicitação..." onChange={e=>setFormJustification(e.target.value)} className="modern-input"/></div>
+                       {/* Linha 1: Tipo */}
+                       <div className="form-group full-width">
+                         <label>Tipo de Solicitação</label>
+                         <select onChange={e=>{setFormType(e.target.value); setTargetDept(''); setTargetRole(''); setFormDetails('')}} className="modern-input" value={formType}>
+                           <option value="CHANGE_ROLE">Alteração de Cargo / Departamento</option>
+                           <option value="ACCESS_TOOL">Acesso a Ferramenta</option>
+                         </select>
+                       </div>
+                       
+                       {/* Condicional: Se for Cargo */}
+                       {formType === 'CHANGE_ROLE' ? (
+                         <>
+                           <div className="form-group">
+                             <label>Novo Departamento</label>
+                             <select 
+                               className="modern-input" 
+                               value={targetDept} 
+                               onChange={e => { setTargetDept(e.target.value); setTargetRole(''); }}
+                             >
+                               <option value="">-- Selecione o Depto --</option>
+                               {structure.map(d => (
+                                 <option key={d.id} value={d.name}>{d.name}</option>
+                               ))}
+                             </select>
+                           </div>
+
+                           <div className="form-group">
+                             <label>Novo Cargo</label>
+                             <select 
+                               className="modern-input" 
+                               value={targetRole} 
+                               onChange={e => setTargetRole(e.target.value)}
+                               disabled={!targetDept}
+                             >
+                               <option value="">-- Selecione o Cargo --</option>
+                               {availableRoles.map((r, i) => (
+                                 <option key={i} value={r.name}>{r.name.split('(')[0].trim()}</option>
+                               ))}
+                             </select>
+                           </div>
+                         </>
+                       ) : (
+                         /* Condicional: Se for Ferramenta */
+                         <div className="form-group full-width">
+                            <label>Ferramenta Desejada</label>
+                            <select onChange={e=>setFormDetails(e.target.value)} className="modern-input" value={formDetails}>
+                              <option value="">-- Selecione a Ferramenta --</option>
+                              {tools.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
+                            </select>
+                         </div>
+                       )}
+
+                       {/* Linha Final: Justificativa */}
+                       <div className="form-group full-width">
+                         <label>Justificativa (Compliance)</label>
+                         <input 
+                           placeholder="Motivo da alteração..." 
+                           value={formJustification}
+                           onChange={e=>setFormJustification(e.target.value)} 
+                           className="modern-input"
+                         />
+                       </div>
+
                        <button type="submit" className="primary-btn full-width">Enviar Solicitação</button>
                     </form>
                   </div>
