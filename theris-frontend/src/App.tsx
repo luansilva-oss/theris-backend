@@ -4,7 +4,8 @@ import {
   CheckCircle, XCircle, ShieldCheck, Server, ChevronRight, 
   ChevronDown, LogOut, Lock, User, MapPin, Award,
   Bird, 
-  Activity, TrendingUp, AlertCircle, Calendar, Zap
+  Activity, TrendingUp, AlertCircle, Calendar, Zap,
+  Hash, UserCheck
 } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import './App.css';
@@ -25,7 +26,20 @@ interface User { id: string; name: string; role: { name: string }; departmentId:
 interface Role { id: string; name: string; users: User[]; }
 interface Department { id: string; name: string; roles: Role[]; }
 interface Tool { id: string; name: string; owner: { name: string; id: string }; accessLevels: { create: { name: string }[] } | null; }
-interface Request { id: string; requesterId: string; requester: { name: string }; lastApprover?: { name: string }; type: string; status: string; currentApproverRole: string; details: string; justification: string; createdAt: string; }
+
+// Atualizada para incluir lastApprover e updatedAt
+interface Request { 
+  id: string; 
+  requesterId: string; 
+  requester: { name: string }; 
+  lastApprover?: { name: string }; // Quem aprovou
+  type: string; 
+  status: string; 
+  details: string; 
+  justification: string; 
+  createdAt: string; 
+  updatedAt: string; // Data da aprovação
+}
 
 type SystemProfile = 'ADMIN' | 'APPROVER' | 'VIEWER';
 
@@ -43,13 +57,12 @@ export default function App() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
 
-  // --- ESTADOS DO FORMULÁRIO ---
+  // --- FORM STATES ---
   const [formType, setFormType] = useState('CHANGE_ROLE');
   const [formDetails, setFormDetails] = useState(''); 
   const [formJustification, setFormJustification] = useState('');
   
-  // Novos Estados
-  const [targetUserId, setTargetUserId] = useState(''); // QUEM vai sofrer a alteração
+  const [targetUserId, setTargetUserId] = useState('');
   const [targetDept, setTargetDept] = useState('');
   const [targetRole, setTargetRole] = useState('');
 
@@ -136,8 +149,6 @@ export default function App() {
 
     if (!formJustification) return alert("A justificativa é obrigatória.");
 
-    // Define quem é o beneficiário (requesterId no backend)
-    // Se targetUserId estiver vazio, usa o currentUser (auto-solicitação)
     const beneficiaryId = targetUserId || currentUser.id;
 
     await fetch('http://localhost:3000/api/solicitacoes', {
@@ -151,12 +162,7 @@ export default function App() {
     });
     
     alert("Solicitação enviada!"); 
-    // Reset Form
-    setFormDetails(''); 
-    setTargetDept('');
-    setTargetRole('');
-    setTargetUserId(''); // Reset usuário selecionado
-    setFormJustification(''); 
+    setFormDetails(''); setTargetDept(''); setTargetRole(''); setTargetUserId(''); setFormJustification(''); 
     loadData(); 
   };
 
@@ -172,44 +178,6 @@ export default function App() {
   const availableRoles = targetDept 
     ? structure.find(d => d.name === targetDept)?.roles || [] 
     : [];
-
-  // --- COMPONENTS ---
-  const StatCard = ({ title, value, icon, color, subtext }: any) => (
-    <div className="glass-card" style={{position: 'relative', overflow: 'hidden'}}>
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-        <div>
-          <div style={{color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px'}}>{title}</div>
-          <div style={{fontSize: '2rem', fontWeight: 700, color: 'white', marginTop: '5px'}}>{value}</div>
-          {subtext && <div style={{fontSize: '0.75rem', color: color, marginTop: '5px', display:'flex', alignItems:'center', gap:'4px'}}><TrendingUp size={12}/> {subtext}</div>}
-        </div>
-        <div style={{background: `${color}20`, padding: '10px', borderRadius: '12px', color: color}}>
-          {icon}
-        </div>
-      </div>
-      <div style={{position: 'absolute', right: '-20px', bottom: '-20px', opacity: 0.1, transform: 'scale(2.5)', color: color}}>{icon}</div>
-    </div>
-  );
-
-  const ActivityFeed = () => (
-    <div className="glass-card" style={{height: '100%'}}>
-      <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}><Activity size={20} color="#0ea5e9"/> Atividade Recente</h3>
-      <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
-        {requests.slice(0, 5).map(r => (
-          <div key={r.id} style={{display:'flex', gap:'12px', alignItems:'center', borderBottom:'1px solid #33415530', paddingBottom:'12px'}}>
-            <div style={{minWidth:'32px', height:'32px', borderRadius:'50%', background: r.status === 'APROVADO' ? '#10b98120' : '#f59e0b20', display:'flex', alignItems:'center', justifyContent:'center'}}>
-              {r.status === 'APROVADO' ? <CheckCircle size={16} color="#10b981"/> : <Clock size={16} color="#f59e0b"/>}
-            </div>
-            <div>
-              <div style={{fontSize:'0.9rem', color:'white', fontWeight:500}}>
-                <span style={{color:'#cbd5e1'}}>{r.requester.name}</span> solicitou <span style={{color:'#0ea5e9'}}>{JSON.parse(r.details).info}</span>
-              </div>
-              <div style={{fontSize:'0.75rem', color:'#64748b', marginTop:'2px'}}>{new Date(r.createdAt).toLocaleDateString()} • {r.status.replace('_',' ')}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 
   // --- RENDER ---
   if (!isLoggedIn) {
@@ -314,7 +282,8 @@ export default function App() {
              <h2 style={{color:'white', fontSize:'1.2rem'}}>
                {activeTab === 'DASHBOARD' ? 'Visão Geral' : 
                 activeTab === 'ORG' ? 'Estrutura Organizacional' :
-                activeTab === 'REQUESTS' ? 'Central de Solicitações' : 'Painel'}
+                activeTab === 'REQUESTS' ? 'Central de Solicitações' : 
+                activeTab === 'HISTORY' ? 'Log de Auditoria & Compliance' : 'Painel'}
              </h2>
              <div style={{color:'#94a3b8', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'5px'}}><Calendar size={12}/> {today}</div>
            </div>
@@ -334,10 +303,9 @@ export default function App() {
                </div>
 
                <div className="stats-container">
-                 <StatCard title="Total de Colaboradores" value={allUsers.length} icon={<Users size={24}/>} color="#6366f1" subtext="+12% este mês"/>
-                 <StatCard title="Solicitações Pendentes" value={requests.filter(r=>r.status.includes('PENDENTE')).length} icon={<AlertCircle size={24}/>} color="#f59e0b" subtext="Ação Necessária"/>
-                 <StatCard title="Aprovações Realizadas" value={requests.filter(r=>r.status === 'APROVADO').length} icon={<CheckCircle size={24}/>} color="#10b981" subtext="Eficiência Alta"/>
-                 <StatCard title="Ferramentas Ativas" value={tools.length} icon={<Server size={24}/>} color="#0ea5e9" subtext="Sistemas Monitorados"/>
+                 <div className="glass-card"><div style={{color:'#94a3b8', textTransform:'uppercase', fontSize:'0.8rem', fontWeight:600}}>Colaboradores</div><div style={{fontSize:'2rem', fontWeight:700, color:'white'}}>{allUsers.length}</div></div>
+                 <div className="glass-card"><div style={{color:'#94a3b8', textTransform:'uppercase', fontSize:'0.8rem', fontWeight:600}}>Pendentes</div><div style={{fontSize:'2rem', fontWeight:700, color:'#f59e0b'}}>{requests.filter(r=>r.status.includes('PENDENTE')).length}</div></div>
+                 <div className="glass-card"><div style={{color:'#94a3b8', textTransform:'uppercase', fontSize:'0.8rem', fontWeight:600}}>Processadas</div><div style={{fontSize:'2rem', fontWeight:700, color:'#10b981'}}>{requests.filter(r=>['APROVADO','REPROVADO'].includes(r.status)).length}</div></div>
                </div>
 
                <div className="dashboard-split">
@@ -345,26 +313,14 @@ export default function App() {
                     <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}><Zap size={20} color="#f59e0b"/> Ações Rápidas</h3>
                     
                     <form onSubmit={handleCreateRequest} className="modern-form">
-                       {/* Linha 1: Quem recebe? (NOVO) */}
                        <div className="form-group full-width">
                          <label>Colaborador (Beneficiário)</label>
-                         <select 
-                            className="modern-input"
-                            value={targetUserId}
-                            onChange={e => setTargetUserId(e.target.value)}
-                         >
+                         <select className="modern-input" value={targetUserId} onChange={e => setTargetUserId(e.target.value)}>
                             <option value="">-- Eu mesmo ({currentUser?.name}) --</option>
-                            {allUsers
-                              .filter(u => u.id !== currentUser?.id)
-                              .sort((a,b) => a.name.localeCompare(b.name))
-                              .map(u => (
-                                <option key={u.id} value={u.id}>{u.name} - {u.role.name}</option>
-                              ))
-                            }
+                            {allUsers.filter(u => u.id !== currentUser?.id).sort((a,b) => a.name.localeCompare(b.name)).map(u => (<option key={u.id} value={u.id}>{u.name} - {u.role.name}</option>))}
                          </select>
                        </div>
 
-                       {/* Linha 2: Tipo */}
                        <div className="form-group full-width">
                          <label>Tipo de Solicitação</label>
                          <select onChange={e=>{setFormType(e.target.value); setTargetDept(''); setTargetRole(''); setFormDetails('')}} className="modern-input" value={formType}>
@@ -433,6 +389,61 @@ export default function App() {
                      ))}
                   </tbody>
                </table>
+            </div>
+          )}
+
+          {/* --- AUDITORIA COMPLETA --- */}
+          {activeTab === 'HISTORY' && systemProfile === 'ADMIN' && (
+            <div className="glass-card">
+              <div style={{marginBottom:'20px'}}>
+                <h3>Histórico de Transações & Auditoria</h3>
+                <p style={{color:'#94a3b8', fontSize:'0.9rem'}}>Registro imutável de todas as alterações de identidade e acesso.</p>
+              </div>
+              
+              <table className="modern-table">
+                <thead>
+                  <tr>
+                    <th>ID REF (UUID)</th>
+                    <th>DATA</th>
+                    <th>SOLICITANTE</th>
+                    <th>DETALHES DA AÇÃO</th>
+                    <th>APROVADO POR</th>
+                    <th>STATUS FINAL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {requests.filter(r => ['APROVADO', 'REPROVADO'].includes(r.status)).map(r => (
+                    <tr key={r.id}>
+                      <td style={{fontFamily:'monospace', color:'#64748b', fontSize:'0.75rem'}}>
+                        <div style={{display:'flex', alignItems:'center', gap:'5px'}}>
+                          <Hash size={12}/> {r.id.slice(0, 8)}...
+                        </div>
+                      </td>
+                      <td style={{color:'#cbd5e1'}}>{new Date(r.updatedAt || r.createdAt).toLocaleDateString()}</td>
+                      <td style={{fontWeight:500}}>{r.requester.name}</td>
+                      <td>
+                        <span style={{color:'white'}}>{JSON.parse(r.details).info}</span>
+                        <div style={{fontSize:'0.75rem', color:'#64748b', marginTop:'2px'}}>Justificativa: {r.justification}</div>
+                      </td>
+                      <td>
+                        {r.lastApprover ? (
+                          <div style={{display:'flex', alignItems:'center', gap:'6px', color:'#cbd5e1'}}>
+                            <UserCheck size={14} color="#10b981"/> {r.lastApprover.name}
+                          </div>
+                        ) : <span style={{color:'#64748b'}}>-</span>}
+                      </td>
+                      <td><span className={`badge ${r.status}`}>{r.status}</span></td>
+                    </tr>
+                  ))}
+                  {requests.filter(r => ['APROVADO', 'REPROVADO'].includes(r.status)).length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
+                        Nenhum registro auditado encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
 
