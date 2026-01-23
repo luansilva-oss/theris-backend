@@ -6,32 +6,29 @@ import { criarSolicitacao, listarSolicitacoes, atualizarStatus } from './control
 const app = express();
 const prisma = new PrismaClient();
 
-// --- CONFIGURAÇÃO DE CORS (CRÍTICO PARA O LOGIN) ---
+// --- CONFIGURAÇÃO DE CORS ---
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'], // Aceita as duas portas
+  origin: ['http://localhost:5173', 'http://localhost:5174'],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
 
-// --- FUNÇÃO AUXILIAR PARA LER O TOKEN DO GOOGLE ---
-// (Decodifica o JWT sem precisar de bibliotecas extras pesadas)
+// --- FUNÇÃO SEGURA PARA LER O TOKEN (Versão Node.js) ---
 function decodeJwt(token: string) {
   try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
+    const base64Payload = token.split('.')[1];
+    const payload = Buffer.from(base64Payload, 'base64').toString('utf-8');
+    return JSON.parse(payload);
   } catch (e) {
+    console.error("Erro ao decodificar token:", e);
     return null;
   }
 }
 
 // ==========================================
-// ROTAS DE AUTENTICAÇÃO (LOGIN)
+// ROTA DE LOGIN
 // ==========================================
 app.post('/api/login/google', async (req: Request, res: Response): Promise<any> => {
   const { credential } = req.body;
@@ -40,7 +37,6 @@ app.post('/api/login/google', async (req: Request, res: Response): Promise<any> 
     return res.status(400).json({ error: 'Credencial não fornecida' });
   }
 
-  // 1. Decodifica o token para pegar o email
   const payload = decodeJwt(credential);
   
   if (!payload || !payload.email) {
@@ -48,87 +44,69 @@ app.post('/api/login/google', async (req: Request, res: Response): Promise<any> 
   }
 
   const googleEmail = payload.email;
+  console.log(`Tentativa de login: ${googleEmail}`);
 
-  // 2. Busca o usuário no banco pelo email
   try {
     const user = await prisma.user.findUnique({
       where: { email: googleEmail },
-      include: { 
-        role: true, 
-        department: true,
-        manager: true 
-      }
+      include: { role: true, department: true, manager: true }
     });
 
     if (!user) {
-      // Usuário não cadastrado no Seed/Banco
-      return res.status(403).json({ error: 'Usuário não encontrado no sistema. Contate o Admin.' });
+      console.log('Usuário não encontrado no banco.');
+      return res.status(403).json({ error: 'Usuário não encontrado. Contate o Admin.' });
     }
 
-    // 3. Define o Perfil de Acesso (Simulação de RBAC)
     let profile = 'VIEWER';
-    
-    // Regra: Quem é do Depto "Tecnologia e Segurança" ou "Board" vira ADMIN
-    if (user.department.name === 'Tecnologia e Segurança' || user.department.name === 'Board') {
+
+    // --- CORREÇÃO AQUI (Adicionado ?. e || "") ---
+    // Verifica se o departamento existe antes de ler o nome
+    const deptName = user.department?.name || "";
+    const roleName = user.role?.name || "";
+
+    if (['Tecnologia e Segurança', 'Board'].includes(deptName)) {
       profile = 'ADMIN';
-    } 
-    // Regra: Quem tem cargo de liderança vira APPROVER
-    else if (['Líder', 'Head', 'Gerente', 'Coordenador', 'Gestor', 'CEO', 'CTO', 'CPO', 'CMO'].some(k => user.role.name.includes(k))) {
-      profile = 'APPROVER'; // Ou ADMIN se preferir
+    } else if (['Líder', 'Head', 'Gerente', 'Coordenador', 'Gestor', 'CEO'].some(k => roleName.includes(k))) {
+      profile = 'APPROVER';
     }
 
     return res.json({ user, profile });
 
   } catch (error) {
-    console.error(error);
+    console.error("Erro no login:", error);
     return res.status(500).json({ error: 'Erro no servidor' });
   }
 });
 
 // ==========================================
-// ROTAS DE DADOS (GET)
+// ROTAS DE DADOS
 // ==========================================
-
-// 1. Organograma (Estrutura)
 app.get('/api/structure', async (req, res) => {
-  const structure = await prisma.department.findMany({
-    include: {
-      roles: {
-        include: { users: true }
-      }
-    }
-  });
+  const structure = await prisma.department.findMany({ include: { roles: { include: { users: true } } } });
   res.json(structure);
 });
 
-// 2. Ferramentas
 app.get('/api/tools', async (req, res) => {
-  const tools = await prisma.tool.findMany({
-    include: { owner: true }
-  });
+  const tools = await prisma.tool.findMany({ include: { owner: true } });
   res.json(tools);
 });
 
-// 3. Usuários (Para o dropdown de beneficiários)
 app.get('/api/users', async (req, res) => {
-  const users = await prisma.user.findMany({
-    include: { role: true, department: true }
-  });
+  const users = await prisma.user.findMany({ include: { role: true, department: true } });
   res.json(users);
 });
 
 // ==========================================
-// ROTAS DE SOLICITAÇÕES (REQUESTS)
+// ROTAS DE SOLICITAÇÕES
 // ==========================================
 app.get('/api/solicitacoes', listarSolicitacoes);
 app.post('/api/solicitacoes', criarSolicitacao);
 app.patch('/api/solicitacoes/:id', atualizarStatus);
 
 // ==========================================
-// INICIALIZAÇÃO
+// START SERVER
 // ==========================================
 const PORT = 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`🔓 CORS Habilitado para: http://localhost:5173 e http://localhost:5174`);
+  console.log(`🚀 Backend rodando em http://localhost:${PORT}`);
 });
