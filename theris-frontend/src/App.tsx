@@ -45,10 +45,11 @@ export default function App() {
 
   // --- ESTADOS DO FORMULÁRIO ---
   const [formType, setFormType] = useState('CHANGE_ROLE');
-  const [formDetails, setFormDetails] = useState(''); // Para ferramentas ou texto livre
+  const [formDetails, setFormDetails] = useState(''); 
   const [formJustification, setFormJustification] = useState('');
   
-  // Novos Estados para Seleção de Cargo/Depto
+  // Novos Estados
+  const [targetUserId, setTargetUserId] = useState(''); // QUEM vai sofrer a alteração
   const [targetDept, setTargetDept] = useState('');
   const [targetRole, setTargetRole] = useState('');
 
@@ -123,7 +124,6 @@ export default function App() {
     e.preventDefault();
     if (!currentUser) return;
 
-    // Monta a string de detalhes baseada no tipo de formulário
     let finalDetails = '';
     
     if (formType === 'CHANGE_ROLE') {
@@ -136,10 +136,14 @@ export default function App() {
 
     if (!formJustification) return alert("A justificativa é obrigatória.");
 
+    // Define quem é o beneficiário (requesterId no backend)
+    // Se targetUserId estiver vazio, usa o currentUser (auto-solicitação)
+    const beneficiaryId = targetUserId || currentUser.id;
+
     await fetch('http://localhost:3000/api/solicitacoes', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ 
-        requesterId: currentUser.id, 
+        requesterId: beneficiaryId, 
         type: formType, 
         details: { info: finalDetails }, 
         justification: formJustification 
@@ -147,10 +151,11 @@ export default function App() {
     });
     
     alert("Solicitação enviada!"); 
-    // Limpa campos
+    // Reset Form
     setFormDetails(''); 
     setTargetDept('');
     setTargetRole('');
+    setTargetUserId(''); // Reset usuário selecionado
     setFormJustification(''); 
     loadData(); 
   };
@@ -164,11 +169,6 @@ export default function App() {
     if (res.ok) loadData(); else alert("Erro/Compliance.");
   };
 
-  // --- HELPER: Filtrar Cargos por Departamento Selecionado ---
-  // Nota: Usamos a 'structure' original carregada da API para ter os cargos corretos
-  // Como 'structure' no state já está alterada (agrupada), vamos buscar na lista original
-  // ou simplesmente iterar o que temos visualmente se o cargo existir lá.
-  // Para simplificar, vou iterar a structure visual mesmo.
   const availableRoles = targetDept 
     ? structure.find(d => d.name === targetDept)?.roles || [] 
     : [];
@@ -345,7 +345,26 @@ export default function App() {
                     <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}><Zap size={20} color="#f59e0b"/> Ações Rápidas</h3>
                     
                     <form onSubmit={handleCreateRequest} className="modern-form">
-                       {/* Linha 1: Tipo */}
+                       {/* Linha 1: Quem recebe? (NOVO) */}
+                       <div className="form-group full-width">
+                         <label>Colaborador (Beneficiário)</label>
+                         <select 
+                            className="modern-input"
+                            value={targetUserId}
+                            onChange={e => setTargetUserId(e.target.value)}
+                         >
+                            <option value="">-- Eu mesmo ({currentUser?.name}) --</option>
+                            {allUsers
+                              .filter(u => u.id !== currentUser?.id)
+                              .sort((a,b) => a.name.localeCompare(b.name))
+                              .map(u => (
+                                <option key={u.id} value={u.id}>{u.name} - {u.role.name}</option>
+                              ))
+                            }
+                         </select>
+                       </div>
+
+                       {/* Linha 2: Tipo */}
                        <div className="form-group full-width">
                          <label>Tipo de Solicitação</label>
                          <select onChange={e=>{setFormType(e.target.value); setTargetDept(''); setTargetRole(''); setFormDetails('')}} className="modern-input" value={formType}>
@@ -354,40 +373,24 @@ export default function App() {
                          </select>
                        </div>
                        
-                       {/* Condicional: Se for Cargo */}
                        {formType === 'CHANGE_ROLE' ? (
                          <>
                            <div className="form-group">
                              <label>Novo Departamento</label>
-                             <select 
-                               className="modern-input" 
-                               value={targetDept} 
-                               onChange={e => { setTargetDept(e.target.value); setTargetRole(''); }}
-                             >
+                             <select className="modern-input" value={targetDept} onChange={e => { setTargetDept(e.target.value); setTargetRole(''); }}>
                                <option value="">-- Selecione o Depto --</option>
-                               {structure.map(d => (
-                                 <option key={d.id} value={d.name}>{d.name}</option>
-                               ))}
+                               {structure.map(d => (<option key={d.id} value={d.name}>{d.name}</option>))}
                              </select>
                            </div>
-
                            <div className="form-group">
                              <label>Novo Cargo</label>
-                             <select 
-                               className="modern-input" 
-                               value={targetRole} 
-                               onChange={e => setTargetRole(e.target.value)}
-                               disabled={!targetDept}
-                             >
+                             <select className="modern-input" value={targetRole} onChange={e => setTargetRole(e.target.value)} disabled={!targetDept}>
                                <option value="">-- Selecione o Cargo --</option>
-                               {availableRoles.map((r, i) => (
-                                 <option key={i} value={r.name}>{r.name.split('(')[0].trim()}</option>
-                               ))}
+                               {availableRoles.map((r, i) => (<option key={i} value={r.name}>{r.name.split('(')[0].trim()}</option>))}
                              </select>
                            </div>
                          </>
                        ) : (
-                         /* Condicional: Se for Ferramenta */
                          <div className="form-group full-width">
                             <label>Ferramenta Desejada</label>
                             <select onChange={e=>setFormDetails(e.target.value)} className="modern-input" value={formDetails}>
@@ -397,15 +400,9 @@ export default function App() {
                          </div>
                        )}
 
-                       {/* Linha Final: Justificativa */}
                        <div className="form-group full-width">
                          <label>Justificativa (Compliance)</label>
-                         <input 
-                           placeholder="Motivo da alteração..." 
-                           value={formJustification}
-                           onChange={e=>setFormJustification(e.target.value)} 
-                           className="modern-input"
-                         />
+                         <input placeholder="Motivo da alteração..." value={formJustification} onChange={e=>setFormJustification(e.target.value)} className="modern-input"/>
                        </div>
 
                        <button type="submit" className="primary-btn full-width">Enviar Solicitação</button>
