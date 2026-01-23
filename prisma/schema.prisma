@@ -1,4 +1,5 @@
-// --- CONFIGURAÇÃO DO BANCO ---
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,8 +8,6 @@ datasource db {
   provider = "sqlite"
   url      = "file:./dev.db"
 }
-
-// --- ESTRUTURA ORGANIZACIONAL ---
 
 model Department {
   id    String @id @default(uuid())
@@ -20,75 +19,76 @@ model Department {
 model Role {
   id           String     @id @default(uuid())
   name         String
-  department   Department @relation(fields: [departmentId], references: [id])
   departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
   users        User[]
 }
 
 model User {
   id           String      @id @default(uuid())
   name         String
-  email        String      @unique 
-  role         Role?       @relation(fields: [roleId], references: [id])
-  roleId       String?
-  department   Department? @relation(fields: [departmentId], references: [id])
-  departmentId String?
-
-  // --- HIERARQUIA (Novo: Quem é o chefe de quem) ---
-  managerId     String?
-  manager       User?       @relation("Manager", fields: [managerId], references: [id])
-  directReports User[]      @relation("Manager")
-
-  // --- RELAÇÕES DO SISTEMA IGA ---
-  requests      Request[]   @relation("Requester") // Pedidos que ele fez
-  approvals     Request[]   @relation("Approver")  // Pedidos que ele aprovou (Rastreabilidade)
-  toolsOwned    Tool[]      @relation("ToolOwner") // Ferramentas que ele é dono
+  email        String      @unique
+  roleId       String
+  role         Role        @relation(fields: [roleId], references: [id])
+  departmentId String
+  department   Department  @relation(fields: [departmentId], references: [id])
+  managerId    String?
+  manager      User?       @relation("Manager", fields: [managerId], references: [id])
+  team         User[]      @relation("Manager")
+  
+  // --- NOVOS CAMPOS ---
+  deputyId     String?     // O "Vice" do Gestor
+  deputy       User?       @relation("Deputy", fields: [deputyId], references: [id]) // Quem é meu deputy
+  deputyOf     User[]      @relation("Deputy") // De quem sou deputy
+  
+  requests     Request[]   @relation("Requester")
+  approvals    Request[]   @relation("Approver")
+  
+  toolsOwned    Tool[]     @relation("ToolOwner")
+  toolsSubOwned Tool[]     @relation("ToolSubOwner") // Novo
 }
-
-// --- FERRAMENTAS E ACESSOS (ENTERPRISE) ---
 
 model Tool {
-  id           String   @id @default(uuid())
+  id           String  @id @default(uuid())
   name         String
   description  String?
-  ownerId      String?
-  owner        User?    @relation("ToolOwner", fields: [ownerId], references: [id])
   
-  // Campo JSON para guardar níveis (Ex: Admin, Member, Guest)
-  accessLevels String? 
+  ownerId      String?
+  owner        User?   @relation("ToolOwner", fields: [ownerId], references: [id])
+  
+  // --- NOVO CAMPO ---
+  subOwnerId   String?
+  subOwner     User?   @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
+  
+  accessLevels String  // JSON string: { create: [...], view: [...] }
 }
-
-// --- CORE: SOLICITAÇÕES DE ACESSO ---
 
 model Request {
-  id          String   @id @default(uuid())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Quem pediu
-  requesterId String
-  requester   User   @relation("Requester", fields: [requesterId], references: [id])
-
-  // Dados do Pedido
-  type                String // CHANGE_ROLE ou ACCESS_TOOL
-  status              String // PENDENTE_SI, PENDENTE_RH, APROVADO, REPROVADO
-  currentApproverRole String // SI, RH, OWNER, CONCLUIDO
+  id                  String   @id @default(uuid())
+  requesterId         String
+  requester           User     @relation("Requester", fields: [requesterId], references: [id])
   
-  details       String // JSON string com detalhes (Ex: Qual ferramenta, qual nível)
-  justification String
-
-  // Rastreabilidade (Quem aprovou/reprovou por último)
-  lastApproverId String?
-  lastApprover   User?   @relation("Approver", fields: [lastApproverId], references: [id])
+  type                String   // 'CHANGE_ROLE', 'ACCESS_TOOL', 'NOMINATE_DEPUTY' (Novo)
+  
+  // Detalhes técnicos
+  details             String   // JSON: { toolId, accessLevel, targetUserId, etc }
+  justification       String
+  isExtraordinary     Boolean  @default(false) // Flag de acesso fora do padrão
+  
+  // Controle de Aprovação
+  status              String   // Enum simulado abaixo
+  lastApproverId      String?
+  lastApprover        User?    @relation("Approver", fields: [lastApproverId], references: [id])
+  currentApproverRole String   // 'MANAGER', 'OWNER', 'SUB_OWNER', 'SI'
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
-// --- AUDITORIA ---
-
+// Model de Log para auditoria (simplificado)
 model AuditLog {
-  id         String   @id @default(uuid())
-  createdAt  DateTime @default(now())
-  action     String
-  targetUser String
-  executor   String
-  details    String
+  id        String   @id @default(uuid())
+  action    String
+  details   String
+  createdAt DateTime @default(now())
 }

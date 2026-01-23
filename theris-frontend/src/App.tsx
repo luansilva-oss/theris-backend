@@ -3,16 +3,14 @@ import {
   LayoutDashboard, Users, Briefcase, FileText, Clock, 
   CheckCircle, XCircle, ShieldCheck, Server, ChevronRight, 
   ChevronDown, LogOut, Lock, User, MapPin, Award,
-  Bird, 
-  Activity, TrendingUp, AlertCircle, Calendar, Zap,
-  Hash, UserCheck
+  Bird, Activity, TrendingUp, AlertCircle, Calendar, Zap,
+  Hash, UserCheck, ShieldAlert, UserPlus
 } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import './App.css';
 
 // --- CONFIGURAÇÕES ---
 const LEADER_KEYWORDS = ['Líder', 'Head', 'Tech Lead', 'Coordenador', 'Gerente', 'Gestor'];
-
 const DEPT_ORDER = [
   'Board', 'Lideranças & Gestão', 'Tecnologia e Segurança', 'Produto', 
   'Produto 3C+', 'Produto Evolux', 'Produto FiqOn', 'Produto Dizify',
@@ -22,29 +20,82 @@ const DEPT_ORDER = [
 
 // --- INTERFACES ---
 interface Manager { id: string; name: string; }
-interface User { id: string; name: string; role: { name: string }; departmentId: string; manager?: Manager; }
+interface User { 
+  id: string; name: string; 
+  role?: { name: string }; 
+  department?: { name: string }; 
+  departmentId: string; 
+  manager?: Manager; 
+  deputyId?: string;
+}
 interface Role { id: string; name: string; users: User[]; }
 interface Department { id: string; name: string; roles: Role[]; }
-interface Tool { id: string; name: string; owner: { name: string; id: string }; accessLevels: { create: { name: string }[] } | null; }
+interface Tool { id: string; name: string; owner?: { name: string; id: string }; accessLevels: { create: { name: string }[] } | null; }
 
-// Atualizada para incluir lastApprover e updatedAt
 interface Request { 
-  id: string; 
-  requesterId: string; 
-  requester: { name: string }; 
-  lastApprover?: { name: string }; // Quem aprovou
-  type: string; 
-  status: string; 
-  details: string; 
-  justification: string; 
-  createdAt: string; 
-  updatedAt: string; // Data da aprovação
+  id: string; requesterId: string; requester: { name: string }; lastApprover?: { name: string }; 
+  type: string; status: string; currentApproverRole: string; 
+  details: string; justification: string; createdAt: string; updatedAt: string; 
+  isExtraordinary: boolean; 
 }
 
 type SystemProfile = 'ADMIN' | 'APPROVER' | 'VIEWER';
 
+// --- SUB-COMPONENTES (Separados para não quebrar o layout) ---
+
+const StatusBadge = ({ status }: { status: string }) => {
+  if (status === 'APROVADO') return <span className="badge APROVADO">APROVADO</span>;
+  if (status === 'REPROVADO') return <span className="badge REPROVADO">REPROVADO</span>;
+  
+  let label = 'PENDENTE';
+  let colorClass = 'PENDENTE';
+  
+  if (status === 'PENDENTE_GESTOR') label = 'AGUARD. GESTOR';
+  if (status === 'PENDENTE_OWNER') { label = 'AGUARD. OWNER'; colorClass = 'PENDENTE_OWNER'; }
+  if (status === 'PENDENTE_SUB_OWNER') { label = 'AGUARD. SUB-OWNER'; colorClass = 'PENDENTE_OWNER'; }
+  if (status === 'PENDENTE_SI') { label = 'AGUARD. SI (SEGURANÇA)'; colorClass = 'PENDENTE_SI'; }
+
+  return <span className={`badge ${colorClass}`}>{label}</span>;
+};
+
+const ActivityFeed = ({ requests }: { requests: Request[] }) => (
+  <div className="glass-card" style={{height: '100%', minHeight: '400px'}}>
+    <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}>
+      <Activity size={20} color="#0ea5e9"/> Atividade Recente
+    </h3>
+    <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
+      {requests.slice(0, 5).map(r => {
+        // Safe parse do JSON
+        let info = "Detalhes não disponíveis";
+        try {
+            const parsed = JSON.parse(r.details);
+            info = parsed.info || info;
+        } catch (e) {}
+
+        return (
+          <div key={r.id} style={{display:'flex', gap:'12px', alignItems:'center', borderBottom:'1px solid #33415530', paddingBottom:'12px'}}>
+            <div style={{minWidth:'32px', height:'32px', borderRadius:'50%', background: r.status === 'APROVADO' ? '#10b98120' : '#f59e0b20', display:'flex', alignItems:'center', justifyContent:'center'}}>
+              {r.status === 'APROVADO' ? <CheckCircle size={16} color="#10b981"/> : <Clock size={16} color="#f59e0b"/>}
+            </div>
+            <div>
+              <div style={{fontSize:'0.9rem', color:'white', fontWeight:500}}>
+                <span style={{color:'#cbd5e1'}}>{r.requester?.name || 'Usuário'}</span> solicitou <span style={{color:'#0ea5e9'}}>{info}</span>
+              </div>
+              <div style={{fontSize:'0.75rem', color:'#64748b', marginTop:'2px'}}>
+                {new Date(r.createdAt).toLocaleDateString()} • {r.status.replace('_',' ')}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      {requests.length === 0 && <div style={{color:'#64748b', fontSize:'0.9rem'}}>Nenhuma atividade recente.</div>}
+    </div>
+  </div>
+);
+
+// --- COMPONENTE PRINCIPAL ---
+
 export default function App() {
-  // --- ESTADOS ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [systemProfile, setSystemProfile] = useState<SystemProfile>('VIEWER');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -57,18 +108,17 @@ export default function App() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
 
-  // --- FORM STATES ---
+  // Form States
   const [formType, setFormType] = useState('CHANGE_ROLE');
   const [formDetails, setFormDetails] = useState(''); 
   const [formJustification, setFormJustification] = useState('');
-  
   const [targetUserId, setTargetUserId] = useState('');
   const [targetDept, setTargetDept] = useState('');
   const [targetRole, setTargetRole] = useState('');
+  const [isExtraordinary, setIsExtraordinary] = useState(false);
 
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  // --- LOAD DATA ---
   const loadData = async () => {
     try {
       const [resStruct, resTools, resUsers, resReqs] = await Promise.all([
@@ -107,12 +157,11 @@ export default function App() {
       setTools(dTools);
       setAllUsers(dUsers);
       setRequests(dReqs);
-    } catch (e) { console.error("Erro:", e); }
+    } catch (e) { console.error("Erro ao carregar dados:", e); }
   };
 
   useEffect(() => { loadData(); }, []);
 
-  // --- LOGIN ---
   const responseGoogle = async (credentialResponse: any) => {
     try {
       const res = await fetch('http://localhost:3000/api/login/google', {
@@ -132,52 +181,50 @@ export default function App() {
 
   const handleLogout = () => { setIsLoggedIn(false); setCurrentUser(null); setSystemProfile('VIEWER'); };
 
-  // --- ACTIONS ---
   const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
 
-    let finalDetails = '';
+    let finalDetails = { info: '', toolName: '', accessLevel: '', targetUserId: '' };
     
     if (formType === 'CHANGE_ROLE') {
-      if (!targetDept || !targetRole) return alert("Selecione o Departamento e o Cargo de destino.");
-      finalDetails = `Mudança para: ${targetRole} (${targetDept})`;
-    } else {
-      if (!formDetails) return alert("Selecione a ferramenta.");
-      finalDetails = formDetails;
+       finalDetails.info = `Mudança para: ${targetRole} (${targetDept})`;
+    } else if (formType === 'ACCESS_TOOL') {
+       finalDetails.info = `Acesso: ${formDetails}`;
+       finalDetails.toolName = formDetails; 
+       finalDetails.accessLevel = 'User'; 
+    } else if (formType === 'NOMINATE_DEPUTY') {
+       const deputy = allUsers.find(u => u.id === targetUserId);
+       finalDetails.info = `Nomeação de Deputy: ${deputy?.name}`;
+       finalDetails.targetUserId = targetUserId;
     }
 
-    if (!formJustification) return alert("A justificativa é obrigatória.");
-
-    const beneficiaryId = targetUserId || currentUser.id;
+    const beneficiaryId = (formType === 'NOMINATE_DEPUTY') ? currentUser.id : (targetUserId || currentUser.id);
 
     await fetch('http://localhost:3000/api/solicitacoes', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ 
         requesterId: beneficiaryId, 
         type: formType, 
-        details: { info: finalDetails }, 
-        justification: formJustification 
+        details: finalDetails, 
+        justification: formJustification,
+        isExtraordinary 
       })
     });
     
-    alert("Solicitação enviada!"); 
-    setFormDetails(''); setTargetDept(''); setTargetRole(''); setTargetUserId(''); setFormJustification(''); 
-    loadData(); 
+    alert("Solicitação enviada!");
+    setFormDetails(''); setIsExtraordinary(false); loadData();
   };
 
   const handleApprove = async (id: string, action: 'APROVAR' | 'REPROVAR') => {
-    if (!currentUser) return;
-    const res = await fetch(`http://localhost:3000/api/solicitacoes/${id}`, {
+    await fetch(`http://localhost:3000/api/solicitacoes/${id}`, {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ status: action === 'APROVAR' ? 'APROVADO' : 'REPROVADO', approverId: currentUser.id })
+      body: JSON.stringify({ status: action, approverId: currentUser?.id })
     });
-    if (res.ok) loadData(); else alert("Erro/Compliance.");
+    loadData();
   };
 
-  const availableRoles = targetDept 
-    ? structure.find(d => d.name === targetDept)?.roles || [] 
-    : [];
+  const availableRoles = targetDept ? structure.find(d => d.name === targetDept)?.roles || [] : [];
 
   // --- RENDER ---
   if (!isLoggedIn) {
@@ -189,7 +236,6 @@ export default function App() {
           <div className="cloud cloud-3"></div>
         </div>
         <div className="fog-layer"></div>
-        
         <div className="login-brand-section glass-panel-left">
           <div className="brand-content">
             <div style={{display:'flex', alignItems:'center', gap:'15px', marginBottom:'30px'}}>
@@ -204,14 +250,9 @@ export default function App() {
             <p style={{fontSize:'1.1rem', color:'#e2e8f0', maxWidth:'500px', lineHeight:'1.6', textShadow:'0 2px 5px rgba(0,0,0,0.5)'}}>
               Centralize acessos, automatize auditorias e garanta compliance com a plataforma líder do Grupo 3C.
             </p>
-            <div style={{marginTop:'50px', display:'flex', gap:'40px', borderTop:'1px solid rgba(255,255,255,0.1)', paddingTop:'30px'}}>
-               <div><h3 style={{color:'white', fontSize:'1.8rem', fontWeight:700, marginBottom:'0'}}>+100</h3><span style={{color:'#94a3b8', fontSize:'0.9rem'}}>Colaboradores</span></div>
-               <div><h3 style={{color:'white', fontSize:'1.8rem', fontWeight:700, marginBottom:'0'}}>100%</h3><span style={{color:'#94a3b8', fontSize:'0.9rem'}}>Auditável</span></div>
-            </div>
           </div>
           <Bird className="giant-bg-icon" size={700} strokeWidth={0.3} color="white"/>
         </div>
-
         <div className="login-form-section glass-panel-right">
           <div className="login-box">
              <div style={{textAlign:'center', marginBottom:'40px'}}>
@@ -236,7 +277,6 @@ export default function App() {
     );
   }
 
-  // --- DASHBOARD ---
   return (
     <div className="app-layout">
       <aside className="sidebar">
@@ -248,9 +288,9 @@ export default function App() {
         </div>
 
         <div className="user-mini-profile">
-          <div className="avatar">{currentUser?.name.charAt(0)}</div>
+          <div className="avatar">{currentUser?.name ? currentUser.name.charAt(0) : 'U'}</div>
           <div className="info">
-            <div className="name">{currentUser?.name.split(' ')[0]}</div>
+            <div className="name">{currentUser?.name?.split(' ')[0] || 'Usuário'}</div>
             <div className="role">{systemProfile}</div>
           </div>
         </div>
@@ -269,6 +309,11 @@ export default function App() {
               <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => setActiveTab('TOOLS')}><Server size={18} /> Ferramentas</div>
             </>
           )}
+          {(systemProfile === 'APPROVER' || systemProfile === 'ADMIN') && (
+               <div className={`nav-item ${activeTab === 'DEPUTY' ? 'active' : ''}`} onClick={() => {setFormType('NOMINATE_DEPUTY'); setActiveTab('DASHBOARD'); document.getElementById('req-form')?.scrollIntoView({behavior:'smooth'})}}>
+                  <UserPlus size={18} /> Indicar Deputy
+               </div>
+           )}
           {systemProfile === 'VIEWER' && (
              <div className={`nav-item ${activeTab === 'PROFILE' ? 'active' : ''}`} onClick={() => setActiveTab('PROFILE')}><User size={18} /> Meu Perfil</div>
           )}
@@ -296,7 +341,7 @@ export default function App() {
             <div className="dashboard-grid">
                <div className="hero-banner">
                  <div>
-                   <h1>Olá, {currentUser?.name.split(' ')[0]}! 👋</h1>
+                   <h1>Olá, {currentUser?.name?.split(' ')[0] || 'Colaborador'}! 👋</h1>
                    <p>Você tem <strong style={{color:'#f59e0b'}}>{requests.filter(r=>r.status.includes('PENDENTE')).length} solicitações</strong> aguardando sua análise hoje.</p>
                  </div>
                  <div className="hero-actions"><button className="secondary-btn" onClick={() => document.getElementById('req-form')?.scrollIntoView({behavior:'smooth'})}>Nova Solicitação</button></div>
@@ -310,50 +355,79 @@ export default function App() {
 
                <div className="dashboard-split">
                   <div className="glass-card" id="req-form">
-                    <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}><Zap size={20} color="#f59e0b"/> Ações Rápidas</h3>
+                    <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}>
+                        {formType === 'NOMINATE_DEPUTY' ? <UserPlus size={20} color="#f59e0b"/> : <Zap size={20} color="#f59e0b"/>}
+                        {formType === 'NOMINATE_DEPUTY' ? 'Nomear Substituto (Deputy)' : 'Ações Rápidas'}
+                    </h3>
                     
                     <form onSubmit={handleCreateRequest} className="modern-form">
-                       <div className="form-group full-width">
-                         <label>Colaborador (Beneficiário)</label>
-                         <select className="modern-input" value={targetUserId} onChange={e => setTargetUserId(e.target.value)}>
-                            <option value="">-- Eu mesmo ({currentUser?.name}) --</option>
-                            {allUsers.filter(u => u.id !== currentUser?.id).sort((a,b) => a.name.localeCompare(b.name)).map(u => (<option key={u.id} value={u.id}>{u.name} - {u.role.name}</option>))}
-                         </select>
-                       </div>
-
-                       <div className="form-group full-width">
-                         <label>Tipo de Solicitação</label>
-                         <select onChange={e=>{setFormType(e.target.value); setTargetDept(''); setTargetRole(''); setFormDetails('')}} className="modern-input" value={formType}>
-                           <option value="CHANGE_ROLE">Alteração de Cargo / Departamento</option>
-                           <option value="ACCESS_TOOL">Acesso a Ferramenta</option>
-                         </select>
-                       </div>
-                       
-                       {formType === 'CHANGE_ROLE' ? (
-                         <>
-                           <div className="form-group">
-                             <label>Novo Departamento</label>
-                             <select className="modern-input" value={targetDept} onChange={e => { setTargetDept(e.target.value); setTargetRole(''); }}>
-                               <option value="">-- Selecione o Depto --</option>
-                               {structure.map(d => (<option key={d.id} value={d.name}>{d.name}</option>))}
+                       {formType === 'NOMINATE_DEPUTY' ? (
+                           <div className="form-group full-width">
+                             <label>Quem será seu substituto?</label>
+                             <select className="modern-input" value={targetUserId} onChange={e => setTargetUserId(e.target.value)}>
+                                <option value="">-- Selecione o Colaborador --</option>
+                                {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                              </select>
+                             <p style={{fontSize:'0.8rem', color:'#94a3b8', marginTop:'5px'}}>* Esta ação passará por aprovação de SI.</p>
                            </div>
-                           <div className="form-group">
-                             <label>Novo Cargo</label>
-                             <select className="modern-input" value={targetRole} onChange={e => setTargetRole(e.target.value)} disabled={!targetDept}>
-                               <option value="">-- Selecione o Cargo --</option>
-                               {availableRoles.map((r, i) => (<option key={i} value={r.name}>{r.name.split('(')[0].trim()}</option>))}
-                             </select>
-                           </div>
-                         </>
                        ) : (
-                         <div className="form-group full-width">
-                            <label>Ferramenta Desejada</label>
-                            <select onChange={e=>setFormDetails(e.target.value)} className="modern-input" value={formDetails}>
-                              <option value="">-- Selecione a Ferramenta --</option>
-                              {tools.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
-                            </select>
-                         </div>
+                           <>
+                             <div className="form-group full-width">
+                               <label>Colaborador (Beneficiário)</label>
+                               <select className="modern-input" value={targetUserId} onChange={e => setTargetUserId(e.target.value)}>
+                                  <option value="">-- Eu mesmo ({currentUser?.name}) --</option>
+                                  {allUsers.filter(u => u.id !== currentUser?.id).sort((a,b) => a.name.localeCompare(b.name)).map(u => (
+                                    <option key={u.id} value={u.id}>{u.name} - {u.role?.name || 'Sem Cargo'}</option>
+                                  ))}
+                               </select>
+                             </div>
+
+                             <div className="form-group full-width">
+                               <label>Tipo de Solicitação</label>
+                               <select onChange={e=>{setFormType(e.target.value); setTargetDept(''); setTargetRole(''); setFormDetails('')}} className="modern-input" value={formType}>
+                                 <option value="CHANGE_ROLE">Alteração de Cargo / Departamento</option>
+                                 <option value="ACCESS_TOOL">Acesso a Ferramenta</option>
+                               </select>
+                             </div>
+                             
+                             {formType === 'CHANGE_ROLE' ? (
+                               <>
+                                 <div className="form-group">
+                                   <label>Novo Departamento</label>
+                                   <select className="modern-input" value={targetDept} onChange={e => { setTargetDept(e.target.value); setTargetRole(''); }}>
+                                     <option value="">-- Selecione o Depto --</option>
+                                     {structure.map(d => (<option key={d.id} value={d.name}>{d.name}</option>))}
+                                   </select>
+                                 </div>
+                                 <div className="form-group">
+                                   <label>Novo Cargo</label>
+                                   <select className="modern-input" value={targetRole} onChange={e => setTargetRole(e.target.value)} disabled={!targetDept}>
+                                     <option value="">-- Selecione o Cargo --</option>
+                                     {availableRoles.map((r, i) => (<option key={i} value={r.name}>{r.name.split('(')[0].trim()}</option>))}
+                                   </select>
+                                 </div>
+                               </>
+                             ) : (
+                               <>
+                                <div className="form-group full-width">
+                                    <label>Ferramenta Desejada</label>
+                                    <select onChange={e=>setFormDetails(e.target.value)} className="modern-input" value={formDetails}>
+                                      <option value="">-- Selecione a Ferramenta --</option>
+                                      {tools.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
+                                    </select>
+                                 </div>
+                                 <div className="form-group full-width" style={{background:'rgba(245, 158, 11, 0.1)', padding:'15px', borderRadius:'10px', border:'1px solid rgba(245, 158, 11, 0.3)'}}>
+                                     <label style={{display:'flex', alignItems:'center', gap:'10px', cursor:'pointer', color:'#f59e0b', fontWeight:'bold'}}>
+                                         <input type="checkbox" checked={isExtraordinary} onChange={e=>setIsExtraordinary(e.target.checked)} />
+                                         <ShieldAlert size={18}/> Solicitar Acesso Extraordinário / Admin?
+                                     </label>
+                                     <p style={{fontSize:'0.8rem', color:'#cbd5e1', marginTop:'5px', marginLeft:'25px'}}>
+                                         Marque apenas se o acesso fugir do padrão do cargo. Exigirá aprovação de Segurança da Informação.
+                                     </p>
+                                 </div>
+                               </>
+                             )}
+                           </>
                        )}
 
                        <div className="form-group full-width">
@@ -364,7 +438,8 @@ export default function App() {
                        <button type="submit" className="primary-btn full-width">Enviar Solicitação</button>
                     </form>
                   </div>
-                  <ActivityFeed />
+                  {/* FEED - AGORA É UM COMPONENTE SEPARADO E SEGURO */}
+                  <ActivityFeed requests={requests} />
                </div>
             </div>
           )}
@@ -374,11 +449,15 @@ export default function App() {
                <table className="modern-table">
                   <thead><tr><th>SOLICITANTE</th><th>PEDIDO</th><th>STATUS</th><th style={{textAlign:'right'}}>AÇÃO</th></tr></thead>
                   <tbody>
-                     {requests.filter(r=> !['APROVADO','REPROVADO'].includes(r.status)).map(r => (
+                     {requests.filter(r=> !['APROVADO','REPROVADO'].includes(r.status)).map(r => {
+                        let info = 'Detalhes...';
+                        try { info = JSON.parse(r.details).info } catch (e) {}
+
+                        return (
                         <tr key={r.id}>
-                           <td style={{fontWeight:500}}>{r.requester.name}</td>
-                           <td style={{color:'#cbd5e1'}}>{JSON.parse(r.details).info}</td>
-                           <td><span className={`badge ${r.status}`}>{r.status}</span></td>
+                           <td style={{fontWeight:500}}>{r.requester?.name} {r.isExtraordinary && <ShieldAlert size={14} color="#f59e0b" style={{verticalAlign:'middle'}}/>}</td>
+                           <td style={{color:'#cbd5e1'}}>{info}</td>
+                           <td><StatusBadge status={r.status} /></td>
                            <td style={{textAlign:'right'}}>
                               <div style={{display:'flex', gap:'10px', justifyContent:'flex-end'}}>
                                  <button onClick={()=>handleApprove(r.id,'APROVAR')} className="btn-icon btn-approve"><CheckCircle size={18}/></button>
@@ -386,61 +465,35 @@ export default function App() {
                               </div>
                            </td>
                         </tr>
-                     ))}
+                     )})}
                   </tbody>
                </table>
             </div>
           )}
 
-          {/* --- AUDITORIA COMPLETA --- */}
           {activeTab === 'HISTORY' && systemProfile === 'ADMIN' && (
             <div className="glass-card">
               <div style={{marginBottom:'20px'}}>
                 <h3>Histórico de Transações & Auditoria</h3>
                 <p style={{color:'#94a3b8', fontSize:'0.9rem'}}>Registro imutável de todas as alterações de identidade e acesso.</p>
               </div>
-              
               <table className="modern-table">
-                <thead>
-                  <tr>
-                    <th>ID REF (UUID)</th>
-                    <th>DATA</th>
-                    <th>SOLICITANTE</th>
-                    <th>DETALHES DA AÇÃO</th>
-                    <th>APROVADO POR</th>
-                    <th>STATUS FINAL</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>ID REF (UUID)</th><th>DATA</th><th>SOLICITANTE</th><th>DETALHES DA AÇÃO</th><th>APROVADO POR</th><th>STATUS FINAL</th></tr></thead>
                 <tbody>
-                  {requests.filter(r => ['APROVADO', 'REPROVADO'].includes(r.status)).map(r => (
+                  {requests.filter(r => ['APROVADO', 'REPROVADO'].includes(r.status)).map(r => {
+                     let info = ''; try { info = JSON.parse(r.details).info } catch (e) {}
+                     return (
                     <tr key={r.id}>
-                      <td style={{fontFamily:'monospace', color:'#64748b', fontSize:'0.75rem'}}>
-                        <div style={{display:'flex', alignItems:'center', gap:'5px'}}>
-                          <Hash size={12}/> {r.id.slice(0, 8)}...
-                        </div>
-                      </td>
+                      <td style={{fontFamily:'monospace', color:'#64748b', fontSize:'0.75rem'}}><div style={{display:'flex', alignItems:'center', gap:'5px'}}><Hash size={12}/> {r.id.slice(0, 8)}...</div></td>
                       <td style={{color:'#cbd5e1'}}>{new Date(r.updatedAt || r.createdAt).toLocaleDateString()}</td>
-                      <td style={{fontWeight:500}}>{r.requester.name}</td>
-                      <td>
-                        <span style={{color:'white'}}>{JSON.parse(r.details).info}</span>
-                        <div style={{fontSize:'0.75rem', color:'#64748b', marginTop:'2px'}}>Justificativa: {r.justification}</div>
-                      </td>
-                      <td>
-                        {r.lastApprover ? (
-                          <div style={{display:'flex', alignItems:'center', gap:'6px', color:'#cbd5e1'}}>
-                            <UserCheck size={14} color="#10b981"/> {r.lastApprover.name}
-                          </div>
-                        ) : <span style={{color:'#64748b'}}>-</span>}
-                      </td>
-                      <td><span className={`badge ${r.status}`}>{r.status}</span></td>
+                      <td style={{fontWeight:500}}>{r.requester?.name}</td>
+                      <td><span style={{color:'white'}}>{info}</span><div style={{fontSize:'0.75rem', color:'#64748b', marginTop:'2px'}}>Justificativa: {r.justification}</div></td>
+                      <td>{r.lastApprover ? (<div style={{display:'flex', alignItems:'center', gap:'6px', color:'#cbd5e1'}}><UserCheck size={14} color="#10b981"/> {r.lastApprover.name}</div>) : <span style={{color:'#64748b'}}>-</span>}</td>
+                      <td><StatusBadge status={r.status} /></td>
                     </tr>
-                  ))}
+                  )})}
                   {requests.filter(r => ['APROVADO', 'REPROVADO'].includes(r.status)).length === 0 && (
-                    <tr>
-                      <td colSpan={6} style={{textAlign:'center', padding:'40px', color:'#64748b'}}>
-                        Nenhum registro auditado encontrado.
-                      </td>
-                    </tr>
+                    <tr><td colSpan={6} style={{textAlign:'center', padding:'40px', color:'#64748b'}}>Nenhum registro auditado encontrado.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -473,8 +526,11 @@ export default function App() {
           {activeTab === 'PROFILE' && (
             <div className="profile-container">
               <div className="glass-card profile-header-card">
-                 <div className="profile-avatar-lg">{currentUser?.name.charAt(0)}</div>
-                 <div><h1>{currentUser?.name}</h1><p>{currentUser?.role.name}</p></div>
+                 <div className="profile-avatar-lg">{currentUser?.name ? currentUser.name.charAt(0) : 'U'}</div>
+                 <div>
+                   <h1>{currentUser?.name || 'Usuário'}</h1>
+                   <p>{currentUser?.role?.name || 'Sem Cargo Definido'}</p>
+                 </div>
               </div>
               <div className="glass-card">
                  <h3>Meus Acessos</h3>
@@ -482,11 +538,13 @@ export default function App() {
                     <div className="access-item">
                       <div className="icon"><Lock size={16}/></div><div className="info">Email Corporativo (@grupo-3c.com)</div><div className="status active">Ativo</div>
                     </div>
-                    {requests.filter(r => r.requesterId === currentUser?.id && r.status === 'APROVADO').map(access => (
+                    {requests.filter(r => r.requesterId === currentUser?.id && r.status === 'APROVADO').map(access => {
+                       let info = ''; try { info = JSON.parse(access.details).info } catch (e) {}
+                       return (
                        <div key={access.id} className="access-item">
-                         <div className="icon"><Server size={16}/></div><div className="info">{JSON.parse(access.details).info}</div><div className="status active">Ativo</div>
+                         <div className="icon"><Server size={16}/></div><div className="info">{info}</div><div className="status active">Ativo</div>
                        </div>
-                    ))}
+                    )})}
                  </div>
               </div>
             </div>
@@ -497,7 +555,7 @@ export default function App() {
                 <h3>Catálogo de Ferramentas</h3>
                 <table className="modern-table" style={{marginTop:'20px'}}>
                    <thead><tr><th>NOME</th><th>OWNER</th></tr></thead>
-                   <tbody>{tools.map(t => (<tr key={t.id}><td>{t.name}</td><td>{t.owner?.name}</td></tr>))}</tbody>
+                   <tbody>{tools.map(t => (<tr key={t.id}><td>{t.name}</td><td>{t.owner?.name || 'Sem Dono'}</td></tr>))}</tbody>
                 </table>
              </div>
           )}

@@ -33,9 +33,8 @@ const EMPLOYEES = [
   { name: 'Pietro Limberger', role: 'CEO Dizify', dept: 'Dizify', manager: 'Lucas Limberger' },
   { name: 'Marieli Aparecida Ferreira Thomen', role: 'Tech Lead', dept: 'Produto', manager: 'Pietro Limberger' },
 
-  // --- NOVO CARGO ADICIONADO AQUI ---
-  // (Mude 'Novo Líder Dizify' para o nome real da pessoa se já houver alguém)
-  { name: 'Novo Líder Dizify', role: 'Líder de Vendas Dizify', dept: 'Comercial Dizify', manager: 'Lucas Limberger' },
+  // --- LIDERANÇA DIZIFY (Atualizado) ---
+  { name: 'Taryk', role: 'Líder de Vendas Dizify', dept: 'Comercial Dizify', manager: 'Lucas Limberger' },
 
   // ADMINISTRATIVO
   { name: 'Bruno Sahaidak', role: 'Analista Contábil', dept: 'Administrativo', manager: 'Aline Alda da Fonseca Bocchi' },
@@ -99,10 +98,10 @@ const EMPLOYEES = [
   { name: 'Lucas Antonio Costa', role: 'Closer', dept: 'Comercial Contact', manager: 'Michele Bodot dos Anjos' },
   { name: 'Gabriel Schneider Bernadini', role: 'Recuperador', dept: 'Comercial Contact', manager: 'Michele Bodot dos Anjos' },
   { name: 'Bianca da Cunha', role: 'Closer', dept: 'Comercial Contact', manager: 'Michele Bodot dos Anjos' },
-  // COMERCIAL DIZIFY
-  { name: 'Eduardo Elias', role: 'Closer', dept: 'Comercial Dizify', manager: 'Novo Líder Dizify' },
-  { name: 'Taryk', role: 'Closer', dept: 'Comercial Dizify', manager: 'Novo Líder Dizify' },
-  { name: 'Iago Moura do Prado', role: 'Closer', dept: 'Comercial Dizify', manager: 'Novo Líder Dizify' },
+  
+  // COMERCIAL DIZIFY (Atualizado: Reportam ao Taryk)
+  { name: 'Eduardo Elias', role: 'Closer', dept: 'Comercial Dizify', manager: 'Taryk' },
+  { name: 'Iago Moura do Prado', role: 'Closer', dept: 'Comercial Dizify', manager: 'Taryk' },
 
   // TECNOLOGIA E SEGURANÇA (INFRA)
   { name: 'Allan Von Stein Portela', role: 'Analista de Segurança e Infraestrutura', dept: 'Tecnologia e Segurança', manager: 'Vladimir Antonio Sesar' },
@@ -199,9 +198,8 @@ async function main() {
       });
     }
 
-    // 🔥 GERA EMAIL REAL: nome.sobrenome@grupo-3c.com
+    // Gera email: nome.sobrenome@grupo-3c.com
     const emailName = emp.name.toLowerCase().split(' ');
-    // Pega primeiro e último nome (Remove caracteres especiais se quiser sofisticar, mas aqui vai simples)
     const email = `${emailName[0]}.${emailName[emailName.length - 1]}@grupo-3c.com`;
 
     // Cria usuário
@@ -235,15 +233,17 @@ async function main() {
   }
   console.log('✅ Hierarquia vinculada.');
 
-  // 5. Criar Ferramentas
-  const ownerId = usersMap.get('Diogo Henrique Hartmann') || usersMap.get('Allan Von Stein Portela');
+  // 5. Criar Ferramentas com Owner e Sub-Owner
+  const ownerUser = await prisma.user.findFirst({ where: { name: 'Diogo Henrique Hartmann' } }); // CTO como Owner
+  const subOwnerUser = await prisma.user.findFirst({ where: { name: 'Vladimir Antonio Sesar' } }); // Líder SI como Sub
   
-  if (ownerId) {
+  if (ownerUser) {
     await prisma.tool.create({
       data: {
         name: 'Slack',
         description: 'Comunicação Oficial',
-        ownerId: ownerId,
+        ownerId: ownerUser.id,
+        subOwnerId: subOwnerUser?.id, // Define o Sub-Owner
         accessLevels: JSON.stringify({ create: [{ name: 'Admin' }, { name: 'Member' }, { name: 'Guest' }] })
       }
     });
@@ -251,7 +251,8 @@ async function main() {
       data: {
         name: 'Jira Software',
         description: 'Projetos',
-        ownerId: ownerId,
+        ownerId: ownerUser.id,
+        subOwnerId: subOwnerUser?.id,
         accessLevels: JSON.stringify({ create: [{ name: 'Project Admin' }, { name: 'Developer' }, { name: 'Viewer' }] })
       }
     });
