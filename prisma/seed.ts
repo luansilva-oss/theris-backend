@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Dados fornecidos (Normalizados)
+// Dados fornecidos (Estrutura Real Theris/Grupo 3C)
 const EMPLOYEES = [
   // BOARD
   { name: 'Ney Eurico Pereira', role: 'CEO', dept: 'Board', manager: '' },
@@ -159,7 +159,7 @@ const EMPLOYEES = [
 ];
 
 async function main() {
-  console.log('🌱 Iniciando Seed da Estrutura Real (Theris)...');
+  console.log('🌱 Iniciando Seed SSO Enterprise...');
 
   // 1. Limpeza
   await prisma.request.deleteMany();
@@ -179,8 +179,8 @@ async function main() {
   }
   console.log(`✅ ${deptNames.length} Departamentos criados.`);
 
-  // 3. Criar Cargos Únicos e Usuários (SEM MANAGER POR ENQUANTO)
-  const usersMap = new Map(); // Mapa de Nome -> ID do Usuário criado
+  // 3. Criar Cargos Únicos e Usuários
+  const usersMap = new Map(); // Mapa de Nome -> ID do Usuário
 
   for (const emp of EMPLOYEES) {
     // Busca ou cria o cargo
@@ -194,28 +194,29 @@ async function main() {
       });
     }
 
-    // Gera email fake: nome.sobrenome@theris.com
+    // 🔥 GERA EMAIL REAL: nome.sobrenome@grupo-3c.com
     const emailName = emp.name.toLowerCase().split(' ');
-    const email = `${emailName[0]}.${emailName[emailName.length - 1]}@theris.com`;
+    // Pega primeiro e último nome
+    const email = `${emailName[0]}.${emailName[emailName.length - 1]}@grupo-3c.com`;
 
     // Cria usuário
     try {
       const user = await prisma.user.create({
         data: {
           name: emp.name,
-          email: email, // Nota: Se houver homônimos pode dar erro, mas neste dataset parece ok
+          email: email, // Email Compatível com Google
           roleId: role.id,
           departmentId: deptsMap.get(emp.dept)
         }
       });
       usersMap.set(emp.name, user.id);
     } catch (e) {
-      console.log(`⚠️ Erro ao criar ${emp.name} (provável email duplicado)`);
+      console.log(`⚠️ Erro/Duplicidade ao criar: ${emp.name} (${email})`);
     }
   }
-  console.log('✅ Usuários e Cargos criados.');
+  console.log('✅ Usuários criados com emails @grupo-3c.com');
 
-  // 4. Conectar Gestores (Agora que todos existem no banco)
+  // 4. Conectar Gestores
   for (const emp of EMPLOYEES) {
     if (emp.manager && emp.manager !== '-' && usersMap.has(emp.name)) {
       const managerId = usersMap.get(emp.manager);
@@ -227,10 +228,10 @@ async function main() {
       }
     }
   }
-  console.log('✅ Hierarquia de Gestão vinculada.');
+  console.log('✅ Hierarquia vinculada.');
 
-  // 5. Criar Ferramentas Padrão
-  const ownerId = usersMap.get('Diogo Henrique Hartmann') || usersMap.get('Allan Von Stein Portela'); // CTO ou Infra
+  // 5. Criar Ferramentas Padrão (Owner: Diogo CTO ou Infra)
+  const ownerId = usersMap.get('Diogo Henrique Hartmann') || usersMap.get('Allan Von Stein Portela');
   
   if (ownerId) {
     await prisma.tool.create({
@@ -243,15 +244,15 @@ async function main() {
     });
     await prisma.tool.create({
       data: {
-        name: 'Jira',
-        description: 'Gestão de Tarefas',
+        name: 'Jira Software',
+        description: 'Projetos',
         ownerId: ownerId,
-        accessLevels: JSON.stringify({ create: [{ name: 'Admin' }, { name: 'Developer' }, { name: 'Viewer' }] })
+        accessLevels: JSON.stringify({ create: [{ name: 'Project Admin' }, { name: 'Developer' }, { name: 'Viewer' }] })
       }
     });
   }
 
-  console.log('🏁 Seed Concluído com Sucesso!');
+  console.log('🏁 Seed SSO Concluído!');
 }
 
 main()
