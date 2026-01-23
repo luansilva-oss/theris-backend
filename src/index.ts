@@ -15,7 +15,7 @@ app.use(cors({
 
 app.use(express.json());
 
-// --- FUNÇÃO SEGURA PARA LER O TOKEN (Versão Node.js) ---
+// --- FUNÇÃO SEGURA PARA LER O TOKEN ---
 function decodeJwt(token: string) {
   try {
     const base64Payload = token.split('.')[1];
@@ -28,20 +28,15 @@ function decodeJwt(token: string) {
 }
 
 // ==========================================
-// ROTA DE LOGIN
+// ROTA DE LOGIN (ATUALIZADA COM SUPER_ADMIN)
 // ==========================================
 app.post('/api/login/google', async (req: Request, res: Response): Promise<any> => {
   const { credential } = req.body;
 
-  if (!credential) {
-    return res.status(400).json({ error: 'Credencial não fornecida' });
-  }
+  if (!credential) return res.status(400).json({ error: 'Credencial não fornecida' });
 
   const payload = decodeJwt(credential);
-  
-  if (!payload || !payload.email) {
-    return res.status(400).json({ error: 'Token inválido' });
-  }
+  if (!payload || !payload.email) return res.status(400).json({ error: 'Token inválido' });
 
   const googleEmail = payload.email;
   console.log(`Tentativa de login: ${googleEmail}`);
@@ -52,23 +47,26 @@ app.post('/api/login/google', async (req: Request, res: Response): Promise<any> 
       include: { role: true, department: true, manager: true }
     });
 
-    if (!user) {
-      console.log('Usuário não encontrado no banco.');
-      return res.status(403).json({ error: 'Usuário não encontrado. Contate o Admin.' });
-    }
+    if (!user) return res.status(403).json({ error: 'Usuário não encontrado. Contate o Admin.' });
 
+    // --- DEFINIÇÃO DE PERFIS (RBAC) ---
     let profile = 'VIEWER';
-
-    // --- CORREÇÃO AQUI (Adicionado ?. e || "") ---
-    // Verifica se o departamento existe antes de ler o nome
     const deptName = user.department?.name || "";
     const roleName = user.role?.name || "";
 
-    if (['Tecnologia e Segurança', 'Board'].includes(deptName)) {
+    // 1. Nível 4: SUPER_ADMIN (Vladimir Sesar)
+    if (user.name === 'Vladimir Antonio Sesar') {
+      profile = 'SUPER_ADMIN';
+    } 
+    // 2. Nível 3: ADMIN (SI e Board)
+    else if (['Tecnologia e Segurança', 'Board'].includes(deptName)) {
       profile = 'ADMIN';
-    } else if (['Líder', 'Head', 'Gerente', 'Coordenador', 'Gestor', 'CEO'].some(k => roleName.includes(k))) {
+    } 
+    // 3. Nível 2: APPROVER (Gestores)
+    else if (['Líder', 'Head', 'Gerente', 'Coordenador', 'Gestor', 'CEO'].some(k => roleName.includes(k))) {
       profile = 'APPROVER';
     }
+    // 4. Nível 1: VIEWER (Padrão)
 
     return res.json({ user, profile });
 
@@ -79,33 +77,25 @@ app.post('/api/login/google', async (req: Request, res: Response): Promise<any> 
 });
 
 // ==========================================
-// ROTAS DE DADOS
+// ROTAS DE DADOS E SOLICITAÇÕES
 // ==========================================
 app.get('/api/structure', async (req, res) => {
   const structure = await prisma.department.findMany({ include: { roles: { include: { users: true } } } });
   res.json(structure);
 });
-
 app.get('/api/tools', async (req, res) => {
   const tools = await prisma.tool.findMany({ include: { owner: true } });
   res.json(tools);
 });
-
 app.get('/api/users', async (req, res) => {
   const users = await prisma.user.findMany({ include: { role: true, department: true } });
   res.json(users);
 });
 
-// ==========================================
-// ROTAS DE SOLICITAÇÕES
-// ==========================================
 app.get('/api/solicitacoes', listarSolicitacoes);
 app.post('/api/solicitacoes', criarSolicitacao);
 app.patch('/api/solicitacoes/:id', atualizarStatus);
 
-// ==========================================
-// START SERVER
-// ==========================================
 const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Backend rodando em http://localhost:${PORT}`);
