@@ -1,70 +1,94 @@
+// --- CONFIGURAÇÃO DO BANCO ---
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
-// --- MODELS ---
+// --- ESTRUTURA ORGANIZACIONAL ---
 
-model Colaborador {
+model Department {
+  id    String @id @default(uuid())
+  name  String
+  roles Role[]
+  users User[]
+}
+
+model Role {
+  id           String     @id @default(uuid())
+  name         String
+  department   Department @relation(fields: [departmentId], references: [id])
+  departmentId String
+  users        User[]
+}
+
+model User {
+  id           String      @id @default(uuid())
+  name         String
+  email        String      @unique 
+  role         Role?       @relation(fields: [roleId], references: [id])
+  roleId       String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  departmentId String?
+
+  // --- HIERARQUIA (Novo: Quem é o chefe de quem) ---
+  managerId     String?
+  manager       User?       @relation("Manager", fields: [managerId], references: [id])
+  directReports User[]      @relation("Manager")
+
+  // --- RELAÇÕES DO SISTEMA IGA ---
+  requests      Request[]   @relation("Requester") // Pedidos que ele fez
+  approvals     Request[]   @relation("Approver")  // Pedidos que ele aprovou (Rastreabilidade)
+  toolsOwned    Tool[]      @relation("ToolOwner") // Ferramentas que ele é dono
+}
+
+// --- FERRAMENTAS E ACESSOS (ENTERPRISE) ---
+
+model Tool {
   id           String   @id @default(uuid())
-  nome         String
-  email        String   @unique
-  cargo        String
-  departamento String
-  kbs          String?
-  ativo        Boolean  @default(true)
+  name         String
+  description  String?
+  ownerId      String?
+  owner        User?    @relation("ToolOwner", fields: [ownerId], references: [id])
   
-  // Relacionamento: Um colaborador pode ter feito várias solicitações
-  solicitacoes Solicitacao[] 
-
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
-
-  @@map("colaboradores")
+  // Campo JSON para guardar níveis (Ex: Admin, Member, Guest)
+  accessLevels String? 
 }
 
-model Solicitacao {
-  id                String            @id @default(uuid())
-  
-  // Quem pediu? (Chave Estrangeira)
-  solicitanteId     String
-  solicitante       Colaborador       @relation(fields: [solicitanteId], references: [id])
-  
-  // O que é o pedido?
-  tipo              TipoSolicitacao
-  status            StatusSolicitacao @default(PENDENTE_SI)
-  
-  // Detalhes da mudança
-  colaboradorAlvo   String            // Nome ou Email de quem vai mudar de cargo
-  cargoNovo         String?
-  departamentoNovo  String?
-  justificativa     String?
-  
-  // Auditoria
-  criadoEm          DateTime          @default(now())
-  atualizadoEm      DateTime          @updatedAt
+// --- CORE: SOLICITAÇÕES DE ACESSO ---
 
-  @@map("solicitacoes")
+model Request {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Quem pediu
+  requesterId String
+  requester   User   @relation("Requester", fields: [requesterId], references: [id])
+
+  // Dados do Pedido
+  type                String // CHANGE_ROLE ou ACCESS_TOOL
+  status              String // PENDENTE_SI, PENDENTE_RH, APROVADO, REPROVADO
+  currentApproverRole String // SI, RH, OWNER, CONCLUIDO
+  
+  details       String // JSON string com detalhes (Ex: Qual ferramenta, qual nível)
+  justification String
+
+  // Rastreabilidade (Quem aprovou/reprovou por último)
+  lastApproverId String?
+  lastApprover   User?   @relation("Approver", fields: [lastApproverId], references: [id])
 }
 
-// --- ENUMS (Opções Fixas) ---
+// --- AUDITORIA ---
 
-enum TipoSolicitacao {
-  MUDANCA_CARGO
-  NOVA_CONTRATACAO
-  DESLIGAMENTO
-  AJUSTE_ACESSO
-}
-
-enum StatusSolicitacao {
-  PENDENTE_SI        // Esperando time de SI
-  PENDENTE_GESTOR    // Esperando Gestor (após SI aprovar)
-  APROVADO           // Tudo certo, pronto para executar
-  RECUSADO           // Alguém negou
-  PAUSADO            // Estourou o SLA de 2 dias
-  CONCLUIDO          // Executado no sistema
+model AuditLog {
+  id         String   @id @default(uuid())
+  createdAt  DateTime @default(now())
+  action     String
+  targetUser String
+  executor   String
+  details    String
 }

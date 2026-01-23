@@ -3,82 +3,117 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// 1. CRIA UMA NOVA SOLICITAÇÃO (POST)
+// Criar Solicitação
 export const criarSolicitacao = async (req: Request, res: Response) => {
   try {
-    const { solicitanteId, tipo, colaboradorAlvo, cargoNovo, departamentoNovo, justificativa } = req.body;
+    const { requesterId, type, details, justification } = req.body;
 
-    // Verifica se o solicitante existe
-    const solicitante = await prisma.colaborador.findUnique({
-      where: { id: solicitanteId }
-    });
-
-    if (!solicitante) {
-      return res.status(404).json({ error: 'Solicitante não encontrado' });
-    }
-
-    // Cria a solicitação no banco
-    const novaSolicitacao = await prisma.solicitacao.create({
+    const novaSolicitacao = await prisma.request.create({
       data: {
-        solicitanteId,
-        tipo,              // Ex: "MUDANCA_CARGO"
-        colaboradorAlvo,
-        cargoNovo,
-        departamentoNovo,
-        justificativa
-        // status entra como "PENDENTE_SI" automaticamente
+        requesterId,
+        type, // 'CHANGE_ROLE' ou 'ACCESS_TOOL'
+        details: JSON.stringify(details),
+        justification,
+        status: 'PENDENTE_SI', // Tudo começa com SI
+        currentApproverRole: 'SI'
       }
     });
 
     return res.status(201).json(novaSolicitacao);
-
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Erro ao criar solicitação' });
+    console.error("Erro ao criar:", error);
+    return res.status(500).json({ error: "Erro ao criar solicitação" });
   }
 };
 
-// 2. LISTA SOLICITAÇÕES COM FILTRO (GET)
-// Exemplo de uso: /api/solicitacoes?status=PENDENTE_SI
+// Listar (ATUALIZADO PARA TRAZER O APROVADOR)
 export const listarSolicitacoes = async (req: Request, res: Response) => {
   try {
-    // Pega o status da URL (query param)
-    const { status } = req.query;
-
-    // Se veio status na URL, filtra por ele. Se não, traz tudo (objeto vazio).
-    // O "as any" força o TypeScript a aceitar a string como enum
-    const filtro = status ? { status: String(status) as any } : {};
-
-    const lista = await prisma.solicitacao.findMany({
-      where: filtro,                  // Aplica o filtro aqui
-      include: { solicitante: true }, // Traz os dados do Colaborador que pediu
-      orderBy: { criadoEm: 'desc' }   // Mais recentes primeiro
+    const lista = await prisma.request.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { 
+        requester: true,    // Traz dados de quem pediu
+        lastApprover: true  // <--- IMPORTANTE: Traz o nome de quem assinou
+      } 
     });
-
     return res.json(lista);
-
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Erro ao buscar solicitações' });
+    return res.status(500).json({ error: "Erro ao buscar" });
   }
 };
 
-// 3. ATUALIZA O STATUS (PATCH)
+// Aprovação com Regras de SoD e Fluxo
 export const atualizarStatus = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { status } = req.body;
+    const { id } = req.params as { id: string };
+    const { status, approverId } = req.body;
 
-    // Atualiza no banco
-    const solicitacaoAtualizada = await prisma.solicitacao.update({
-      where: { id: String(id) }, // Garante que o ID seja string
-      data: { status }
+    // 1. Buscar a solicitação atual
+    const solicitacao = await prisma.request.findUnique({ 
+      where: { id },
+      include: { requester: true }
     });
 
-    return res.json(solicitacaoAtualizada);
+    if (!solicitacao) return res.status(404).json({ error: "Solicitação não encontrada" });
+
+    // ⛔ REGRA DE OURO: Quem solicitou NÃO pode aprovar (SoD)
+    if (solicitacao.requesterId === approverId) {
+      return res.status(403).json({ error: "VIOLAÇÃO DE COMPLIANCE: Você não pode aprovar sua própria solicitação." });
+    }
+
+    // Se for REJEIÇÃO, encerra
+    if (status === 'REPROVADO') {
+      const atualizada = await prisma.request.update({
+        where: { id },
+        data: { status: 'REPROVADO', lastApproverId: approverId }
+      });
+      return res.json(atualizada);
+    }
+
+    // LÓGICA DE APROVAÇÃO EM CASCATA
+    let novoStatus = solicitacao.status;
+    let proximoAprovador = solicitacao.currentApproverRole;
+
+    // Cenário 1: Está com SI e foi aprovado
+    if (solicitacao.status === 'PENDENTE_SI') {
+        if (solicitacao.type === 'CHANGE_ROLE') {
+            novoStatus = 'PENDENTE_RH';
+            proximoAprovador = 'RH';
+        } else if (solicitacao.type === 'ACCESS_TOOL') {
+            novoStatus = 'PENDENTE_OWNER';
+            proximoAprovador = 'OWNER';
+        }
+    } 
+    // Cenário 2: Está com RH ou OWNER e foi aprovado -> Finaliza
+    else if (solicitacao.status === 'PENDENTE_RH' || solicitacao.status === 'PENDENTE_OWNER') {
+        novoStatus = 'APROVADO';
+        proximoAprovador = 'CONCLUIDO';
+        
+        // Log de Auditoria
+        await prisma.auditLog.create({
+            data: {
+                action: solicitacao.type,
+                targetUser: solicitacao.requester.name,
+                executor: approverId,
+                details: `Aprovado final por ${proximoAprovador}.`
+            }
+        });
+    }
+
+    // Atualiza no Banco
+    const solicitacaoFinal = await prisma.request.update({
+      where: { id },
+      data: { 
+        status: novoStatus, 
+        currentApproverRole: proximoAprovador,
+        lastApproverId: approverId // Salva quem clicou no botão
+      }
+    });
+
+    return res.json(solicitacaoFinal);
 
   } catch (error) {
     console.error(error);
-    return res.status(400).json({ error: 'Erro ao atualizar status. Verifique o ID.' });
+    return res.status(500).json({ error: "Erro ao processar aprovação" });
   }
 };
