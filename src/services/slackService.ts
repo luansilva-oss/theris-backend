@@ -24,7 +24,7 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
       view: {
         type: 'modal',
         callback_id: 'theris_main_modal',
-        title: { type: 'plain_text', text: 'Theris IGA 🦅' },
+        title: { type: 'plain_text', text: 'Theris' },
         blocks: [
           {
             type: 'section',
