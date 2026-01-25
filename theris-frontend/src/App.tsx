@@ -4,12 +4,18 @@ import {
   CheckCircle, XCircle, ShieldCheck, Server, ChevronRight, 
   ChevronDown, LogOut, Lock, User, MapPin, Award,
   Bird, Activity, TrendingUp, AlertCircle, Calendar, Zap,
-  Hash, UserCheck, ShieldAlert, UserPlus, Crown
+  Hash, UserCheck, ShieldAlert, UserPlus, Crown,
+  ArrowRight
 } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import './App.css';
 
-// --- CONFIGURAÇÕES ---
+// --- CONFIGURAÇÃO DE IP (Para acesso na rede interna) ---
+// Se for rodar localmente: use 'http://localhost:3000'
+// Se for liberar para o Grupo 3C: Troque pelo seu IP (ex: 'http://192.168.0.25:3000')
+const API_URL = 'http://localhost:3000'; 
+
+// --- CONFIGURAÇÕES GERAIS ---
 const LEADER_KEYWORDS = ['Líder', 'Head', 'Tech Lead', 'Coordenador', 'Gerente', 'Gestor'];
 const DEPT_ORDER = [
   'Board', 'Lideranças & Gestão', 'Tecnologia e Segurança', 'Produto', 
@@ -39,7 +45,6 @@ interface Request {
   isExtraordinary: boolean; 
 }
 
-// ATUALIZAÇÃO: ADICIONADO SUPER_ADMIN
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER';
 
 // --- SUB-COMPONENTES ---
@@ -114,26 +119,71 @@ export default function App() {
 
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
+  // --- FUNÇÃO DE CARREGAMENTO DE DADOS ---
   const loadData = async () => {
     try {
+      // Uso da constante API_URL para facilitar troca de IP
       const [resStruct, resTools, resUsers, resReqs] = await Promise.all([
-        fetch('http://localhost:3000/api/structure'),
-        fetch('http://localhost:3000/api/tools'),
-        fetch('http://localhost:3000/api/users'),
-        fetch('http://localhost:3000/api/solicitacoes')
+        fetch(`${API_URL}/api/structure`),
+        fetch(`${API_URL}/api/tools`),
+        fetch(`${API_URL}/api/users`),
+        fetch(`${API_URL}/api/solicitacoes`)
       ]);
-      setStructure(await resStruct.json());
-      setTools(await resTools.json());
-      setAllUsers(await resUsers.json());
-      setRequests(await resReqs.json());
+      
+      const rawStruct: Department[] = await resStruct.json();
+      const dUsers = await resUsers.json();
+      const dTools = await resTools.json();
+      const dReqs = await resReqs.json();
+
+      // Ordenação e Estrutura do Organograma
+      const finalStructure: Department[] = [];
+      const leadershipRoles: Role[] = [];
+      const boardDept = rawStruct.find(d => d.name === 'Board');
+      if (boardDept) finalStructure.push(boardDept);
+
+      rawStruct.filter(d => d.name !== 'Board').forEach(dept => {
+        const leaders = dept.roles.filter(r => LEADER_KEYWORDS.some(k => r.name.includes(k)));
+        const staff = dept.roles.filter(r => !LEADER_KEYWORDS.some(k => r.name.includes(k)));
+        if (leaders.length > 0) leaders.forEach(l => leadershipRoles.push({ ...l, name: `${l.name} (${dept.name})` }));
+        if (staff.length > 0) finalStructure.push({ ...dept, roles: staff });
+      });
+
+      if (leadershipRoles.length > 0) finalStructure.push({ id: 'liderancas-virtual-id', name: 'Lideranças & Gestão', roles: leadershipRoles });
+
+      finalStructure.sort((a, b) => {
+        let idxA = DEPT_ORDER.indexOf(a.name);
+        let idxB = DEPT_ORDER.indexOf(b.name);
+        return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+      });
+
+      setStructure(finalStructure);
+      setTools(dTools);
+      setAllUsers(dUsers);
+      setRequests(dReqs);
     } catch (e) { console.error("Erro ao carregar dados:", e); }
   };
 
-  useEffect(() => { loadData(); }, []);
+  // --- AUTO-UPDATE (POLLING) ---
+  useEffect(() => {
+    loadData(); // Carrega na hora que abre
 
+    // Cria um relógio que roda a cada 5000ms (5 segundos)
+    const intervalId = setInterval(() => {
+      // Só recarrega se o usuário estiver logado para não gastar recurso à toa
+      if (isLoggedIn) {
+         loadData();
+      }
+    }, 5000);
+
+    // Limpa o relógio se a pessoa fechar a aba (evita bugs de memória)
+    return () => clearInterval(intervalId);
+  }, [isLoggedIn]); // Recria o relógio se o status de login mudar
+
+
+  // --- HANDLERS ---
   const responseGoogle = async (credentialResponse: any) => {
     try {
-      const res = await fetch('http://localhost:3000/api/login/google', {
+      const res = await fetch(`${API_URL}/api/login/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential: credentialResponse.credential, clientId: credentialResponse.clientId })
@@ -170,7 +220,7 @@ export default function App() {
 
     const beneficiaryId = (formType === 'NOMINATE_DEPUTY') ? currentUser.id : (targetUserId || currentUser.id);
 
-    await fetch('http://localhost:3000/api/solicitacoes', {
+    await fetch(`${API_URL}/api/solicitacoes`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ requesterId: beneficiaryId, type: formType, details: finalDetails, justification: formJustification, isExtraordinary })
     });
@@ -180,7 +230,7 @@ export default function App() {
   };
 
   const handleApprove = async (id: string, action: 'APROVAR' | 'REPROVAR') => {
-    const res = await fetch(`http://localhost:3000/api/solicitacoes/${id}`, {
+    const res = await fetch(`${API_URL}/api/solicitacoes/${id}`, {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ status: action, approverId: currentUser?.id })
     });
@@ -194,8 +244,58 @@ export default function App() {
 
   const availableRoles = targetDept ? structure.find(d => d.name === targetDept)?.roles || [] : [];
 
-  if (!isLoggedIn) return (<div className="login-wrapper"><div className="glass-card" style={{padding:'40px', textAlign:'center'}}><h2>Carregando Login...</h2></div></div>);
+  // --- TELA DE LOGIN ---
+  if (!isLoggedIn) {
+    return (
+      <div className="login-wrapper">
+        <div className="ambient-background">
+          <div className="cloud cloud-1"></div>
+          <div className="cloud cloud-2"></div>
+          <div className="cloud cloud-3"></div>
+        </div>
+        <div className="fog-layer"></div>
+        <div className="login-brand-section glass-panel-left">
+          <div className="brand-content">
+            <div style={{display:'flex', alignItems:'center', gap:'15px', marginBottom:'30px'}}>
+               <div style={{background:'rgba(255,255,255,0.1)', padding:'10px', borderRadius:'12px', display:'flex', border:'1px solid rgba(255,255,255,0.2)'}}>
+                 <Bird size={32} color="#0ea5e9" strokeWidth={2}/>
+               </div>
+               <span style={{fontSize:'2rem', fontWeight: 700, letterSpacing:'-1px', color:'white', textShadow:'0 2px 10px rgba(0,0,0,0.3)'}}>THERIS</span>
+            </div>
+            <h1 style={{fontSize:'3.5rem', lineHeight:'1.1', marginBottom:'20px', color:'white', textShadow:'0 4px 20px rgba(0,0,0,0.5)'}}>
+              Governança de <br/>Identidade <span style={{color:'#38bdf8'}}>Inteligente.</span>
+            </h1>
+            <p style={{fontSize:'1.1rem', color:'#e2e8f0', maxWidth:'500px', lineHeight:'1.6', textShadow:'0 2px 5px rgba(0,0,0,0.5)'}}>
+              Centralize acessos, automatize auditorias e garanta compliance com a plataforma líder do Grupo 3C.
+            </p>
+          </div>
+          <Bird className="giant-bg-icon" size={700} strokeWidth={0.3} color="white"/>
+        </div>
+        <div className="login-form-section glass-panel-right">
+          <div className="login-box">
+             <div style={{textAlign:'center', marginBottom:'40px'}}>
+               <h2 style={{fontSize:'2rem', color:'white', marginBottom:'10px', fontWeight:600}}>Acesse sua conta</h2>
+               <p style={{color:'#94a3b8', fontSize:'1rem'}}>Utilize suas credenciais corporativas</p>
+             </div>
+             <div className="google-btn-wrapper">
+               <GoogleLogin
+                  onSuccess={responseGoogle}
+                  onError={() => alert('Falha no Login')}
+                  theme="filled_black" shape="pill" size="large" text="continue_with" width="100%"
+               />
+             </div>
+             <div style={{marginTop:'40px', textAlign:'center', fontSize:'0.85rem', color:'#64748b', borderTop:'1px solid rgba(255,255,255,0.05)', paddingTop:'20px'}}>
+               <Lock size={14} style={{verticalAlign:'middle', marginRight:'6px', color:'#0ea5e9'}}/>
+               Ambiente Seguro & Criptografado
+               <div style={{marginTop:'5px', opacity:0.7}}>© 2025 Grupo 3C - Tecnologia</div>
+             </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  // --- TELA PRINCIPAL (DASHBOARD) ---
   return (
     <div className="app-layout">
       <aside className="sidebar">
@@ -246,13 +346,26 @@ export default function App() {
       <main className="main-area">
         <header className="header-bar">
            <div>
-             <h2 style={{color:'white', fontSize:'1.2rem'}}>
-               {activeTab === 'DASHBOARD' ? 'Visão Geral' : 
-                activeTab === 'ORG' ? 'Estrutura Organizacional' :
-                activeTab === 'REQUESTS' ? 'Central de Solicitações' : 
-                activeTab === 'HISTORY' ? 'Log de Auditoria & Compliance' : 'Painel'}
-             </h2>
-             <div style={{color:'#94a3b8', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'5px'}}><Calendar size={12}/> {today}</div>
+             <div style={{
+               background: 'rgba(14, 165, 233, 0.1)', 
+               border: '1px solid rgba(14, 165, 233, 0.2)', 
+               padding: '8px 16px', 
+               borderRadius: '8px',
+               display: 'inline-flex',
+               alignItems: 'center',
+               gap: '8px'
+             }}>
+                 <h2 style={{color: '#38bdf8', fontSize:'1.1rem', margin: 0, fontWeight: 600}}>
+                   {activeTab === 'DASHBOARD' ? 'Visão Geral' : 
+                    activeTab === 'ORG' ? 'Estrutura Organizacional' :
+                    activeTab === 'REQUESTS' ? 'Central de Solicitações' : 
+                    activeTab === 'HISTORY' ? 'Auditoria & Compliance' : 
+                    activeTab === 'TOOLS' ? 'Catálogo de Ferramentas' : 'Meu Perfil'}
+                 </h2>
+             </div>
+             <div style={{color:'#94a3b8', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'5px', marginTop:'8px', paddingLeft:'4px'}}>
+               <Calendar size={12}/> {today}
+             </div>
            </div>
            <div className="status-badge"><div className="dot"></div> Sistema Operante</div>
         </header>
@@ -263,10 +376,9 @@ export default function App() {
             <div className="dashboard-grid">
                <div className="hero-banner">
                  <div>
-                   <h1>Olá, {currentUser?.name?.split(' ')[0] || 'Colaborador'}! 👋</h1>
+                   <h1>Olá, {currentUser?.name?.split(' ')[0] || 'Colaborador'}!</h1>
                    <p>Você tem <strong style={{color:'#f59e0b'}}>{requests.filter(r=>r.status.includes('PENDENTE')).length} solicitações</strong> aguardando sua análise hoje.</p>
                  </div>
-                 <div className="hero-actions"><button className="secondary-btn" onClick={() => document.getElementById('req-form')?.scrollIntoView({behavior:'smooth'})}>Nova Solicitação</button></div>
                </div>
 
                <div className="stats-container">
@@ -374,8 +486,6 @@ export default function App() {
                         let info = 'Detalhes...';
                         try { info = JSON.parse(r.details).info } catch (e) {}
 
-                        // LÓGICA DE EXIBIÇÃO DE BOTÕES (FRONTEND)
-                        // Esconde se for o próprio usuário, A NÃO SER QUE seja SUPER_ADMIN
                         const isSelf = r.requesterId === currentUser?.id;
                         const canAct = systemProfile === 'SUPER_ADMIN' || !isSelf;
 
@@ -401,8 +511,6 @@ export default function App() {
             </div>
           )}
 
-          {/* AS DEMAIS ABAS (HISTORY, ORG, PROFILE, TOOLS) MANTÊM-SE IGUAIS À VERSÃO ANTERIOR */}
-          {/* Vou omitir para não ficar gigante, mas você deve manter o código que já estava lá */}
           {activeTab === 'HISTORY' && systemProfile !== 'VIEWER' && (
              <div className="glass-card">
                  <h3>Histórico de Transações & Auditoria</h3>
@@ -450,7 +558,6 @@ export default function App() {
             </div>
           )}
           
-          {/* PROFILE TAB E TOOLS TAB (Mantenha o código existente) */}
           {activeTab === 'PROFILE' && (
             <div className="profile-container">
               <div className="glass-card profile-header-card">
