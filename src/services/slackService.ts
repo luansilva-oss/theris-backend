@@ -7,14 +7,13 @@ const slackApp = new App({
   token: process.env.SLACK_BOT_TOKEN, 
   appToken: process.env.SLACK_APP_TOKEN,
   socketMode: true,
-  logLevel: LogLevel.ERROR, // Reduz logs desnecessários, foca em erros
+  logLevel: LogLevel.ERROR, 
 });
 
 // ============================================================
 // 1. MENU PRINCIPAL (/theris)
 // ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
-  // 1. ACK IMEDIATO (Essencial para não dar erro na tela)
   await ack();
 
   try {
@@ -53,7 +52,7 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 2. ABERTURA DE MODAIS (Formulários)
+// 2. ABERTURA DE MODAIS
 // ============================================================
 
 // PROMOÇÃO / MUDANÇA
@@ -107,7 +106,7 @@ slackApp.action('btn_hire', async ({ ack, body, client }) => {
   } catch (e) { console.error('Erro ao abrir Modal Hire:', e); }
 });
 
-// DEMISSÃO
+// DEMISSÃO (CORRIGIDO AQUI)
 slackApp.action('btn_fire', async ({ ack, body, client }) => {
   await ack();
   try {
@@ -123,7 +122,14 @@ slackApp.action('btn_fire', async ({ ack, body, client }) => {
           { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Motivo (Opcional)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp', optional: true } }
+          // AQUI ESTAVA O ERRO: 'optional: true' movido para o bloco 'input', não no 'element'
+          { 
+              type: 'input', 
+              block_id: 'blk_reason', 
+              optional: true, 
+              label: { type: 'plain_text', text: 'Motivo (Opcional)' }, 
+              element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } 
+          }
         ]
       }
     });
@@ -261,8 +267,6 @@ slackApp.view('submit_tool_request', async ({ ack, body, view, client }) => {
         accessLevel: isExtra ? 'Extraordinary' : 'Standard'
     };
 
-    // Reutiliza a função saveRequest, mas precisamos tratar o isExtraordinary
-    // Vamos fazer manual aqui para passar o flag correto
     try {
         const slackUser = body.user.id;
         let requesterId = '';
