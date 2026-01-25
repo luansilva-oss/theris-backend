@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react';
 import { 
-  LayoutDashboard, Users, Briefcase, FileText, Clock, 
-  CheckCircle, XCircle, ShieldCheck, Server, ChevronRight, 
-  ChevronDown, LogOut, Lock, User, MapPin, Award,
-  Bird, Activity, TrendingUp, AlertCircle, Calendar, Zap,
-  Hash, UserCheck, ShieldAlert, UserPlus, Crown,
-  ArrowRight
+  LayoutDashboard, Users, FileText, Clock, CheckCircle, XCircle, 
+  Server, ChevronRight, ChevronDown, LogOut, Lock, User, 
+  Bird, Activity, ShieldAlert, Calendar, Zap, Hash, UserPlus, Crown
 } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import './App.css';
 
-// --- CONFIGURAÇÃO DE IP (Para acesso na rede interna) ---
-// Se for rodar localmente: use 'http://localhost:3000'
-// Se for liberar para o Grupo 3C: Troque pelo seu IP (ex: 'http://192.168.0.25:3000')
-const API_URL = 'http://localhost:3000'; 
+// --- CONFIGURAÇÃO INTELIGENTE DE IP ---
+// Detecta se você está em localhost ou IP da rede e usa o mesmo para a API
+const API_URL = `http://${window.location.hostname}:3000`;
 
 // --- CONFIGURAÇÕES GERAIS ---
 const LEADER_KEYWORDS = ['Líder', 'Head', 'Tech Lead', 'Coordenador', 'Gerente', 'Gestor'];
@@ -122,7 +118,6 @@ export default function App() {
   // --- FUNÇÃO DE CARREGAMENTO DE DADOS ---
   const loadData = async () => {
     try {
-      // Uso da constante API_URL para facilitar troca de IP
       const [resStruct, resTools, resUsers, resReqs] = await Promise.all([
         fetch(`${API_URL}/api/structure`),
         fetch(`${API_URL}/api/tools`),
@@ -163,22 +158,14 @@ export default function App() {
     } catch (e) { console.error("Erro ao carregar dados:", e); }
   };
 
-  // --- AUTO-UPDATE (POLLING) ---
+  // --- AUTO-UPDATE (POLLING A CADA 5s) ---
   useEffect(() => {
-    loadData(); // Carrega na hora que abre
-
-    // Cria um relógio que roda a cada 5000ms (5 segundos)
+    loadData();
     const intervalId = setInterval(() => {
-      // Só recarrega se o usuário estiver logado para não gastar recurso à toa
-      if (isLoggedIn) {
-         loadData();
-      }
+      if (isLoggedIn) loadData();
     }, 5000);
-
-    // Limpa o relógio se a pessoa fechar a aba (evita bugs de memória)
     return () => clearInterval(intervalId);
-  }, [isLoggedIn]); // Recria o relógio se o status de login mudar
-
+  }, [isLoggedIn]);
 
   // --- HANDLERS ---
   const responseGoogle = async (credentialResponse: any) => {
@@ -234,12 +221,7 @@ export default function App() {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ status: action, approverId: currentUser?.id })
     });
-    if(res.ok) {
-        loadData();
-    } else {
-        const error = await res.json();
-        alert(`❌ Erro: ${error.error}`);
-    }
+    if(res.ok) { loadData(); } else { const error = await res.json(); alert(`❌ Erro: ${error.error}`); }
   };
 
   const availableRoles = targetDept ? structure.find(d => d.name === targetDept)?.roles || [] : [];
@@ -248,11 +230,7 @@ export default function App() {
   if (!isLoggedIn) {
     return (
       <div className="login-wrapper">
-        <div className="ambient-background">
-          <div className="cloud cloud-1"></div>
-          <div className="cloud cloud-2"></div>
-          <div className="cloud cloud-3"></div>
-        </div>
+        <div className="ambient-background"><div className="cloud cloud-1"></div><div className="cloud cloud-2"></div><div className="cloud cloud-3"></div></div>
         <div className="fog-layer"></div>
         <div className="login-brand-section glass-panel-left">
           <div className="brand-content">
@@ -262,33 +240,16 @@ export default function App() {
                </div>
                <span style={{fontSize:'2rem', fontWeight: 700, letterSpacing:'-1px', color:'white', textShadow:'0 2px 10px rgba(0,0,0,0.3)'}}>THERIS</span>
             </div>
-            <h1 style={{fontSize:'3.5rem', lineHeight:'1.1', marginBottom:'20px', color:'white', textShadow:'0 4px 20px rgba(0,0,0,0.5)'}}>
-              Governança de <br/>Identidade <span style={{color:'#38bdf8'}}>Inteligente.</span>
-            </h1>
-            <p style={{fontSize:'1.1rem', color:'#e2e8f0', maxWidth:'500px', lineHeight:'1.6', textShadow:'0 2px 5px rgba(0,0,0,0.5)'}}>
-              Centralize acessos, automatize auditorias e garanta compliance com a plataforma líder do Grupo 3C.
-            </p>
+            <h1 style={{fontSize:'3.5rem', lineHeight:'1.1', marginBottom:'20px', color:'white', textShadow:'0 4px 20px rgba(0,0,0,0.5)'}}>Governança de <br/>Identidade <span style={{color:'#38bdf8'}}>Inteligente.</span></h1>
+            <p style={{fontSize:'1.1rem', color:'#e2e8f0', maxWidth:'500px', lineHeight:'1.6', textShadow:'0 2px 5px rgba(0,0,0,0.5)'}}>Centralize acessos, automatize auditorias e garanta compliance com a plataforma líder do Grupo 3C.</p>
           </div>
           <Bird className="giant-bg-icon" size={700} strokeWidth={0.3} color="white"/>
         </div>
         <div className="login-form-section glass-panel-right">
           <div className="login-box">
-             <div style={{textAlign:'center', marginBottom:'40px'}}>
-               <h2 style={{fontSize:'2rem', color:'white', marginBottom:'10px', fontWeight:600}}>Acesse sua conta</h2>
-               <p style={{color:'#94a3b8', fontSize:'1rem'}}>Utilize suas credenciais corporativas</p>
-             </div>
-             <div className="google-btn-wrapper">
-               <GoogleLogin
-                  onSuccess={responseGoogle}
-                  onError={() => alert('Falha no Login')}
-                  theme="filled_black" shape="pill" size="large" text="continue_with" width="100%"
-               />
-             </div>
-             <div style={{marginTop:'40px', textAlign:'center', fontSize:'0.85rem', color:'#64748b', borderTop:'1px solid rgba(255,255,255,0.05)', paddingTop:'20px'}}>
-               <Lock size={14} style={{verticalAlign:'middle', marginRight:'6px', color:'#0ea5e9'}}/>
-               Ambiente Seguro & Criptografado
-               <div style={{marginTop:'5px', opacity:0.7}}>© 2025 Grupo 3C - Tecnologia</div>
-             </div>
+             <div style={{textAlign:'center', marginBottom:'40px'}}><h2 style={{fontSize:'2rem', color:'white', marginBottom:'10px', fontWeight:600}}>Acesse sua conta</h2><p style={{color:'#94a3b8', fontSize:'1rem'}}>Utilize suas credenciais corporativas</p></div>
+             <div className="google-btn-wrapper"><GoogleLogin onSuccess={responseGoogle} onError={() => alert('Falha no Login')} theme="filled_black" shape="pill" size="large" text="continue_with" width="100%"/></div>
+             <div style={{marginTop:'40px', textAlign:'center', fontSize:'0.85rem', color:'#64748b', borderTop:'1px solid rgba(255,255,255,0.05)', paddingTop:'20px'}}><Lock size={14} style={{verticalAlign:'middle', marginRight:'6px', color:'#0ea5e9'}}/>Ambiente Seguro & Criptografado</div>
           </div>
         </div>
       </div>
@@ -300,23 +261,12 @@ export default function App() {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="brand" style={{display:'flex', flexDirection:'column', alignItems:'start', gap:'0px', paddingBottom:'20px'}}>
-          <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-            <Bird size={28} color="#0ea5e9" /> 
-            <span style={{fontSize:'1.4rem', fontWeight: 700, letterSpacing:'1px'}}>THERIS</span>
-          </div>
+          <div style={{display:'flex', alignItems:'center', gap:'10px'}}><Bird size={28} color="#0ea5e9" /> <span style={{fontSize:'1.4rem', fontWeight: 700, letterSpacing:'1px'}}>THERIS</span></div>
         </div>
-
         <div className="user-mini-profile">
           <div className="avatar">{currentUser?.name ? currentUser.name.charAt(0) : 'U'}</div>
-          <div className="info">
-            <div className="name">{currentUser?.name?.split(' ')[0] || 'Usuário'}</div>
-            <div className="role" style={{display:'flex', alignItems:'center', gap:'5px'}}>
-                {systemProfile === 'SUPER_ADMIN' && <Crown size={12} color="#f59e0b"/>}
-                {systemProfile}
-            </div>
-          </div>
+          <div className="info"><div className="name">{currentUser?.name?.split(' ')[0] || 'Usuário'}</div><div className="role" style={{display:'flex', alignItems:'center', gap:'5px'}}>{systemProfile === 'SUPER_ADMIN' && <Crown size={12} color="#f59e0b"/>}{systemProfile}</div></div>
         </div>
-
         <nav className="nav-menu">
           {systemProfile !== 'VIEWER' && (
             <>
@@ -332,13 +282,9 @@ export default function App() {
             </>
           )}
           {(systemProfile === 'APPROVER' || systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN') && (
-               <div className={`nav-item ${activeTab === 'DEPUTY' ? 'active' : ''}`} onClick={() => {setFormType('NOMINATE_DEPUTY'); setActiveTab('DASHBOARD'); document.getElementById('req-form')?.scrollIntoView({behavior:'smooth'})}}>
-                  <UserPlus size={18} /> Indicar Deputy
-               </div>
+               <div className={`nav-item ${activeTab === 'DEPUTY' ? 'active' : ''}`} onClick={() => {setFormType('NOMINATE_DEPUTY'); setActiveTab('DASHBOARD'); document.getElementById('req-form')?.scrollIntoView({behavior:'smooth'})}}><UserPlus size={18} /> Indicar Deputy</div>
            )}
-          {systemProfile === 'VIEWER' && (
-             <div className={`nav-item ${activeTab === 'PROFILE' ? 'active' : ''}`} onClick={() => setActiveTab('PROFILE')}><User size={18} /> Meu Perfil</div>
-          )}
+          {systemProfile === 'VIEWER' && ( <div className={`nav-item ${activeTab === 'PROFILE' ? 'active' : ''}`} onClick={() => setActiveTab('PROFILE')}><User size={18} /> Meu Perfil</div> )}
         </nav>
         <button onClick={handleLogout} className="logout-btn"><LogOut size={16}/> Sair</button>
       </aside>
@@ -346,26 +292,10 @@ export default function App() {
       <main className="main-area">
         <header className="header-bar">
            <div>
-             <div style={{
-               background: 'rgba(14, 165, 233, 0.1)', 
-               border: '1px solid rgba(14, 165, 233, 0.2)', 
-               padding: '8px 16px', 
-               borderRadius: '8px',
-               display: 'inline-flex',
-               alignItems: 'center',
-               gap: '8px'
-             }}>
-                 <h2 style={{color: '#38bdf8', fontSize:'1.1rem', margin: 0, fontWeight: 600}}>
-                   {activeTab === 'DASHBOARD' ? 'Visão Geral' : 
-                    activeTab === 'ORG' ? 'Estrutura Organizacional' :
-                    activeTab === 'REQUESTS' ? 'Central de Solicitações' : 
-                    activeTab === 'HISTORY' ? 'Auditoria & Compliance' : 
-                    activeTab === 'TOOLS' ? 'Catálogo de Ferramentas' : 'Meu Perfil'}
-                 </h2>
+             <div style={{background: 'rgba(14, 165, 233, 0.1)', border: '1px solid rgba(14, 165, 233, 0.2)', padding: '8px 16px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '8px'}}>
+                 <h2 style={{color: '#38bdf8', fontSize:'1.1rem', margin: 0, fontWeight: 600}}>Theris / {activeTab}</h2>
              </div>
-             <div style={{color:'#94a3b8', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'5px', marginTop:'8px', paddingLeft:'4px'}}>
-               <Calendar size={12}/> {today}
-             </div>
+             <div style={{color:'#94a3b8', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'5px', marginTop:'8px', paddingLeft:'4px'}}><Calendar size={12}/> {today}</div>
            </div>
            <div className="status-badge"><div className="dot"></div> Sistema Operante</div>
         </header>
@@ -385,6 +315,35 @@ export default function App() {
                  <div className="glass-card"><div style={{color:'#94a3b8', textTransform:'uppercase', fontSize:'0.8rem', fontWeight:600}}>Colaboradores</div><div style={{fontSize:'2rem', fontWeight:700, color:'white'}}>{allUsers.length}</div></div>
                  <div className="glass-card"><div style={{color:'#94a3b8', textTransform:'uppercase', fontSize:'0.8rem', fontWeight:600}}>Pendentes</div><div style={{fontSize:'2rem', fontWeight:700, color:'#f59e0b'}}>{requests.filter(r=>r.status.includes('PENDENTE')).length}</div></div>
                  <div className="glass-card"><div style={{color:'#94a3b8', textTransform:'uppercase', fontSize:'0.8rem', fontWeight:600}}>Processadas</div><div style={{fontSize:'2rem', fontWeight:700, color:'#10b981'}}>{requests.filter(r=>['APROVADO','REPROVADO'].includes(r.status)).length}</div></div>
+               </div>
+
+               {/* NOVO WIDGET DE ONBOARDING */}
+               <div className="glass-card" style={{marginTop:'20px', marginBottom:'20px', borderLeft: '4px solid #10b981'}}>
+                  <h3 style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'15px'}}>
+                      <UserPlus size={20} color="#10b981"/> Próximos Onboardings (Contratações)
+                  </h3>
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(250px, 1fr))', gap:'15px'}}>
+                      {requests.filter(r => r.type === 'HIRING' && !['REPROVADO'].includes(r.status)).map(r => {
+                            let data = { startDate: '', future: { role: '', dept: '' }, info: '' };
+                            try { data = JSON.parse(r.details); } catch(e){}
+                            if (!data.startDate) return null;
+                            const [ano, mes, dia] = data.startDate.split('-');
+                            const dateObj = new Date(Number(ano), Number(mes)-1, Number(dia));
+                            const isToday = new Date().toDateString() === dateObj.toDateString();
+                            return (
+                                <div key={r.id} style={{background: 'rgba(255,255,255,0.05)', padding:'12px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.1)'}}>
+                                    <div style={{fontSize:'0.8rem', color: isToday ? '#10b981' : '#94a3b8', fontWeight:700, marginBottom:'5px', textTransform:'uppercase'}}>
+                                        {isToday ? 'HOJE!' : dateObj.toLocaleDateString('pt-BR', {weekday: 'long', day:'numeric', month:'long'})}
+                                    </div>
+                                    <div style={{fontWeight:600, fontSize:'1rem', color:'white'}}>{data.info.replace('Contratação - ', '')}</div>
+                                    <div style={{fontSize:'0.85rem', color:'#cbd5e1', marginTop:'2px'}}>{data.future?.role}</div>
+                                    <div style={{fontSize:'0.75rem', color:'#64748b'}}>{data.future?.dept}</div>
+                                </div>
+                            )
+                        })
+                      }
+                      {requests.filter(r => r.type === 'HIRING').length === 0 && <div style={{color:'#64748b', fontStyle:'italic'}}>Nenhum onboarding agendado.</div>}
+                  </div>
                </div>
 
                <div className="dashboard-split">
@@ -415,7 +374,6 @@ export default function App() {
                                   ))}
                                </select>
                              </div>
-
                              <div className="form-group full-width">
                                <label>Tipo de Solicitação</label>
                                <select onChange={e=>{setFormType(e.target.value); setTargetDept(''); setTargetRole(''); setFormDetails('')}} className="modern-input" value={formType}>
@@ -423,7 +381,6 @@ export default function App() {
                                  <option value="ACCESS_TOOL">Acesso a Ferramenta</option>
                                </select>
                              </div>
-                             
                              {formType === 'CHANGE_ROLE' ? (
                                <>
                                  <div className="form-group">
@@ -455,20 +412,15 @@ export default function App() {
                                          <input type="checkbox" checked={isExtraordinary} onChange={e=>setIsExtraordinary(e.target.checked)} />
                                          <ShieldAlert size={18}/> Solicitar Acesso Extraordinário / Admin?
                                      </label>
-                                     <p style={{fontSize:'0.8rem', color:'#cbd5e1', marginTop:'5px', marginLeft:'25px'}}>
-                                         Marque apenas se o acesso fugir do padrão do cargo. Exigirá aprovação de Segurança da Informação.
-                                     </p>
                                  </div>
                                </>
                              )}
                            </>
                        )}
-
                        <div className="form-group full-width">
-                         <label>Justificativa (Compliance)</label>
-                         <input placeholder="Motivo da alteração..." value={formJustification} onChange={e=>setFormJustification(e.target.value)} className="modern-input"/>
+                         <label>Justificativa</label>
+                         <input placeholder="Motivo..." value={formJustification} onChange={e=>setFormJustification(e.target.value)} className="modern-input"/>
                        </div>
-
                        <button type="submit" className="primary-btn full-width">Enviar Solicitação</button>
                     </form>
                   </div>
@@ -485,10 +437,8 @@ export default function App() {
                      {requests.filter(r=> !['APROVADO','REPROVADO'].includes(r.status)).map(r => {
                         let info = 'Detalhes...';
                         try { info = JSON.parse(r.details).info } catch (e) {}
-
                         const isSelf = r.requesterId === currentUser?.id;
                         const canAct = systemProfile === 'SUPER_ADMIN' || !isSelf;
-
                         return (
                         <tr key={r.id}>
                            <td style={{fontWeight:500}}>{r.requester?.name} {r.isExtraordinary && <ShieldAlert size={14} color="#f59e0b" style={{verticalAlign:'middle'}}/>}</td>
@@ -500,9 +450,7 @@ export default function App() {
                                      <button onClick={()=>handleApprove(r.id,'APROVAR')} className="btn-icon btn-approve"><CheckCircle size={18}/></button>
                                      <button onClick={()=>handleApprove(r.id,'REPROVAR')} className="btn-icon btn-reject"><XCircle size={18}/></button>
                                   </div>
-                              ) : (
-                                  <span style={{fontSize:'0.75rem', color:'#64748b', fontStyle:'italic'}}>Auto-aprovação bloqueada</span>
-                              )}
+                              ) : <span style={{fontSize:'0.75rem', color:'#64748b'}}>Bloqueado</span>}
                            </td>
                         </tr>
                      )})}
@@ -540,8 +488,7 @@ export default function App() {
               {structure.map(dept => (
                 <div key={dept.id} className="dept-item">
                   <div onClick={() => setExpandedDepts(p => p.includes(dept.id)?p.filter(i=>i!==dept.id):[...p,dept.id])} className="dept-header">
-                     {expandedDepts.includes(dept.id) ? <ChevronDown size={18} color="#0ea5e9"/> : <ChevronRight size={18}/>}
-                     <span>{dept.name}</span>
+                     {expandedDepts.includes(dept.id) ? <ChevronDown size={18} color="#0ea5e9"/> : <ChevronRight size={18}/>} <span>{dept.name}</span>
                   </div>
                   {expandedDepts.includes(dept.id) && (
                     <div className="dept-content">
@@ -558,21 +505,6 @@ export default function App() {
             </div>
           )}
           
-          {activeTab === 'PROFILE' && (
-            <div className="profile-container">
-              <div className="glass-card profile-header-card">
-                 <div className="profile-avatar-lg">{currentUser?.name ? currentUser.name.charAt(0) : 'U'}</div>
-                 <div><h1>{currentUser?.name}</h1><p>{currentUser?.role?.name}</p></div>
-              </div>
-              <div className="glass-card">
-                 <h3>Meus Acessos</h3>
-                 <div className="access-list">
-                    <div className="access-item"><div className="icon"><Lock size={16}/></div><div className="info">Email Corporativo</div><div className="status active">Ativo</div></div>
-                 </div>
-              </div>
-            </div>
-          )}
-          
           {activeTab === 'TOOLS' && (systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN') && (
              <div className="glass-card">
                 <h3>Catálogo de Ferramentas</h3>
@@ -581,6 +513,13 @@ export default function App() {
                    <tbody>{tools.map(t => (<tr key={t.id}><td>{t.name}</td><td>{t.owner?.name || 'Sem Dono'}</td></tr>))}</tbody>
                 </table>
              </div>
+          )}
+
+          {activeTab === 'PROFILE' && (
+            <div className="profile-container">
+              <div className="glass-card profile-header-card"><div className="profile-avatar-lg">{currentUser?.name ? currentUser.name.charAt(0) : 'U'}</div><div><h1>{currentUser?.name}</h1><p>{currentUser?.role?.name}</p></div></div>
+              <div className="glass-card"><h3>Meus Acessos</h3><div className="access-list"><div className="access-item"><div className="icon"><Lock size={16}/></div><div className="info">Email Corporativo</div><div className="status active">Ativo</div></div></div></div>
+            </div>
           )}
 
         </div>

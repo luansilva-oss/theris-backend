@@ -7,14 +7,14 @@ const slackApp = new App({
   token: process.env.SLACK_BOT_TOKEN, 
   appToken: process.env.SLACK_APP_TOKEN,
   socketMode: true,
-  logLevel: LogLevel.ERROR, 
+  logLevel: LogLevel.ERROR, // Foca apenas em erros críticos
 });
 
 // ============================================================
 // 1. MENU PRINCIPAL (/theris)
 // ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
-  await ack();
+  await ack(); // Resposta imediata para evitar timeout
 
   try {
     await client.views.open({
@@ -82,7 +82,7 @@ slackApp.action('btn_move', async ({ ack, body, client }) => {
   } catch (e) { console.error('Erro ao abrir Modal Move:', e); }
 });
 
-// CONTRATAÇÃO
+// CONTRATAÇÃO (COM DATEPICKER)
 slackApp.action('btn_hire', async ({ ack, body, client }) => {
   await ack();
   try {
@@ -92,21 +92,33 @@ slackApp.action('btn_hire', async ({ ack, body, client }) => {
         type: 'modal',
         callback_id: 'submit_hire',
         title: { type: 'plain_text', text: 'Nova Contratação' },
-        submit: { type: 'plain_text', text: 'Solicitar' },
+        submit: { type: 'plain_text', text: 'Agendar Onboarding' },
         blocks: [
           { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Novo Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { 
+              type: 'input', 
+              block_id: 'blk_date', 
+              label: { type: 'plain_text', text: 'Data de Início' }, 
+              element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } 
+          },
           { type: 'divider' },
           { type: 'section', text: { type: 'mrkdwn', text: '*Dados da Vaga*' } },
           { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Data de Início / Obs' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
+          { 
+              type: 'input', 
+              block_id: 'blk_obs', 
+              optional: true, 
+              label: { type: 'plain_text', text: 'Observações (Equipamentos, etc)' }, 
+              element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } 
+          }
         ]
       }
     });
   } catch (e) { console.error('Erro ao abrir Modal Hire:', e); }
 });
 
-// DEMISSÃO (CORRIGIDO AQUI)
+// DEMISSÃO (CORRIGIDO ERRO DE TYPESCRIPT)
 slackApp.action('btn_fire', async ({ ack, body, client }) => {
   await ack();
   try {
@@ -122,11 +134,10 @@ slackApp.action('btn_fire', async ({ ack, body, client }) => {
           { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          // AQUI ESTAVA O ERRO: 'optional: true' movido para o bloco 'input', não no 'element'
           { 
               type: 'input', 
               block_id: 'blk_reason', 
-              optional: true, 
+              optional: true, // ✅ Corrigido: optional fica aqui
               label: { type: 'plain_text', text: 'Motivo (Opcional)' }, 
               element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } 
           }
@@ -176,7 +187,6 @@ slackApp.action('btn_tool_mgmt', async ({ ack, body, client }) => {
 async function saveRequest(body: any, client: any, dbType: string, details: any, reason: string, msg: string) {
     try {
       const slackUser = body.user.id;
-      // Busca usuário (Tenta seguro, falha graciosa)
       let requesterId = '';
       try {
           const userInfo = await client.users.info({ user: slackUser });
@@ -187,15 +197,12 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
           }
       } catch (err) { console.log('Erro ao buscar user info slack:', err); }
 
-      // Fallback para testes
       if (!requesterId) {
          const fallback = await prisma.user.findFirst();
          if (fallback) requesterId = fallback.id;
       }
 
-      if (!requesterId) {
-          throw new Error("Impossível identificar usuário solicitante no banco.");
-      }
+      if (!requesterId) throw new Error("Usuário não identificado.");
 
       await prisma.request.create({
           data: {
@@ -209,12 +216,11 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
           }
       });
       
-      // Feedback no chat
       await client.chat.postMessage({ channel: body.user.id, text: msg });
 
     } catch (e) { 
         console.error('❌ Erro ao salvar solicitação:', e); 
-        await client.chat.postMessage({ channel: body.user.id, text: "❌ Erro interno ao processar. Contate o administrador." });
+        await client.chat.postMessage({ channel: body.user.id, text: "❌ Erro interno. Avise a TI." });
     }
 }
 
@@ -235,11 +241,17 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
   const name = v.blk_name.inp.value;
+  const startDate = v.blk_date.picker.selected_date; // Pega a data YYYY-MM-DD
+  
   const details = {
       info: `Contratação - ${name}`,
-      future: { role: v.blk_role.inp.value, dept: v.blk_dept.inp.value }
+      startDate: startDate, // Salva para o Widget de Onboarding
+      future: { role: v.blk_role.inp.value, dept: v.blk_dept.inp.value },
+      obs: v.blk_obs.inp.value || ''
   };
-  await saveRequest(body, client, 'HIRING', details, v.blk_reason.inp.value!, `✅ Onboarding de *${name}* solicitado.`);
+
+  const dateFmt = startDate ? startDate.split('-').reverse().join('/') : 'A definir';
+  await saveRequest(body, client, 'HIRING', details, `Início: ${dateFmt}`, `📅 Agendado: Onboarding de *${name}* para *${dateFmt}*.`);
 });
 
 slackApp.view('submit_fire', async ({ ack, body, view, client }) => {
