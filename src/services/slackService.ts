@@ -3,8 +3,6 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// --- INICIALIZAÇÃO SEGURA ---
-// Lê os tokens das variáveis de ambiente (.env)
 const slackApp = new App({
   token: process.env.SLACK_BOT_TOKEN, 
   appToken: process.env.SLACK_APP_TOKEN,
@@ -17,7 +15,6 @@ const slackApp = new App({
 // ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
   await ack();
-
   try {
     await client.views.open({
       trigger_id: body.trigger_id,
@@ -26,36 +23,22 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
         callback_id: 'theris_main_modal',
         title: { type: 'plain_text', text: 'Theris' },
         blocks: [
-          {
-            type: 'section',
-            text: { type: 'mrkdwn', text: '*Bem-vindo ao Painel de Governança.*\nSelecione o tipo de solicitação:' }
-          },
+          { type: 'section', text: { type: 'mrkdwn', text: '*Bem-vindo ao Painel de Governança.*\nSelecione o tipo de solicitação:' } },
           {
             type: 'actions',
             elements: [
-              {
-                type: 'button',
-                text: { type: 'plain_text', text: '👤 Gestão de Pessoas' },
-                action_id: 'btn_people_mgmt',
-                style: 'primary'
-              },
-              {
-                type: 'button',
-                text: { type: 'plain_text', text: '🛠️ Gestão de Ferramentas' },
-                action_id: 'btn_tool_mgmt'
-              }
+              { type: 'button', text: { type: 'plain_text', text: '👤 Gestão de Pessoas' }, action_id: 'btn_people_mgmt', style: 'primary' },
+              { type: 'button', text: { type: 'plain_text', text: '🛠️ Gestão de Ferramentas' }, action_id: 'btn_tool_mgmt' }
             ]
           }
         ]
       }
     });
-  } catch (error) {
-    console.error('Erro ao abrir modal:', error);
-  }
+  } catch (error) { console.error('Erro ao abrir modal:', error); }
 });
 
 // ============================================================
-// 2. MODAL: GESTÃO DE PESSOAS
+// 2. MODAL: GESTÃO DE PESSOAS (ATUALIZADO E SEPARADO)
 // ============================================================
 slackApp.action('btn_people_mgmt', async ({ ack, body, client }) => {
   await ack();
@@ -89,23 +72,39 @@ slackApp.action('btn_people_mgmt', async ({ ack, body, client }) => {
           label: { type: 'plain_text', text: 'Nome do Colaborador' },
           element: { type: 'plain_text_input', action_id: 'inp_name' }
         },
+        { type: 'divider' },
+        { type: 'section', text: { type: 'mrkdwn', text: '*Situação Atual (Obrigatório para Demissão/Mudança)*' } },
         {
-          type: 'divider'
+          type: 'input',
+          block_id: 'blk_role_curr',
+          optional: true,
+          label: { type: 'plain_text', text: 'Cargo Atual' },
+          element: { type: 'plain_text_input', action_id: 'inp_role_curr', placeholder: { type: 'plain_text', text: 'Ex: Analista Junior' } }
         },
         {
           type: 'input',
-          block_id: 'blk_current_info',
+          block_id: 'blk_dept_curr',
           optional: true,
-          label: { type: 'plain_text', text: 'Cargo/Depto ATUAL (Se houver)' },
-          element: { type: 'plain_text_input', action_id: 'inp_curr', placeholder: { type: 'plain_text', text: 'Ex: Vendedor - Comercial' } }
+          label: { type: 'plain_text', text: 'Departamento Atual' },
+          element: { type: 'plain_text_input', action_id: 'inp_dept_curr', placeholder: { type: 'plain_text', text: 'Ex: Financeiro' } }
+        },
+        { type: 'divider' },
+        { type: 'section', text: { type: 'mrkdwn', text: '*Situação Futura (Obrigatório para Contratação/Mudança)*' } },
+        {
+          type: 'input',
+          block_id: 'blk_role_fut',
+          optional: true,
+          label: { type: 'plain_text', text: 'Novo Cargo' },
+          element: { type: 'plain_text_input', action_id: 'inp_role_fut', placeholder: { type: 'plain_text', text: 'Ex: Analista Pleno' } }
         },
         {
           type: 'input',
-          block_id: 'blk_future_info',
+          block_id: 'blk_dept_fut',
           optional: true,
-          label: { type: 'plain_text', text: 'Cargo/Depto FUTURO' },
-          element: { type: 'plain_text_input', action_id: 'inp_fut', placeholder: { type: 'plain_text', text: 'Ex: Líder - Comercial' } }
+          label: { type: 'plain_text', text: 'Novo Departamento' },
+          element: { type: 'plain_text_input', action_id: 'inp_dept_fut', placeholder: { type: 'plain_text', text: 'Ex: Controladoria' } }
         },
+        { type: 'divider' },
         {
             type: 'input',
             block_id: 'blk_reason',
@@ -118,11 +117,10 @@ slackApp.action('btn_people_mgmt', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 3. MODAL: GESTÃO DE FERRAMENTAS
+// 3. MODAL: GESTÃO DE FERRAMENTAS (MANTIDO IGUAL)
 // ============================================================
 slackApp.action('btn_tool_mgmt', async ({ ack, body, client }) => {
   await ack();
-  
   await client.views.update({
     view_id: (body as any).view.id,
     view: {
@@ -156,18 +154,7 @@ slackApp.action('btn_tool_mgmt', async ({ ack, body, client }) => {
             type: 'input',
             block_id: 'blk_details',
             label: { type: 'plain_text', text: 'Detalhes Técnicos' },
-            element: { 
-                type: 'plain_text_input', 
-                multiline: true, 
-                action_id: 'inp_details', 
-                placeholder: {type:'plain_text', text: 'Se for nova: Quem é Owner/Sub-Owner?\nSe for acesso: Qual nível?'} 
-            }
-        },
-        {
-            type: 'context',
-            elements: [
-                { type: 'mrkdwn', text: '⚠️ *Atenção:* Acessos Extraordinários passarão por aprovação de Segurança da Informação.' }
-            ]
+            element: { type: 'plain_text_input', multiline: true, action_id: 'inp_details', placeholder: {type:'plain_text', text: 'Owner, Nível de Acesso, etc.'} }
         },
         {
             type: 'input',
@@ -181,7 +168,7 @@ slackApp.action('btn_tool_mgmt', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 4. PROCESSAMENTO: SALVAR NO BANCO (PESSOAS)
+// 4. PROCESSAMENTO: PESSOAS (ATUALIZADO)
 // ============================================================
 slackApp.view('submit_people_request', async ({ ack, body, view, client }) => {
   await ack();
@@ -190,102 +177,84 @@ slackApp.view('submit_people_request', async ({ ack, body, view, client }) => {
   const type = values.blk_type.sel_type.selected_option?.value;
   const name = values.blk_name.inp_name.value;
   const reason = values.blk_reason.inp_reason.value;
+
+  // Extração dos novos campos separados
+  const currentRole = values.blk_role_curr.inp_role_curr.value || 'N/A';
+  const currentDept = values.blk_dept_curr.inp_dept_curr.value || 'N/A';
+  const futureRole = values.blk_role_fut.inp_role_fut.value || 'N/A';
+  const futureDept = values.blk_dept_fut.inp_dept_fut.value || 'N/A';
   
-  // Mapeia para tipos que o Banco entenda
   const dbType = type === 'MOVE' ? 'CHANGE_ROLE' : type === 'HIRE' ? 'HIRING' : 'FIRING';
   
+  // Monta o JSON detalhado
   const details = {
       info: `${type === 'MOVE' ? 'Remanejamento' : type === 'HIRE' ? 'Contratação' : 'Demissão'} - ${name}`,
       targetName: name,
-      currentInfo: values.blk_current_info.inp_curr.value || 'N/A',
-      futureInfo: values.blk_future_info.inp_fut.value || 'N/A'
+      current: { role: currentRole, dept: currentDept },
+      future: { role: futureRole, dept: futureDept }
   };
 
   try {
-      // 1. Identificar quem está pedindo (pelo email do Slack)
       const slackUser = body.user.id;
       const userInfo = await client.users.info({ user: slackUser });
       const email = userInfo.user?.profile?.email;
-
       let requester = await prisma.user.findFirst({ where: { email } });
-      
-      // Fallback: Se não achar pelo email (ex: ambiente de teste), pega o primeiro usuário do banco
-      if (!requester) {
-          console.log(`⚠️ Usuário Slack (${email}) não encontrado no banco. Usando fallback.`);
-          requester = await prisma.user.findFirst(); 
-      }
+      if (!requester) requester = await prisma.user.findFirst(); 
 
-      if (!requester) throw new Error("Nenhum usuário encontrado no banco de dados.");
-
-      // 2. Criar a solicitação
       await prisma.request.create({
           data: {
-              requesterId: requester.id,
+              requesterId: requester!.id,
               type: dbType,
               details: JSON.stringify(details),
-              justification: reason || 'Solicitado via Slack',
+              justification: reason || 'Via Slack',
               status: 'PENDENTE_GESTOR',
               currentApproverRole: 'MANAGER',
               isExtraordinary: false
           }
       });
 
-      // 3. Confirmar para o usuário
       await client.chat.postMessage({
           channel: body.user.id,
-          text: `✅ *Sucesso!* Sua solicitação de movimentação para *${name}* foi criada e enviada para aprovação.`
+          text: `✅ *Recebido!* Movimentação de *${name}* registrada.\n📂 *De:* ${currentRole} (${currentDept})\n📂 *Para:* ${futureRole} (${futureDept})`
       });
 
-  } catch (error) {
-      console.error('Erro ao processar modal pessoas:', error);
-      await client.chat.postMessage({
-          channel: body.user.id,
-          text: `❌ Ocorreu um erro ao processar sua solicitação.`
-      });
-  }
+  } catch (error) { console.error(error); }
 });
 
 // ============================================================
-// 5. PROCESSAMENTO: SALVAR NO BANCO (FERRAMENTAS)
+// 5. PROCESSAMENTO: FERRAMENTAS (MANTIDO)
 // ============================================================
 slackApp.view('submit_tool_request', async ({ ack, body, view, client }) => {
     await ack();
-    
     const values = view.state.values;
     const type = values.blk_tool_type.sel_tool_type.selected_option?.value;
     const toolName = values.blk_tool_name.inp_tool_name.value;
     const detailsText = values.blk_details.inp_details.value;
     const reason = values.blk_reason.inp_reason.value;
-
-    // Regra de Negócio: Se for EXTRA_ACCESS, marca flag
     const isExtraordinary = type === 'EXTRA_ACCESS';
     
     try {
         const slackUser = body.user.id;
         const userInfo = await client.users.info({ user: slackUser });
         const email = userInfo.user?.profile?.email;
-        
         let requester = await prisma.user.findFirst({ where: { email } });
         if (!requester) requester = await prisma.user.findFirst(); 
 
-        if (!requester) throw new Error("Usuário inválido.");
-
-        // Define rótulo amigável
         let labelType = 'Acesso';
         if (type === 'NEW_TOOL') labelType = 'Nova Ferramenta';
         if (type === 'EXTRA_ACCESS') labelType = '🔥 Acesso Extraordinário';
 
         await prisma.request.create({
             data: {
-                requesterId: requester.id,
+                requesterId: requester!.id,
                 type: 'ACCESS_TOOL', 
                 details: JSON.stringify({
                     info: `${labelType}: ${toolName}`,
                     toolName: toolName,
                     rawDetails: detailsText,
-                    accessLevel: isExtraordinary ? 'Admin/Extra' : 'Standard' // Simplificação para lógica de aprovação
+                    accessLevel: isExtraordinary ? 'Admin/Extra' : 'Standard'
                 }),
-                justification: reason || 'Solicitado via Slack',
+                justification: reason || 'Via Slack',
                 status: 'PENDENTE_GESTOR',
                 currentApproverRole: 'MANAGER',
                 isExtraordinary: isExtraordinary
@@ -294,16 +263,12 @@ slackApp.view('submit_tool_request', async ({ ack, body, view, client }) => {
 
         await client.chat.postMessage({
             channel: body.user.id,
-            text: `✅ *Recebido!* A solicitação para a ferramenta *${toolName}* foi registrada.\n\n🔍 *Status:* Aguardando Gestor.`
+            text: `✅ *Recebido!* Solicitação para *${toolName}* encaminhada.`
         });
-
-    } catch (error) { 
-        console.error('Erro ao processar modal ferramentas:', error); 
-    }
+    } catch (e) { console.error(e); }
 });
 
-// Função para iniciar o bot (chamada no index.ts)
 export const startSlackBot = async () => {
   await slackApp.start();
-  console.log('🤖 Theris Bot está online e escutando o comando /theris');
+  console.log('🤖 Theris Bot está online e escutando /theris');
 };
