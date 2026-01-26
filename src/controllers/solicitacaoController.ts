@@ -25,22 +25,31 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
 // --- CRIAR SOLICITAÇÃO ---
 export const createSolicitacao = async (req: Request, res: Response) => {
   try {
-    // Usamos 'as any' para evitar que o TypeScript reclame da tipagem do body
+    // Tratamos o body como 'any' para extrair os dados sem burocracia de tipos
     const body = req.body as any;
 
-    const { requesterId, type, details, justification, isExtraordinary } = body;
+    const requesterId: string = String(body.requesterId);
+    const type: string = String(body.type);
+    
+    // Tratamento especial para details (JSON ou String)
+    let detailsString: string = "";
+    if (typeof body.details === 'object') {
+        detailsString = JSON.stringify(body.details);
+    } else {
+        detailsString = String(body.details || "");
+    }
 
-    // Garante que details seja uma string
-    const detailsString = typeof details === 'object' ? JSON.stringify(details) : String(details);
+    const justification: string | null = body.justification ? String(body.justification) : null;
+    const isExtraordinary: boolean = Boolean(body.isExtraordinary);
 
     const newRequest = await prisma.request.create({
       data: {
-        requesterId: String(requesterId),
-        type: String(type),
-        status: 'PENDENTE_GESTOR', // Status inicial padrão
+        requesterId,
+        type,
+        status: 'PENDENTE_GESTOR',
         details: detailsString,
-        justification: justification ? String(justification) : null,
-        isExtraordinary: Boolean(isExtraordinary)
+        justification,
+        isExtraordinary
       }
     });
 
@@ -53,23 +62,32 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
 // --- ATUALIZAR STATUS (APROVAR/REPROVAR) ---
 export const updateSolicitacao = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  
-  // AQUI ESTÁ A CORREÇÃO DEFINITIVA:
-  // Tratamos o body como 'any' para ignorar a verificação restrita de array
-  const body = req.body as any;
-
   try {
+    // 1. Extração e Limpeza do ID (Onde estava o erro TS2322)
+    // Forçamos o 'req.params.id' a ser tratado como string pura antes de tocar no Prisma
+    const rawId = req.params.id;
+    const safeId: string = String(rawId);
+
+    // 2. Extração e Limpeza do Body
+    const body = req.body as any;
+    const safeStatus: string = String(body.status);
+    
+    // ApproverId pode ser nulo, então tratamos separadamente
+    let safeApproverId: string | null = null;
+    if (body.approverId) {
+        safeApproverId = String(body.approverId);
+    }
+
+    // 3. Chamada ao Banco (Agora as variáveis são garantidamente strings)
     const updated = await prisma.request.update({
-      where: { id },
+      where: { id: safeId },
       data: {
-        // Forçamos a conversão para String direto na atribuição
-        status: String(body.status),
-        // Se tiver approverId, converte para string, senão passa null
-        approverId: body.approverId ? String(body.approverId) : null,
+        status: safeStatus,
+        approverId: safeApproverId,
         updatedAt: new Date()
       }
     });
+    
     res.json(updated);
   } catch (error) {
     console.error("Erro ao atualizar solicitação:", error);
