@@ -9,7 +9,7 @@ import { GoogleLogin } from '@react-oauth/google';
 import './App.css';
 
 // --- CONFIGURAÇÃO ---
-const API_URL = `http://${window.location.hostname}:3000`;
+const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
 
 const LEADER_KEYWORDS = ['Líder', 'Head', 'Tech Lead', 'Coordenador', 'Gerente', 'Gestor', 'Diretor', 'CTO', 'CEO', 'Super Admin'];
 const DEPT_ORDER = [
