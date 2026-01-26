@@ -7,11 +7,11 @@ const slackApp = new App({
   token: process.env.SLACK_BOT_TOKEN, 
   appToken: process.env.SLACK_APP_TOKEN,
   socketMode: true,
-  logLevel: LogLevel.ERROR, // Mantém o log limpo
+  logLevel: LogLevel.ERROR, 
 });
 
 // ============================================================
-// 1. MENU PRINCIPAL (/theris)
+// 1. MENU PRINCIPAL (/theris) - AGORA COM TODOS OS BOTÕES
 // ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
   await ack(); 
@@ -25,6 +25,8 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
         title: { type: 'plain_text', text: 'Theris IGA 🦅' },
         blocks: [
           { type: 'section', text: { type: 'mrkdwn', text: '*Painel de Governança*\nO que você deseja fazer hoje?' } },
+          
+          // SEÇÃO DE PESSOAS
           { type: 'divider' },
           { type: 'section', text: { type: 'mrkdwn', text: '👤 *Gestão de Pessoas*' } },
           {
@@ -35,12 +37,16 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
               { type: 'button', text: { type: 'plain_text', text: '❌ Desligamento' }, action_id: 'btn_fire', style: 'danger' }
             ]
           },
+
+          // SEÇÃO DE FERRAMENTAS (BOTÕES DIRETOS AGORA)
           { type: 'divider' },
-          { type: 'section', text: { type: 'mrkdwn', text: '🛠️ *Acessos & Ferramentas*' } },
+          { type: 'section', text: { type: 'mrkdwn', text: '🛠️ *Gestão de Ferramentas*' } },
           {
             type: 'actions',
             elements: [
-              { type: 'button', text: { type: 'plain_text', text: 'Gerenciar Ferramentas' }, action_id: 'btn_tool_mgmt' }
+              { type: 'button', text: { type: 'plain_text', text: '🔄 Substituir Ferramenta' }, action_id: 'btn_tool_replace' },
+              { type: 'button', text: { type: 'plain_text', text: '🎚️ Alterar Nível' }, action_id: 'btn_tool_access' },
+              { type: 'button', text: { type: 'plain_text', text: '🔥 Acesso Extraordinário' }, action_id: 'btn_tool_extra', style: 'danger' }
             ]
           }
         ]
@@ -55,17 +61,14 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
 // 2. MODAIS DE GESTÃO DE PESSOAS
 // ============================================================
 
-// A. PROMOÇÃO / MUDANÇA
+// A. PROMOÇÃO
 slackApp.action('btn_move', async ({ ack, body, client }) => {
   await ack();
   try {
     await client.views.push({
       trigger_id: (body as any).trigger_id,
       view: {
-        type: 'modal',
-        callback_id: 'submit_move',
-        title: { type: 'plain_text', text: 'Movimentação' },
-        submit: { type: 'plain_text', text: 'Enviar' },
+        type: 'modal', callback_id: 'submit_move', title: { type: 'plain_text', text: 'Movimentação' }, submit: { type: 'plain_text', text: 'Enviar' },
         blocks: [
           { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'divider' },
@@ -79,43 +82,29 @@ slackApp.action('btn_move', async ({ ack, body, client }) => {
         ]
       }
     });
-  } catch (e) { console.error('Erro ao abrir Modal Move:', e); }
+  } catch (e) { console.error(e); }
 });
 
-// B. CONTRATAÇÃO (COM DATEPICKER)
+// B. CONTRATAÇÃO
 slackApp.action('btn_hire', async ({ ack, body, client }) => {
   await ack();
   try {
     await client.views.push({
       trigger_id: (body as any).trigger_id,
       view: {
-        type: 'modal',
-        callback_id: 'submit_hire',
-        title: { type: 'plain_text', text: 'Nova Contratação' },
-        submit: { type: 'plain_text', text: 'Agendar Onboarding' },
+        type: 'modal', callback_id: 'submit_hire', title: { type: 'plain_text', text: 'Nova Contratação' }, submit: { type: 'plain_text', text: 'Agendar' },
         blocks: [
           { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Novo Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { 
-              type: 'input', 
-              block_id: 'blk_date', 
-              label: { type: 'plain_text', text: 'Data de Início' }, 
-              element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } 
-          },
+          { type: 'input', block_id: 'blk_date', label: { type: 'plain_text', text: 'Data de Início' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
           { type: 'divider' },
           { type: 'section', text: { type: 'mrkdwn', text: '*Dados da Vaga*' } },
           { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { 
-              type: 'input', 
-              block_id: 'blk_obs', 
-              optional: true, 
-              label: { type: 'plain_text', text: 'Observações (Equipamentos, etc)' }, 
-              element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } 
-          }
+          { type: 'input', block_id: 'blk_obs', optional: true, label: { type: 'plain_text', text: 'Observações' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
         ]
       }
     });
-  } catch (e) { console.error('Erro ao abrir Modal Hire:', e); }
+  } catch (e) { console.error(e); }
 });
 
 // C. DEMISSÃO
@@ -125,158 +114,107 @@ slackApp.action('btn_fire', async ({ ack, body, client }) => {
     await client.views.push({
       trigger_id: (body as any).trigger_id,
       view: {
-        type: 'modal',
-        callback_id: 'submit_fire',
-        title: { type: 'plain_text', text: 'Desligamento' },
-        submit: { type: 'plain_text', text: 'Confirmar' },
+        type: 'modal', callback_id: 'submit_fire', title: { type: 'plain_text', text: 'Desligamento' }, submit: { type: 'plain_text', text: 'Confirmar' },
         blocks: [
-          { type: 'section', text: { type: 'mrkdwn', text: '⚠️ *Atenção:* Esta ação iniciará o bloqueio de acessos.' } },
+          { type: 'section', text: { type: 'mrkdwn', text: '⚠️ *Esta ação iniciará o bloqueio de acessos.*' } },
           { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { 
-              type: 'input', 
-              block_id: 'blk_reason', 
-              optional: true, 
-              label: { type: 'plain_text', text: 'Motivo (Opcional)' }, 
-              element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } 
-          }
+          { type: 'input', block_id: 'blk_reason', optional: true, label: { type: 'plain_text', text: 'Motivo (Opcional)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
         ]
       }
     });
-  } catch (e) { console.error('Erro ao abrir Modal Fire:', e); }
+  } catch (e) { console.error(e); }
 });
 
 // ============================================================
-// 3. GESTÃO DE FERRAMENTAS (ROUTER & SUB-MODAIS)
+// 3. MODAIS DE FERRAMENTAS (AGORA DIRETOS)
 // ============================================================
 
-// MENU INTERMEDIÁRIO (ROUTER)
-slackApp.action('btn_tool_mgmt', async ({ ack, body, client }) => {
+// D. SUBSTITUIÇÃO DE FERRAMENTA
+slackApp.action('btn_tool_replace', async ({ ack, body, client }) => {
   await ack();
   try {
     await client.views.push({
       trigger_id: (body as any).trigger_id,
       view: {
-        type: 'modal',
-        callback_id: 'router_tool_request',
-        title: { type: 'plain_text', text: 'Gestão de Ferramentas' },
-        submit: { type: 'plain_text', text: 'Continuar' },
+        type: 'modal', callback_id: 'submit_tool_replace', title: { type: 'plain_text', text: 'Substituição' }, submit: { type: 'plain_text', text: 'Solicitar' },
         blocks: [
-          {
-              type: 'input', 
-              block_id: 'blk_tool_type', 
-              label: { type: 'plain_text', text: 'Selecione o tipo de solicitação:' },
-              element: {
-                type: 'static_select', 
-                action_id: 'sel',
-                options: [
-                  { text: { type: 'plain_text', text: '🔄 Substituição de Ferramenta' }, value: 'REPLACE_TOOL' },
-                  { text: { type: 'plain_text', text: '🎚️ Alterar Nível de Acesso' }, value: 'CHANGE_ACCESS' },
-                  { text: { type: 'plain_text', text: '🔥 Acesso Extraordinário' }, value: 'EXTRA_ACCESS' }
-                ]
-              }
-          }
+          { type: 'input', block_id: 'blk_old', label: { type: 'plain_text', text: 'Ferramenta Atual (Descontinuar)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'divider' },
+          { type: 'section', text: { type: 'mrkdwn', text: '*Nova Ferramenta*' } },
+          { type: 'input', block_id: 'blk_new', label: { type: 'plain_text', text: 'Nome da Nova Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_owner', label: { type: 'plain_text', text: 'Owner (Dono)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_sub', optional: true, label: { type: 'plain_text', text: 'Sub-owner (Opcional)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Motivo da Alteração' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
         ]
       }
     });
-  } catch (e) { console.error('Erro ao abrir Menu Ferramentas:', e); }
+  } catch (e) { console.error(e); }
 });
 
-// ROUTER HANDLER
-slackApp.view('router_tool_request', async ({ ack, body, view, client }) => {
+// E. ALTERAR NÍVEL DE ACESSO
+slackApp.action('btn_tool_access', async ({ ack, body, client }) => {
   await ack();
-  const selectedType = view.state.values.blk_tool_type.sel.selected_option?.value;
+  try {
+    await client.views.push({
+      trigger_id: (body as any).trigger_id,
+      view: {
+        type: 'modal', callback_id: 'submit_tool_access', title: { type: 'plain_text', text: 'Alterar Acesso' }, submit: { type: 'plain_text', text: 'Solicitar' },
+        blocks: [
+          { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_curr', label: { type: 'plain_text', text: 'Nível de Acesso Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Nível de Acesso Desejado' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } },
+          { type: 'context', elements: [{ type: 'mrkdwn', text: '🔒 *Auditado por SI e Owner.*' }] }
+        ]
+      }
+    });
+  } catch (e) { console.error(e); }
+});
 
-  // 1. SUBSTITUIÇÃO DE FERRAMENTA
-  if (selectedType === 'REPLACE_TOOL') {
-      await client.views.push({
-          trigger_id: (body as any).trigger_id,
-          view: {
-              type: 'modal', callback_id: 'submit_tool_replace', title: { type: 'plain_text', text: 'Substituição' }, submit: { type: 'plain_text', text: 'Solicitar' },
-              blocks: [
-                  { type: 'input', block_id: 'blk_old', label: { type: 'plain_text', text: 'Ferramenta Atual (Descontinuar)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'divider' },
-                  { type: 'section', text: { type: 'mrkdwn', text: '*Dados da Nova Ferramenta*' } },
-                  { type: 'input', block_id: 'blk_new', label: { type: 'plain_text', text: 'Nome da Nova Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_owner', label: { type: 'plain_text', text: 'Owner (Dono)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_sub', optional: true, label: { type: 'plain_text', text: 'Sub-owner (Opcional)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Motivo da Alteração de Sistema' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
-              ]
-          }
-      });
-  }
-
-  // 2. ALTERAR NÍVEL DE ACESSO
-  if (selectedType === 'CHANGE_ACCESS') {
-      await client.views.push({
-          trigger_id: (body as any).trigger_id,
-          view: {
-              type: 'modal', callback_id: 'submit_tool_access', title: { type: 'plain_text', text: 'Alterar Acesso' }, submit: { type: 'plain_text', text: 'Solicitar' },
-              blocks: [
-                  { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_curr', label: { type: 'plain_text', text: 'Nível de Acesso Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Nível de Acesso Desejado' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } },
-                  { type: 'context', elements: [{ type: 'mrkdwn', text: '🔒 *Compliance:* Esta solicitação será auditada por SI e Owner.' }] }
-              ]
-          }
-      });
-  }
-
-  // 3. ACESSO EXTRAORDINÁRIO
-  if (selectedType === 'EXTRA_ACCESS') {
-      await client.views.push({
-          trigger_id: (body as any).trigger_id,
-          view: {
-              type: 'modal', callback_id: 'submit_tool_extra', title: { type: 'plain_text', text: 'Acesso Extraordinário' }, submit: { type: 'plain_text', text: 'Solicitar' },
-              blocks: [
-                  { type: 'input', block_id: 'blk_collab', label: { type: 'plain_text', text: 'Nome do Colaborador (Beneficiário)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_curr', label: { type: 'plain_text', text: 'Nível de Acesso Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Nível de Acesso Desejado' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-                  { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa (Compliance)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } },
-                  { type: 'context', elements: [{ type: 'mrkdwn', text: '🔥 *Atenção:* Acessos extraordinários são monitorados.' }] }
-              ]
-          }
-      });
-  }
+// F. ACESSO EXTRAORDINÁRIO
+slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
+  await ack();
+  try {
+    await client.views.push({
+      trigger_id: (body as any).trigger_id,
+      view: {
+        type: 'modal', callback_id: 'submit_tool_extra', title: { type: 'plain_text', text: 'Acesso Extra' }, submit: { type: 'plain_text', text: 'Solicitar' },
+        blocks: [
+          { type: 'input', block_id: 'blk_collab', label: { type: 'plain_text', text: 'Nome do Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_curr', label: { type: 'plain_text', text: 'Nível de Acesso Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Nível de Acesso Desejado' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa (Compliance)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } },
+          { type: 'context', elements: [{ type: 'mrkdwn', text: '🔥 *Atenção: Acessos temporários.*' }] }
+        ]
+      }
+    });
+  } catch (e) { console.error(e); }
 });
 
 // ============================================================
 // 4. PROCESSAMENTO (HANDLERS)
 // ============================================================
 
-// Helper Genérico para Salvar no Banco
 async function saveRequest(body: any, client: any, dbType: string, details: any, reason: string, msg: string, isExtraordinary = false) {
     try {
       const slackUser = body.user.id;
       let requesterId = '';
       try {
-          const userInfo = await client.users.info({ user: slackUser });
-          const email = userInfo.user?.profile?.email;
-          if (email) {
-             const user = await prisma.user.findFirst({ where: { email } });
-             if (user) requesterId = user.id;
+          const u = await client.users.info({ user: slackUser });
+          if (u.user?.profile?.email) {
+             const userDb = await prisma.user.findFirst({ where: { email: u.user.profile.email } });
+             if (userDb) requesterId = userDb.id;
           }
-      } catch (err) { console.log('Erro ao buscar user info slack:', err); }
+      } catch (err) {}
 
-      // Se não achar user (em dev), usa o primeiro do banco como fallback
-      if (!requesterId) {
-         const fallback = await prisma.user.findFirst();
-         if (fallback) requesterId = fallback.id;
-      }
+      if (!requesterId) { const f = await prisma.user.findFirst(); if(f) requesterId = f.id; }
+      if (!requesterId) throw new Error("User not found");
 
-      if (!requesterId) throw new Error("Usuário não identificado.");
-
-      // Lógica de Status
-      let status = 'PENDENTE_GESTOR';
-      let role = 'MANAGER';
-      
-      if (isExtraordinary) {
-          status = 'PENDENTE_SI';
-          role = 'SI_ANALYST';
-      }
+      let status = isExtraordinary ? 'PENDENTE_SI' : 'PENDENTE_GESTOR';
+      let role = isExtraordinary ? 'SI_ANALYST' : 'MANAGER';
 
       await prisma.request.create({
           data: {
@@ -284,21 +222,19 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
               type: dbType,
               details: JSON.stringify(details),
               justification: reason || 'Via Slack',
-              status: status,
+              status,
               currentApproverRole: role,
-              isExtraordinary: isExtraordinary
+              isExtraordinary
           }
       });
-      
       await client.chat.postMessage({ channel: body.user.id, text: msg });
-
     } catch (e) { 
-        console.error('❌ Erro ao salvar solicitação:', e); 
-        await client.chat.postMessage({ channel: body.user.id, text: "❌ Erro interno ao processar solicitação. Avise a TI." });
+        console.error('❌ Erro Save:', e); 
+        await client.chat.postMessage({ channel: body.user.id, text: "❌ Erro ao salvar." });
     }
 }
 
-// Handler: Promoção (CHANGE_ROLE)
+// HANDLERS DE SUBMISSÃO
 slackApp.view('submit_move', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
@@ -308,28 +244,24 @@ slackApp.view('submit_move', async ({ ack, body, view, client }) => {
       current: { role: v.blk_role_curr.inp.value, dept: v.blk_dept_curr.inp.value },
       future: { role: v.blk_role_fut.inp.value, dept: v.blk_dept_fut.inp.value }
   };
-  await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value!, `✅ Processo de mudança de *${name}* iniciado.`);
+  await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value!, `✅ Mudança de *${name}* iniciada.`);
 });
 
-// Handler: Contratação (HIRING)
 slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
   const name = v.blk_name.inp.value;
   const startDate = v.blk_date.picker.selected_date; 
-  
   const details = {
       info: `Contratação - ${name}`,
-      startDate: startDate, 
+      startDate,
       future: { role: v.blk_role.inp.value, dept: v.blk_dept.inp.value },
       obs: v.blk_obs.inp.value || ''
   };
-
-  const dateFmt = startDate ? startDate.split('-').reverse().join('/') : 'A definir';
-  await saveRequest(body, client, 'HIRING', details, `Início: ${dateFmt}`, `📅 Agendado: Onboarding de *${name}* para *${dateFmt}*.`);
+  const d = startDate ? startDate.split('-').reverse().join('/') : '?';
+  await saveRequest(body, client, 'HIRING', details, `Início: ${d}`, `📅 Onboarding de *${name}* agendado para *${d}*.`);
 });
 
-// Handler: Demissão (FIRING)
 slackApp.view('submit_fire', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
@@ -341,62 +273,48 @@ slackApp.view('submit_fire', async ({ ack, body, view, client }) => {
   await saveRequest(body, client, 'FIRING', details, v.blk_reason.inp.value!, `⚠️ Offboarding de *${name}* registrado.`);
 });
 
-// Handler: Substituição de Ferramenta
 slackApp.view('submit_tool_replace', async ({ ack, body, view, client }) => {
     await ack();
     const v = view.state.values;
-    const oldTool = v.blk_old.inp.value;
     const newTool = v.blk_new.inp.value;
-    
     const details = {
-        info: `Substituição: ${oldTool} ➡️ ${newTool}`,
-        oldTool: oldTool,
-        newTool: newTool,
+        info: `Substituição: ${v.blk_old.inp.value} ➡️ ${newTool}`,
+        oldTool: v.blk_old.inp.value,
+        newTool,
         owner: v.blk_owner.inp.value,
         subOwner: v.blk_sub.inp.value || 'N/A'
     };
-    await saveRequest(body, client, 'TOOL_REPLACEMENT', details, v.blk_reason.inp.value!, `✅ Solicitação de troca de sistema (${newTool}) registrada.`);
+    await saveRequest(body, client, 'TOOL_REPLACEMENT', details, v.blk_reason.inp.value!, `✅ Troca de sistema (${newTool}) solicitada.`);
 });
 
-// Handler: Alterar Acesso
 slackApp.view('submit_tool_access', async ({ ack, body, view, client }) => {
     await ack();
     const v = view.state.values;
     const tool = v.blk_tool.inp.value;
-    
     const details = {
         info: `Alterar Acesso: ${tool}`,
         toolName: tool,
         currentAccess: v.blk_curr.inp.value,
         targetAccess: v.blk_target.inp.value
     };
-    await saveRequest(body, client, 'ACCESS_CHANGE', details, v.blk_reason.inp.value!, `✅ Pedido de alteração de acesso em *${tool}* enviado.`);
+    await saveRequest(body, client, 'ACCESS_CHANGE', details, v.blk_reason.inp.value!, `✅ Alteração de acesso em *${tool}* enviada.`);
 });
 
-// Handler: Acesso Extraordinário
 slackApp.view('submit_tool_extra', async ({ ack, body, view, client }) => {
     await ack();
     const v = view.state.values;
     const tool = v.blk_tool.inp.value;
-    const collab = v.blk_collab.inp.value;
-    
     const details = {
-        info: `🔥 Extraordinário: ${tool} (${collab})`,
-        beneficiary: collab,
+        info: `🔥 Extraordinário: ${tool} (${v.blk_collab.inp.value})`,
+        beneficiary: v.blk_collab.inp.value,
         toolName: tool,
         currentAccess: v.blk_curr.inp.value,
         targetAccess: v.blk_target.inp.value
     };
-
-    // Flag isExtraordinary = true
-    await saveRequest(body, client, 'ACCESS_TOOL', details, v.blk_reason.inp.value!, `🔥 Solicitação de acesso extraordinário enviada para SI.`, true);
+    await saveRequest(body, client, 'ACCESS_TOOL', details, v.blk_reason.inp.value!, `🔥 Acesso extraordinário enviado para SI.`, true);
 });
 
 export const startSlackBot = async () => { 
-    try {
-        await slackApp.start(); 
-        console.log('🤖 Theris Bot está online'); 
-    } catch (e) {
-        console.error('❌ Falha ao iniciar Slack Bot:', e);
-    }
+    try { await slackApp.start(); console.log('🤖 Theris Bot está online'); } 
+    catch (e) { console.error('❌ Falha ao iniciar Bot:', e); }
 };
