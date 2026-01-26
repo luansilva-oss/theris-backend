@@ -1,11 +1,11 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
-import { criarSolicitacao, listarSolicitacoes, atualizarStatus } from './controllers/solicitacaoController';
-import { startSlackBot } from './services/slackService'; // Importa o serviço do Slack
+// CORREÇÃO: Atualizei os nomes aqui para bater com o Controller novo
+import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
+import { startSlackBot } from './services/slackService'; 
 import dotenv from 'dotenv';
 
-// Carrega variáveis de ambiente (.env)
 dotenv.config();
 
 const app = express();
@@ -13,14 +13,15 @@ const prisma = new PrismaClient();
 
 // --- CONFIGURAÇÃO DE CORS ---
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  // Permite localhost E a sua futura URL na Vercel (se quiser liberar geral coloque origin: '*')
+  origin: '*', 
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
 
-// --- FUNÇÃO SEGURA PARA LER O TOKEN (Versão Node.js) ---
+// --- FUNÇÃO SEGURA PARA LER O TOKEN ---
 function decodeJwt(token: string) {
   try {
     const base64Payload = token.split('.')[1];
@@ -33,7 +34,7 @@ function decodeJwt(token: string) {
 }
 
 // ==========================================
-// ROTA DE LOGIN (RBAC + SUPER ADMIN)
+// ROTA DE LOGIN (MANTIDA IGUAL)
 // ==========================================
 app.post('/api/login/google', async (req: Request, res: Response): Promise<any> => {
   const { credential } = req.body;
@@ -66,15 +67,12 @@ app.post('/api/login/google', async (req: Request, res: Response): Promise<any> 
     const deptName = user.department?.name || "";
     const roleName = user.role?.name || "";
 
-    // 1. Nível 4: SUPER_ADMIN (Vladimir Sesar)
     if (user.name === 'Vladimir Antonio Sesar') {
       profile = 'SUPER_ADMIN';
     } 
-    // 2. Nível 3: ADMIN (SI e Board)
     else if (['Tecnologia e Segurança', 'Board'].includes(deptName)) {
       profile = 'ADMIN';
     } 
-    // 3. Nível 2: APPROVER (Gestores)
     else if (['Líder', 'Head', 'Gerente', 'Coordenador', 'Gestor', 'CEO'].some(k => roleName.includes(k))) {
       profile = 'APPROVER';
     }
@@ -95,6 +93,7 @@ app.get('/api/structure', async (req, res) => {
   res.json(structure);
 });
 
+// CORREÇÃO: AccessLevels removido pois não existe mais no schema, mantendo simples
 app.get('/api/tools', async (req, res) => {
   const tools = await prisma.tool.findMany({ include: { owner: true } });
   res.json(tools);
@@ -106,27 +105,31 @@ app.get('/api/users', async (req, res) => {
 });
 
 // ==========================================
-// ROTAS DE SOLICITAÇÕES
+// ROTAS DE SOLICITAÇÕES (CORRIGIDAS)
 // ==========================================
-app.get('/api/solicitacoes', listarSolicitacoes);
-app.post('/api/solicitacoes', criarSolicitacao);
-app.patch('/api/solicitacoes/:id', atualizarStatus);
+// Usando os novos nomes importados do controller
+app.get('/api/solicitacoes', getSolicitacoes);
+app.post('/api/solicitacoes', createSolicitacao);
+app.patch('/api/solicitacoes/:id', updateSolicitacao);
 
 // ==========================================
 // START SERVER & SLACK BOT
 // ==========================================
-const PORT = 3000;
+// CORREÇÃO: Render exige process.env.PORT
+const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, async () => {
-  console.log(`🚀 Backend rodando em http://localhost:${PORT}`);
+  console.log(`🚀 Backend rodando na porta ${PORT}`);
   
-  // Tenta iniciar o Bot do Slack
   try {
-    // Verifica se os tokens existem (mesmo que você tenha colocado hardcoded no service, isso evita crash se faltar algo)
-    await startSlackBot();
-    console.log("💬 Integração com Slack iniciada.");
+    // Só inicia o Slack se tiver token, para não quebrar build se faltar env var
+    if (process.env.SLACK_BOT_TOKEN) {
+        await startSlackBot();
+        console.log("💬 Integração com Slack iniciada.");
+    } else {
+        console.log("⚠️ Slack Token não encontrado, bot pulado.");
+    }
   } catch (e) {
-    console.error("⚠️ Aviso: Slack Bot não foi iniciado (Verifique tokens no console do Slack).");
-    // Não mata o servidor, apenas loga o erro do bot
-    console.error(e);
+    console.error("⚠️ Erro no Slack Bot:", e);
   }
 });

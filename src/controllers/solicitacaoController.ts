@@ -8,7 +8,7 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
     const requests = await prisma.request.findMany({
       include: {
         requester: true,
-        approver: true // CORREÇÃO: Mudado de lastApprover para approver
+        approver: true
       },
       orderBy: {
         createdAt: 'desc'
@@ -24,14 +24,13 @@ export const createSolicitacao = async (req: Request, res: Response) => {
   try {
     const { requesterId, type, details, justification, isExtraordinary } = req.body;
 
-    // Converte objeto details para string se vier como objeto
     const detailsString = typeof details === 'object' ? JSON.stringify(details) : details;
 
     const newRequest = await prisma.request.create({
       data: {
         requesterId,
         type,
-        status: 'PENDENTE_GESTOR', // Status inicial padrão
+        status: 'PENDENTE_GESTOR',
         details: detailsString,
         justification,
         isExtraordinary: isExtraordinary || false
@@ -47,14 +46,16 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
 export const updateSolicitacao = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { status, approverId } = req.body;
+  // Correção do erro de tipagem TS2322: garantindo que é string
+  const status = req.body.status as string;
+  const approverId = req.body.approverId as string;
 
   try {
     const updated = await prisma.request.update({
       where: { id },
       data: {
         status,
-        approverId, // CORREÇÃO: Mudado de lastApproverId para approverId
+        approverId,
         updatedAt: new Date()
       }
     });
