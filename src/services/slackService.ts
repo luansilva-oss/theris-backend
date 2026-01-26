@@ -11,7 +11,7 @@ const slackApp = new App({
 });
 
 // ============================================================
-// 1. MENU PRINCIPAL (/theris) - AGORA COM TODOS OS BOTÕES
+// 1. MENU PRINCIPAL (/theris)
 // ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
   await ack(); 
@@ -38,13 +38,14 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
             ]
           },
 
-          // SEÇÃO DE FERRAMENTAS (BOTÕES DIRETOS AGORA)
+          // SEÇÃO DE FERRAMENTAS (ATUALIZADO)
           { type: 'divider' },
           { type: 'section', text: { type: 'mrkdwn', text: '🛠️ *Gestão de Ferramentas*' } },
           {
             type: 'actions',
             elements: [
-              { type: 'button', text: { type: 'plain_text', text: '🔄 Substituir Ferramenta' }, action_id: 'btn_tool_replace' },
+              // Botão alterado de Substituição para Demandas Gerais
+              { type: 'button', text: { type: 'plain_text', text: '📋 Demandas Gerais' }, action_id: 'btn_general_demands' },
               { type: 'button', text: { type: 'plain_text', text: '🎚️ Alterar Nível' }, action_id: 'btn_tool_access' },
               { type: 'button', text: { type: 'plain_text', text: '🔥 Acesso Extraordinário' }, action_id: 'btn_tool_extra', style: 'danger' }
             ]
@@ -58,7 +59,7 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 2. MODAIS DE GESTÃO DE PESSOAS
+// 2. MODAIS DE GESTÃO DE PESSOAS (MANTIDO)
 // ============================================================
 
 // A. PROMOÇÃO
@@ -128,25 +129,58 @@ slackApp.action('btn_fire', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 3. MODAIS DE FERRAMENTAS (AGORA DIRETOS)
+// 3. MODAIS DE FERRAMENTAS
 // ============================================================
 
-// D. SUBSTITUIÇÃO DE FERRAMENTA
-slackApp.action('btn_tool_replace', async ({ ack, body, client }) => {
+// D. DEMANDAS GERAIS (NOVA IMPLEMENTAÇÃO - APENAS LINKS)
+slackApp.action('btn_general_demands', async ({ ack, body, client }) => {
   await ack();
   try {
     await client.views.push({
       trigger_id: (body as any).trigger_id,
       view: {
-        type: 'modal', callback_id: 'submit_tool_replace', title: { type: 'plain_text', text: 'Substituição' }, submit: { type: 'plain_text', text: 'Solicitar' },
+        type: 'modal',
+        title: { type: 'plain_text', text: 'Demandas Gerais' },
+        close: { type: 'plain_text', text: 'Fechar' },
+        // Removemos o botão 'Submit' pois são apenas links externos
         blocks: [
-          { type: 'input', block_id: 'blk_old', label: { type: 'plain_text', text: 'Ferramenta Atual (Descontinuar)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'section', text: { type: 'mrkdwn', text: 'Estas solicitações são processadas via *ClickUp*. Selecione abaixo a opção desejada para abrir o formulário:' } },
           { type: 'divider' },
-          { type: 'section', text: { type: 'mrkdwn', text: '*Nova Ferramenta*' } },
-          { type: 'input', block_id: 'blk_new', label: { type: 'plain_text', text: 'Nome da Nova Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_owner', label: { type: 'plain_text', text: 'Owner (Dono)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_sub', optional: true, label: { type: 'plain_text', text: 'Sub-owner (Opcional)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Motivo da Alteração' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: '🚀 Avaliação de Novo Software' },
+                url: 'https://forms.clickup.com/31083618/f/xmk32-93933/ON71J584JHXR9PHOA5',
+                action_id: 'link_new_sw'
+              }
+            ]
+          },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: '🏢 Avaliação de Fornecedores' },
+                url: 'https://forms.clickup.com/31083618/f/xmk32-105593/HW469QNPJSNO576GI1',
+                action_id: 'link_vendor'
+              }
+            ]
+          },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: '🛡️ Solicitações para Security' },
+                url: 'https://forms.clickup.com/31083618/f/xmk32-98933/6JUAFYHDOBRYD28W7S',
+                style: 'danger',
+                action_id: 'link_security'
+              }
+            ]
+          },
+          { type: 'context', elements: [{ type: 'mrkdwn', text: 'ℹ️ Ao clicar, você será redirecionado para o navegador.' }] }
         ]
       }
     });
@@ -273,19 +307,8 @@ slackApp.view('submit_fire', async ({ ack, body, view, client }) => {
   await saveRequest(body, client, 'FIRING', details, v.blk_reason.inp.value!, `⚠️ Offboarding de *${name}* registrado.`);
 });
 
-slackApp.view('submit_tool_replace', async ({ ack, body, view, client }) => {
-    await ack();
-    const v = view.state.values;
-    const newTool = v.blk_new.inp.value;
-    const details = {
-        info: `Substituição: ${v.blk_old.inp.value} ➡️ ${newTool}`,
-        oldTool: v.blk_old.inp.value,
-        newTool,
-        owner: v.blk_owner.inp.value,
-        subOwner: v.blk_sub.inp.value || 'N/A'
-    };
-    await saveRequest(body, client, 'TOOL_REPLACEMENT', details, v.blk_reason.inp.value!, `✅ Troca de sistema (${newTool}) solicitada.`);
-});
+// Handler de Substituição foi removido, pois virou "Demandas Gerais" com link externo
+// Handlers de Acesso e Extraordinário continuam normais
 
 slackApp.view('submit_tool_access', async ({ ack, body, view, client }) => {
     await ack();
