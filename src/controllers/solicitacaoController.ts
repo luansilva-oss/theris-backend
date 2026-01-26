@@ -25,7 +25,10 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
 // --- CRIAR SOLICITAÇÃO ---
 export const createSolicitacao = async (req: Request, res: Response) => {
   try {
-    const { requesterId, type, details, justification, isExtraordinary } = req.body;
+    // Usamos 'as any' para evitar que o TypeScript reclame da tipagem do body
+    const body = req.body as any;
+
+    const { requesterId, type, details, justification, isExtraordinary } = body;
 
     // Garante que details seja uma string
     const detailsString = typeof details === 'object' ? JSON.stringify(details) : String(details);
@@ -34,7 +37,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       data: {
         requesterId: String(requesterId),
         type: String(type),
-        status: 'PENDENTE_GESTOR',
+        status: 'PENDENTE_GESTOR', // Status inicial padrão
         details: detailsString,
         justification: justification ? String(justification) : null,
         isExtraordinary: Boolean(isExtraordinary)
@@ -52,20 +55,18 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 export const updateSolicitacao = async (req: Request, res: Response) => {
   const { id } = req.params;
   
-  // CORREÇÃO DEFINITIVA DO ERRO TS2322:
-  // Convertendo explicitamente para String() para garantir que não é um Array
-  const rawStatus = req.body.status;
-  const rawApproverId = req.body.approverId;
-
-  const status = typeof rawStatus === 'string' ? rawStatus : String(rawStatus);
-  const approverId = rawApproverId ? String(rawApproverId) : undefined;
+  // AQUI ESTÁ A CORREÇÃO DEFINITIVA:
+  // Tratamos o body como 'any' para ignorar a verificação restrita de array
+  const body = req.body as any;
 
   try {
     const updated = await prisma.request.update({
       where: { id },
       data: {
-        status: status,
-        approverId: approverId,
+        // Forçamos a conversão para String direto na atribuição
+        status: String(body.status),
+        // Se tiver approverId, converte para string, senão passa null
+        approverId: body.approverId ? String(body.approverId) : null,
         updatedAt: new Date()
       }
     });
