@@ -11,7 +11,7 @@ const slackApp = new App({
 });
 
 // ============================================================
-// 1. MENU PRINCIPAL (/theris) - ESTRUTURA NOVA (3 BLOCOS)
+// 1. MENU PRINCIPAL (/theris) - COM LINKS DIRETOS
 // ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
   await ack(); 
@@ -40,7 +40,7 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
 
           // BLOCO 2: FERRAMENTAS (ACESSOS)
           { type: 'divider' },
-          { type: 'section', text: { type: 'mrkdwn', text: '🛠️ *Gestão de Acessos & Ferramentas*' } },
+          { type: 'section', text: { type: 'mrkdwn', text: '🛠️ *Gestão de Acessos*' } },
           {
             type: 'actions',
             elements: [
@@ -49,13 +49,30 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
             ]
           },
 
-          // BLOCO 3: DEMANDAS GERAIS (PROJETOS)
+          // BLOCO 3: DEMANDAS GERAIS (LINKS DIRETOS AGORA)
           { type: 'divider' },
-          { type: 'section', text: { type: 'mrkdwn', text: '📋 *Demandas Gerais / Projetos*' } },
+          { type: 'section', text: { type: 'mrkdwn', text: '📋 *Demandas Gerais / Projetos (ClickUp)*' } },
           {
             type: 'actions',
             elements: [
-              { type: 'button', text: { type: 'plain_text', text: '🚀 Avaliação de Softwares & Fornecedores' }, action_id: 'btn_general_demands' }
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: '🚀 Novo Software' },
+                url: 'https://forms.clickup.com/31083618/f/xmk32-93933/ON71J584JHXR9PHOA5',
+                action_id: 'link_new_sw'
+              },
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: '🏢 Fornecedores' },
+                url: 'https://forms.clickup.com/31083618/f/xmk32-105593/HW469QNPJSNO576GI1',
+                action_id: 'link_vendor'
+              },
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: '🛡️ Security' },
+                url: 'https://forms.clickup.com/31083618/f/xmk32-98933/6JUAFYHDOBRYD28W7S',
+                action_id: 'link_security'
+              }
             ]
           }
         ]
@@ -136,65 +153,15 @@ slackApp.action('btn_fire', async ({ ack, body, client }) => {
   } catch (e) { console.error(e); }
 });
 
-// ============================================================
-// 3. DEMANDAS GERAIS (LINKS EXTERNOS)
-// ============================================================
+// LINKS EXTERNOS (AÇÕES MUDAS - APENAS LOG)
+// O Slack trata o clique em botões com URL nativamente, mas precisamos registrar a action_id para não dar erro
+slackApp.action('link_new_sw', async ({ ack }) => { await ack(); });
+slackApp.action('link_vendor', async ({ ack }) => { await ack(); });
+slackApp.action('link_security', async ({ ack }) => { await ack(); });
 
-slackApp.action('btn_general_demands', async ({ ack, body, client }) => {
-  await ack();
-  try {
-    await client.views.push({
-      trigger_id: (body as any).trigger_id,
-      view: {
-        type: 'modal',
-        title: { type: 'plain_text', text: 'Demandas Gerais' },
-        close: { type: 'plain_text', text: 'Fechar' },
-        blocks: [
-          { type: 'section', text: { type: 'mrkdwn', text: 'Estas solicitações são geridas via *ClickUp*. Selecione uma opção para abrir o formulário:' } },
-          { type: 'divider' },
-          {
-            type: 'actions',
-            elements: [
-              {
-                type: 'button',
-                text: { type: 'plain_text', text: '🚀 Avaliação de Novo Software' },
-                url: 'https://forms.clickup.com/31083618/f/xmk32-93933/ON71J584JHXR9PHOA5',
-                action_id: 'link_new_sw'
-              }
-            ]
-          },
-          {
-            type: 'actions',
-            elements: [
-              {
-                type: 'button',
-                text: { type: 'plain_text', text: '🏢 Avaliação de Fornecedores' },
-                url: 'https://forms.clickup.com/31083618/f/xmk32-105593/HW469QNPJSNO576GI1',
-                action_id: 'link_vendor'
-              }
-            ]
-          },
-          {
-            type: 'actions',
-            elements: [
-              {
-                type: 'button',
-                text: { type: 'plain_text', text: '🛡️ Solicitações para Security' },
-                url: 'https://forms.clickup.com/31083618/f/xmk32-98933/6JUAFYHDOBRYD28W7S',
-                style: 'danger',
-                action_id: 'link_security'
-              }
-            ]
-          },
-          { type: 'context', elements: [{ type: 'mrkdwn', text: 'ℹ️ Os links abrirão no seu navegador padrão.' }] }
-        ]
-      }
-    });
-  } catch (e) { console.error(e); }
-});
 
 // ============================================================
-// 4. GESTÃO DE ACESSOS (FERRAMENTAS)
+// 3. GESTÃO DE ACESSOS (FERRAMENTAS)
 // ============================================================
 
 // E. ALTERAR NÍVEL DE ACESSO
@@ -239,7 +206,7 @@ slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 5. PROCESSAMENTO (HANDLERS)
+// 4. PROCESSAMENTO (HANDLERS)
 // ============================================================
 
 async function saveRequest(body: any, client: any, dbType: string, details: any, reason: string, msg: string, isExtraordinary = false) {
