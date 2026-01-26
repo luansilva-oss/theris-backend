@@ -3,17 +3,22 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export const listarColaboradores = async (req: Request, res: Response) => {
+export const getColaboradores = async (req: Request, res: Response) => {
   try {
-    // Busca todos os registros no banco
-    const colaboradores = await prisma.colaborador.findMany({
-      orderBy: { nome: 'asc' } // Ordena alfabeticamente
+    // CORREÇÃO: Mudado de prisma.colaborador para prisma.user
+    const users = await prisma.user.findMany({
+      include: {
+        role: true,
+        department: true,
+        manager: true,
+        myDeputy: true
+      },
+      orderBy: {
+        name: 'asc'
+      }
     });
-    
-    // Devolve como JSON
-    res.json(colaboradores);
+    res.json(users);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Erro ao buscar colaboradores' });
+    res.status(500).json({ error: "Erro ao buscar colaboradores" });
   }
 };
