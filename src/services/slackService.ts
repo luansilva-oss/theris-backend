@@ -11,7 +11,7 @@ const slackApp = new App({
 });
 
 // ============================================================
-// 1. MENU PRINCIPAL (/theris)
+// 1. MENU PRINCIPAL (/theris) - ESTRUTURA NOVA (3 BLOCOS)
 // ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
   await ack(); 
@@ -24,9 +24,9 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
         callback_id: 'theris_main_modal',
         title: { type: 'plain_text', text: 'Theris IGA 🦅' },
         blocks: [
-          { type: 'section', text: { type: 'mrkdwn', text: '*Painel de Governança*\nO que você deseja fazer hoje?' } },
+          { type: 'section', text: { type: 'mrkdwn', text: '*Painel de Governança*\nSelecione a categoria de serviço:' } },
           
-          // SEÇÃO DE PESSOAS
+          // BLOCO 1: PESSOAS
           { type: 'divider' },
           { type: 'section', text: { type: 'mrkdwn', text: '👤 *Gestão de Pessoas*' } },
           {
@@ -38,16 +38,24 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
             ]
           },
 
-          // SEÇÃO DE FERRAMENTAS (ATUALIZADO)
+          // BLOCO 2: FERRAMENTAS (ACESSOS)
           { type: 'divider' },
-          { type: 'section', text: { type: 'mrkdwn', text: '🛠️ *Gestão de Ferramentas*' } },
+          { type: 'section', text: { type: 'mrkdwn', text: '🛠️ *Gestão de Acessos & Ferramentas*' } },
           {
             type: 'actions',
             elements: [
-              // Botão alterado de Substituição para Demandas Gerais
-              { type: 'button', text: { type: 'plain_text', text: '📋 Demandas Gerais' }, action_id: 'btn_general_demands' },
-              { type: 'button', text: { type: 'plain_text', text: '🎚️ Alterar Nível' }, action_id: 'btn_tool_access' },
+              { type: 'button', text: { type: 'plain_text', text: '🎚️ Alterar Nível de Acesso' }, action_id: 'btn_tool_access' },
               { type: 'button', text: { type: 'plain_text', text: '🔥 Acesso Extraordinário' }, action_id: 'btn_tool_extra', style: 'danger' }
+            ]
+          },
+
+          // BLOCO 3: DEMANDAS GERAIS (PROJETOS)
+          { type: 'divider' },
+          { type: 'section', text: { type: 'mrkdwn', text: '📋 *Demandas Gerais / Projetos*' } },
+          {
+            type: 'actions',
+            elements: [
+              { type: 'button', text: { type: 'plain_text', text: '🚀 Avaliação de Softwares & Fornecedores' }, action_id: 'btn_general_demands' }
             ]
           }
         ]
@@ -59,7 +67,7 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 2. MODAIS DE GESTÃO DE PESSOAS (MANTIDO)
+// 2. MODAIS DE GESTÃO DE PESSOAS
 // ============================================================
 
 // A. PROMOÇÃO
@@ -129,10 +137,9 @@ slackApp.action('btn_fire', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 3. MODAIS DE FERRAMENTAS
+// 3. DEMANDAS GERAIS (LINKS EXTERNOS)
 // ============================================================
 
-// D. DEMANDAS GERAIS (NOVA IMPLEMENTAÇÃO - APENAS LINKS)
 slackApp.action('btn_general_demands', async ({ ack, body, client }) => {
   await ack();
   try {
@@ -142,9 +149,8 @@ slackApp.action('btn_general_demands', async ({ ack, body, client }) => {
         type: 'modal',
         title: { type: 'plain_text', text: 'Demandas Gerais' },
         close: { type: 'plain_text', text: 'Fechar' },
-        // Removemos o botão 'Submit' pois são apenas links externos
         blocks: [
-          { type: 'section', text: { type: 'mrkdwn', text: 'Estas solicitações são processadas via *ClickUp*. Selecione abaixo a opção desejada para abrir o formulário:' } },
+          { type: 'section', text: { type: 'mrkdwn', text: 'Estas solicitações são geridas via *ClickUp*. Selecione uma opção para abrir o formulário:' } },
           { type: 'divider' },
           {
             type: 'actions',
@@ -180,12 +186,16 @@ slackApp.action('btn_general_demands', async ({ ack, body, client }) => {
               }
             ]
           },
-          { type: 'context', elements: [{ type: 'mrkdwn', text: 'ℹ️ Ao clicar, você será redirecionado para o navegador.' }] }
+          { type: 'context', elements: [{ type: 'mrkdwn', text: 'ℹ️ Os links abrirão no seu navegador padrão.' }] }
         ]
       }
     });
   } catch (e) { console.error(e); }
 });
+
+// ============================================================
+// 4. GESTÃO DE ACESSOS (FERRAMENTAS)
+// ============================================================
 
 // E. ALTERAR NÍVEL DE ACESSO
 slackApp.action('btn_tool_access', async ({ ack, body, client }) => {
@@ -229,7 +239,7 @@ slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 4. PROCESSAMENTO (HANDLERS)
+// 5. PROCESSAMENTO (HANDLERS)
 // ============================================================
 
 async function saveRequest(body: any, client: any, dbType: string, details: any, reason: string, msg: string, isExtraordinary = false) {
@@ -306,9 +316,6 @@ slackApp.view('submit_fire', async ({ ack, body, view, client }) => {
   };
   await saveRequest(body, client, 'FIRING', details, v.blk_reason.inp.value!, `⚠️ Offboarding de *${name}* registrado.`);
 });
-
-// Handler de Substituição foi removido, pois virou "Demandas Gerais" com link externo
-// Handlers de Acesso e Extraordinário continuam normais
 
 slackApp.view('submit_tool_access', async ({ ack, body, view, client }) => {
     await ack();
