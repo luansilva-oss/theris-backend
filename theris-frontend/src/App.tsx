@@ -2,17 +2,16 @@ import { useEffect, useState } from 'react';
 import { 
   LayoutDashboard, Users, FileText, Clock, CheckCircle, XCircle, 
   Server, ChevronRight, ChevronDown, LogOut, Lock, User, 
-  Bird, Activity, ShieldAlert, Calendar, Zap, Hash, UserPlus, Crown
+  Bird, Activity, ShieldAlert, Calendar, Hash, UserPlus, Crown,
+  ShieldCheck, ClipboardList, List, Zap, Mail, Search, Filter
 } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import './App.css';
 
-// --- CONFIGURAÇÃO INTELIGENTE DE IP ---
-// Detecta se você está em localhost ou IP da rede e usa o mesmo para a API
+// --- CONFIGURAÇÃO ---
 const API_URL = `http://${window.location.hostname}:3000`;
 
-// --- CONFIGURAÇÕES GERAIS ---
-const LEADER_KEYWORDS = ['Líder', 'Head', 'Tech Lead', 'Coordenador', 'Gerente', 'Gestor'];
+const LEADER_KEYWORDS = ['Líder', 'Head', 'Tech Lead', 'Coordenador', 'Gerente', 'Gestor', 'Diretor', 'CTO', 'CEO', 'Super Admin'];
 const DEPT_ORDER = [
   'Board', 'Lideranças & Gestão', 'Tecnologia e Segurança', 'Produto', 
   'Produto 3C+', 'Produto Evolux', 'Produto FiqOn', 'Produto Dizify',
@@ -21,30 +20,20 @@ const DEPT_ORDER = [
 ];
 
 // --- INTERFACES ---
-interface Manager { id: string; name: string; }
 interface User { 
-  id: string; name: string; 
-  role?: { name: string }; 
-  department?: { name: string }; 
-  departmentId: string; 
-  manager?: Manager; 
-  deputyId?: string;
+  id: string; name: string; email: string;
+  role?: { name: string }; department?: { name: string }; 
+  manager?: { id: string; name: string; };
+  myDeputy?: { id: string; name: string; };
 }
-interface Role { id: string; name: string; users: User[]; }
+interface Tool { id: string; name: string; owner?: { name: string }; subOwner?: { name: string }; }
+interface Request { id: string; requesterId: string; requester: User; type: string; status: string; details: string; justification: string; createdAt: string; updatedAt: string; isExtraordinary: boolean; lastApprover?: { name: string }; }
 interface Department { id: string; name: string; roles: Role[]; }
-interface Tool { id: string; name: string; owner?: { name: string; id: string }; accessLevels: { create: { name: string }[] } | null; }
-
-interface Request { 
-  id: string; requesterId: string; requester: { name: string }; lastApprover?: { name: string }; 
-  type: string; status: string; currentApproverRole: string; 
-  details: string; justification: string; createdAt: string; updatedAt: string; 
-  isExtraordinary: boolean; 
-}
+interface Role { id: string; name: string; users: User[]; }
 
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER';
 
-// --- SUB-COMPONENTES ---
-
+// --- COMPONENTES AUXILIARES ---
 const StatusBadge = ({ status }: { status: string }) => {
   if (status === 'APROVADO') return <span className="badge APROVADO">APROVADO</span>;
   if (status === 'REPROVADO') return <span className="badge REPROVADO">REPROVADO</span>;
@@ -65,22 +54,20 @@ const ActivityFeed = ({ requests }: { requests: Request[] }) => (
     <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}>
       <Activity size={20} color="#0ea5e9"/> Atividade Recente
     </h3>
-    <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
-      {requests.slice(0, 5).map(r => {
-        let info = "Detalhes não disponíveis";
+    <div className="activity-list">
+      {requests.slice(0, 6).map(r => {
+        let info = "Detalhes indisponíveis";
         try { const parsed = JSON.parse(r.details); info = parsed.info || info; } catch (e) {}
 
         return (
-          <div key={r.id} style={{display:'flex', gap:'12px', alignItems:'center', borderBottom:'1px solid #33415530', paddingBottom:'12px'}}>
-            <div style={{minWidth:'32px', height:'32px', borderRadius:'50%', background: r.status === 'APROVADO' ? '#10b98120' : '#f59e0b20', display:'flex', alignItems:'center', justifyContent:'center'}}>
-              {r.status === 'APROVADO' ? <CheckCircle size={16} color="#10b981"/> : <Clock size={16} color="#f59e0b"/>}
-            </div>
+          <div key={r.id} className="activity-item">
+            <div className={`status-indicator ${r.status}`}></div>
             <div>
-              <div style={{fontSize:'0.9rem', color:'white', fontWeight:500}}>
-                <span style={{color:'#cbd5e1'}}>{r.requester?.name || 'Usuário'}</span> solicitou <span style={{color:'#0ea5e9'}}>{info}</span>
+              <div className="act-title">
+                <span style={{color:'#cbd5e1'}}>{r.requester?.name.split(' ')[0]}</span> - {info}
               </div>
-              <div style={{fontSize:'0.75rem', color:'#64748b', marginTop:'2px'}}>
-                {new Date(r.createdAt).toLocaleDateString()} • {r.status.replace('_',' ')}
+              <div className="act-date">
+                {new Date(r.createdAt).toLocaleDateString()} • {r.status.replace('PENDENTE_', 'AGUARD. ')}
               </div>
             </div>
           </div>
@@ -89,8 +76,6 @@ const ActivityFeed = ({ requests }: { requests: Request[] }) => (
     </div>
   </div>
 );
-
-// --- APP COMPONENT ---
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -105,65 +90,51 @@ export default function App() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
 
-  const [formType, setFormType] = useState('CHANGE_ROLE');
-  const [formDetails, setFormDetails] = useState(''); 
-  const [formJustification, setFormJustification] = useState('');
+  // Estados de Formulário e Filtros
   const [targetUserId, setTargetUserId] = useState('');
-  const [targetDept, setTargetDept] = useState('');
-  const [targetRole, setTargetRole] = useState('');
-  const [isExtraordinary, setIsExtraordinary] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+  const [filterStatus, setFilterStatus] = useState('ALL');
 
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  // --- FUNÇÃO DE CARREGAMENTO DE DADOS ---
+  // --- CARREGAMENTO DE DADOS ---
   const loadData = async () => {
     try {
       const [resStruct, resTools, resUsers, resReqs] = await Promise.all([
-        fetch(`${API_URL}/api/structure`),
-        fetch(`${API_URL}/api/tools`),
-        fetch(`${API_URL}/api/users`),
-        fetch(`${API_URL}/api/solicitacoes`)
+        fetch(`${API_URL}/api/structure`), fetch(`${API_URL}/api/tools`), fetch(`${API_URL}/api/users`), fetch(`${API_URL}/api/solicitacoes`)
       ]);
-      
-      const rawStruct: Department[] = await resStruct.json();
+      const rawStruct = await resStruct.json();
       const dUsers = await resUsers.json();
       const dTools = await resTools.json();
       const dReqs = await resReqs.json();
 
-      // Ordenação e Estrutura do Organograma
       const finalStructure: Department[] = [];
       const leadershipRoles: Role[] = [];
-      const boardDept = rawStruct.find(d => d.name === 'Board');
+      const boardDept = rawStruct.find((d: any) => d.name === 'Board');
       if (boardDept) finalStructure.push(boardDept);
 
-      rawStruct.filter(d => d.name !== 'Board').forEach(dept => {
-        const leaders = dept.roles.filter(r => LEADER_KEYWORDS.some(k => r.name.includes(k)));
-        const staff = dept.roles.filter(r => !LEADER_KEYWORDS.some(k => r.name.includes(k)));
-        if (leaders.length > 0) leaders.forEach(l => leadershipRoles.push({ ...l, name: `${l.name} (${dept.name})` }));
+      rawStruct.filter((d: any) => d.name !== 'Board').forEach((dept: any) => {
+        const leaders = dept.roles.filter((r: any) => LEADER_KEYWORDS.some(k => r.name.includes(k)));
+        const staff = dept.roles.filter((r: any) => !LEADER_KEYWORDS.some(k => r.name.includes(k)));
+        if (leaders.length > 0) leaders.forEach((l: any) => leadershipRoles.push({ ...l, name: `${l.name} (${dept.name})` }));
         if (staff.length > 0) finalStructure.push({ ...dept, roles: staff });
       });
 
       if (leadershipRoles.length > 0) finalStructure.push({ id: 'liderancas-virtual-id', name: 'Lideranças & Gestão', roles: leadershipRoles });
 
       finalStructure.sort((a, b) => {
-        let idxA = DEPT_ORDER.indexOf(a.name);
-        let idxB = DEPT_ORDER.indexOf(b.name);
+        let idxA = DEPT_ORDER.indexOf(a.name); let idxB = DEPT_ORDER.indexOf(b.name);
         return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
       });
 
-      setStructure(finalStructure);
-      setTools(dTools);
-      setAllUsers(dUsers);
-      setRequests(dReqs);
-    } catch (e) { console.error("Erro ao carregar dados:", e); }
+      setStructure(finalStructure); setTools(dTools); setAllUsers(dUsers); setRequests(dReqs);
+    } catch (e) { console.error(e); }
   };
 
-  // --- AUTO-UPDATE (POLLING A CADA 5s) ---
   useEffect(() => {
     loadData();
-    const intervalId = setInterval(() => {
-      if (isLoggedIn) loadData();
-    }, 5000);
+    const intervalId = setInterval(() => { if (isLoggedIn) loadData(); }, 5000);
     return () => clearInterval(intervalId);
   }, [isLoggedIn]);
 
@@ -171,357 +142,183 @@ export default function App() {
   const responseGoogle = async (credentialResponse: any) => {
     try {
       const res = await fetch(`${API_URL}/api/login/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ credential: credentialResponse.credential, clientId: credentialResponse.clientId })
       });
       const data = await res.json();
       if (res.ok) {
-        setCurrentUser(data.user);
-        setSystemProfile(data.profile);
-        setIsLoggedIn(true);
-        setActiveTab(data.profile === 'VIEWER' ? 'PROFILE' : 'DASHBOARD');
+        setCurrentUser(data.user); setSystemProfile(data.profile); setIsLoggedIn(true); setActiveTab('DASHBOARD');
       } else { alert(`❌ Acesso Negado: ${data.error}`); }
-    } catch (error) { console.error(error); alert("Falha de conexão."); }
+    } catch (error) { alert("Falha de conexão."); }
   };
 
   const handleLogout = () => { setIsLoggedIn(false); setCurrentUser(null); setSystemProfile('VIEWER'); };
 
-  const handleCreateRequest = async (e: React.FormEvent) => {
+  const handleDeputyRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) return;
-
-    let finalDetails = { info: '', toolName: '', accessLevel: '', targetUserId: '' };
-    
-    if (formType === 'CHANGE_ROLE') {
-       finalDetails.info = `Mudança para: ${targetRole} (${targetDept})`;
-    } else if (formType === 'ACCESS_TOOL') {
-       finalDetails.info = `Acesso: ${formDetails}`;
-       finalDetails.toolName = formDetails; 
-       finalDetails.accessLevel = 'User'; 
-    } else if (formType === 'NOMINATE_DEPUTY') {
-       const deputy = allUsers.find(u => u.id === targetUserId);
-       finalDetails.info = `Nomeação de Deputy: ${deputy?.name}`;
-       finalDetails.targetUserId = targetUserId;
-    }
-
-    const beneficiaryId = (formType === 'NOMINATE_DEPUTY') ? currentUser.id : (targetUserId || currentUser.id);
-
+    if (!currentUser || !targetUserId) return;
+    const deputy = allUsers.find(u => u.id === targetUserId);
+    const details = { info: `Nomeação de Deputy: ${deputy?.name}`, targetUserId };
     await fetch(`${API_URL}/api/solicitacoes`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ requesterId: beneficiaryId, type: formType, details: finalDetails, justification: formJustification, isExtraordinary })
+      body: JSON.stringify({ requesterId: currentUser.id, type: 'NOMINATE_DEPUTY', details, justification: 'Indicação via Painel', isExtraordinary: false })
     });
-    
-    alert("Solicitação enviada!");
-    setFormDetails(''); setIsExtraordinary(false); loadData();
+    alert("Solicitação de Deputy enviada!"); setTargetUserId(''); loadData();
   };
 
   const handleApprove = async (id: string, action: 'APROVAR' | 'REPROVAR') => {
+    if (!confirm(`Tem certeza que deseja ${action} esta solicitação?`)) return;
     const res = await fetch(`${API_URL}/api/solicitacoes/${id}`, {
       method: 'PATCH', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ status: action, approverId: currentUser?.id })
     });
-    if(res.ok) { loadData(); } else { const error = await res.json(); alert(`❌ Erro: ${error.error}`); }
+    if(res.ok) { loadData(); } else { alert(`❌ Erro na operação.`); }
   };
 
-  const availableRoles = targetDept ? structure.find(d => d.name === targetDept)?.roles || [] : [];
+  // Lógica de Filtros (Auditoria)
+  const getFilteredHistory = () => {
+    return requests.filter(r => {
+      if (!['APROVADO', 'REPROVADO'].includes(r.status)) return false;
+      if (filterStatus !== 'ALL' && r.status !== filterStatus) return false;
+      if (filterDate) {
+        const reqDate = new Date(r.updatedAt).toISOString().split('T')[0];
+        if (reqDate !== filterDate) return false;
+      }
+      if (searchTerm) {
+        const lowerSearch = searchTerm.toLowerCase();
+        let info = ''; try { info = JSON.parse(r.details).info } catch (e) {}
+        const matches = 
+          r.requester?.name.toLowerCase().includes(lowerSearch) ||
+          r.requester?.email.toLowerCase().includes(lowerSearch) ||
+          r.id.toLowerCase().includes(lowerSearch) ||
+          info.toLowerCase().includes(lowerSearch);
+        if (!matches) return false;
+      }
+      return true;
+    });
+  };
 
-  // --- TELA DE LOGIN ---
-  if (!isLoggedIn) {
-    return (
+  // --- TELA DE LOGIN IMERSIVA ---
+  if (!isLoggedIn) return (
       <div className="login-wrapper">
-        <div className="ambient-background"><div className="cloud cloud-1"></div><div className="cloud cloud-2"></div><div className="cloud cloud-3"></div></div>
-        <div className="fog-layer"></div>
-        <div className="login-brand-section glass-panel-left">
-          <div className="brand-content">
-            <div style={{display:'flex', alignItems:'center', gap:'15px', marginBottom:'30px'}}>
-               <div style={{background:'rgba(255,255,255,0.1)', padding:'10px', borderRadius:'12px', display:'flex', border:'1px solid rgba(255,255,255,0.2)'}}>
-                 <Bird size={32} color="#0ea5e9" strokeWidth={2}/>
-               </div>
-               <span style={{fontSize:'2rem', fontWeight: 700, letterSpacing:'-1px', color:'white', textShadow:'0 2px 10px rgba(0,0,0,0.3)'}}>THERIS</span>
-            </div>
-            <h1 style={{fontSize:'3.5rem', lineHeight:'1.1', marginBottom:'20px', color:'white', textShadow:'0 4px 20px rgba(0,0,0,0.5)'}}>Governança de <br/>Identidade <span style={{color:'#38bdf8'}}>Inteligente.</span></h1>
-            <p style={{fontSize:'1.1rem', color:'#e2e8f0', maxWidth:'500px', lineHeight:'1.6', textShadow:'0 2px 5px rgba(0,0,0,0.5)'}}>Centralize acessos, automatize auditorias e garanta compliance com a plataforma líder do Grupo 3C.</p>
-          </div>
-          <Bird className="giant-bg-icon" size={700} strokeWidth={0.3} color="white"/>
+        <div className="ambient-background">
+           <div className="cloud cloud-1"></div>
+           <div className="cloud cloud-2"></div>
         </div>
-        <div className="login-form-section glass-panel-right">
-          <div className="login-box">
-             <div style={{textAlign:'center', marginBottom:'40px'}}><h2 style={{fontSize:'2rem', color:'white', marginBottom:'10px', fontWeight:600}}>Acesse sua conta</h2><p style={{color:'#94a3b8', fontSize:'1rem'}}>Utilize suas credenciais corporativas</p></div>
-             <div className="google-btn-wrapper"><GoogleLogin onSuccess={responseGoogle} onError={() => alert('Falha no Login')} theme="filled_black" shape="pill" size="large" text="continue_with" width="100%"/></div>
-             <div style={{marginTop:'40px', textAlign:'center', fontSize:'0.85rem', color:'#64748b', borderTop:'1px solid rgba(255,255,255,0.05)', paddingTop:'20px'}}><Lock size={14} style={{verticalAlign:'middle', marginRight:'6px', color:'#0ea5e9'}}/>Ambiente Seguro & Criptografado</div>
-          </div>
+        
+        <div className="login-content-layer">
+            <div className="login-brand-side">
+                <div className="brand-logo-box"><Bird size={48} color="#0ea5e9" strokeWidth={2}/></div>
+                <h1 className="brand-title">THERIS <span className="os-badge">OS</span></h1>
+                <p className="brand-subtitle">Identity Governance & Intelligence</p>
+                <div className="brand-features">
+                    <div className="feat-item"><ShieldCheck size={18} color="#0ea5e9"/> <span>Segurança Zero-Trust</span></div>
+                    <div className="feat-item"><Zap size={18} color="#0ea5e9"/> <span>Automação em Tempo Real</span></div>
+                </div>
+            </div>
+
+            <div className="login-form-side">
+                <div className="login-glass-card">
+                    <div className="login-header">
+                        <h2>Bem-vindo de volta</h2>
+                        <p>Faça login com sua conta corporativa</p>
+                    </div>
+                    <div className="google-btn-wrapper">
+                        <GoogleLogin onSuccess={responseGoogle} onError={() => alert('Falha no Login')} theme="filled_black" shape="pill" size="large" text="continue_with" width="100%"/>
+                    </div>
+                    <div className="login-footer">
+                        <Lock size={14} /> Ambiente Seguro & Monitorado
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div className="login-footer-global">
+            <span>SYS.STATUS: <span style={{color:'#10b981'}}>ONLINE</span></span>
+            <span>ENCRYPT: <span style={{color:'#0ea5e9'}}>TLS 1.3</span></span>
         </div>
       </div>
-    );
-  }
+  );
 
-  // --- TELA PRINCIPAL (DASHBOARD) ---
+  // --- APP PRINCIPAL ---
   return (
     <div className="app-layout">
       <aside className="sidebar">
-        <div className="brand" style={{display:'flex', flexDirection:'column', alignItems:'start', gap:'0px', paddingBottom:'20px'}}>
-          <div style={{display:'flex', alignItems:'center', gap:'10px'}}><Bird size={28} color="#0ea5e9" /> <span style={{fontSize:'1.4rem', fontWeight: 700, letterSpacing:'1px'}}>THERIS</span></div>
-        </div>
+        <div className="brand-box"><div className="icon-wrapper"><Bird size={28} color="#0ea5e9" /></div><span className="brand-text">THERIS</span></div>
         <div className="user-mini-profile">
           <div className="avatar">{currentUser?.name ? currentUser.name.charAt(0) : 'U'}</div>
-          <div className="info"><div className="name">{currentUser?.name?.split(' ')[0] || 'Usuário'}</div><div className="role" style={{display:'flex', alignItems:'center', gap:'5px'}}>{systemProfile === 'SUPER_ADMIN' && <Crown size={12} color="#f59e0b"/>}{systemProfile}</div></div>
+          <div className="info"><div className="name">{currentUser?.name?.split(' ')[0]}</div><div className="role">{systemProfile}</div></div>
         </div>
         <nav className="nav-menu">
-          {systemProfile !== 'VIEWER' && (
-            <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => setActiveTab('DASHBOARD')}><LayoutDashboard size={18} /> Visão Geral</div>
-              <div className={`nav-item ${activeTab === 'REQUESTS' ? 'active' : ''}`} onClick={() => setActiveTab('REQUESTS')}><Clock size={18} /> Solicitações</div>
-            </>
-          )}
+          <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => setActiveTab('DASHBOARD')}><div className="icon-wrapper"><LayoutDashboard size={20} /></div><span className="nav-text">Visão Geral</span></div>
           {(systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN') && (
             <>
-              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Auditoria</div>
-              <div className={`nav-item ${activeTab === 'ORG' ? 'active' : ''}`} onClick={() => setActiveTab('ORG')}><Users size={18} /> Organograma</div>
-              <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => setActiveTab('TOOLS')}><Server size={18} /> Ferramentas</div>
+              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><div className="icon-wrapper"><FileText size={20} /></div><span className="nav-text">Auditoria</span></div>
+              <div className={`nav-item ${activeTab === 'ORG' ? 'active' : ''}`} onClick={() => setActiveTab('ORG')}><div className="icon-wrapper"><Users size={20} /></div><span className="nav-text">Organograma</span></div>
+              <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => setActiveTab('TOOLS')}><div className="icon-wrapper"><Server size={20} /></div><span className="nav-text">Ferramentas</span></div>
             </>
           )}
-          {(systemProfile === 'APPROVER' || systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN') && (
-               <div className={`nav-item ${activeTab === 'DEPUTY' ? 'active' : ''}`} onClick={() => {setFormType('NOMINATE_DEPUTY'); setActiveTab('DASHBOARD'); document.getElementById('req-form')?.scrollIntoView({behavior:'smooth'})}}><UserPlus size={18} /> Indicar Deputy</div>
-           )}
-          {systemProfile === 'VIEWER' && ( <div className={`nav-item ${activeTab === 'PROFILE' ? 'active' : ''}`} onClick={() => setActiveTab('PROFILE')}><User size={18} /> Meu Perfil</div> )}
         </nav>
-        <button onClick={handleLogout} className="logout-btn"><LogOut size={16}/> Sair</button>
+        <button onClick={handleLogout} className="logout-btn"><div className="icon-wrapper"><LogOut size={20}/></div><span className="nav-text">Sair</span></button>
       </aside>
 
       <main className="main-area">
         <header className="header-bar">
-           <div>
-             <div style={{background: 'rgba(14, 165, 233, 0.1)', border: '1px solid rgba(14, 165, 233, 0.2)', padding: '8px 16px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '8px'}}>
-                 <h2 style={{color: '#38bdf8', fontSize:'1.1rem', margin: 0, fontWeight: 600}}>Theris / {activeTab}</h2>
-             </div>
-             <div style={{color:'#94a3b8', fontSize:'0.85rem', display:'flex', alignItems:'center', gap:'5px', marginTop:'8px', paddingLeft:'4px'}}><Calendar size={12}/> {today}</div>
-           </div>
+           <div><div style={{background: 'rgba(14, 165, 233, 0.1)', border: '1px solid rgba(14, 165, 233, 0.2)', padding: '6px 14px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '8px'}}><h2 style={{color: '#0ea5e9', fontSize:'1rem', margin: 0, fontWeight: 600}}>Painel / {activeTab}</h2></div><div style={{color:'#94a3b8', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'5px', marginTop:'6px', paddingLeft:'4px'}}><Calendar size={12}/> {today}</div></div>
            <div className="status-badge"><div className="dot"></div> Sistema Operante</div>
         </header>
 
         <div className="content-scroll">
-          
-          {activeTab === 'DASHBOARD' && systemProfile !== 'VIEWER' && (
+          {activeTab === 'DASHBOARD' && (
             <div className="dashboard-grid">
                <div className="hero-banner">
-                 <div>
-                   <h1>Olá, {currentUser?.name?.split(' ')[0] || 'Colaborador'}!</h1>
-                   <p>Você tem <strong style={{color:'#f59e0b'}}>{requests.filter(r=>r.status.includes('PENDENTE')).length} solicitações</strong> aguardando sua análise hoje.</p>
+                 <div style={{display:'flex', alignItems:'center', gap:'20px'}}>
+                   <div style={{width:'60px', height:'60px', borderRadius:'50%', background:'linear-gradient(135deg, #0ea5e9, #3b82f6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1.5rem', fontWeight:'bold', color:'#fff'}}>{currentUser?.name.charAt(0)}</div>
+                   <div><h1>Olá, <span style={{color:'#0ea5e9'}}>{currentUser?.name?.split(' ')[0]}</span></h1><p style={{color:'#94a3b8'}}>{currentUser?.role?.name} • {currentUser?.department?.name}</p></div>
                  </div>
                </div>
-
                <div className="stats-container">
-                 <div className="glass-card"><div style={{color:'#94a3b8', textTransform:'uppercase', fontSize:'0.8rem', fontWeight:600}}>Colaboradores</div><div style={{fontSize:'2rem', fontWeight:700, color:'white'}}>{allUsers.length}</div></div>
-                 <div className="glass-card"><div style={{color:'#94a3b8', textTransform:'uppercase', fontSize:'0.8rem', fontWeight:600}}>Pendentes</div><div style={{fontSize:'2rem', fontWeight:700, color:'#f59e0b'}}>{requests.filter(r=>r.status.includes('PENDENTE')).length}</div></div>
-                 <div className="glass-card"><div style={{color:'#94a3b8', textTransform:'uppercase', fontSize:'0.8rem', fontWeight:600}}>Processadas</div><div style={{fontSize:'2rem', fontWeight:700, color:'#10b981'}}>{requests.filter(r=>['APROVADO','REPROVADO'].includes(r.status)).length}</div></div>
+                 <div className="glass-card"><div className="stat-label">Minhas Solicitações</div><div className="stat-value">{requests.filter(r=>r.requesterId === currentUser?.id).length}</div></div>
+                 <div className="glass-card"><div className="stat-label">Pendentes</div><div className="stat-value" style={{color:'#f59e0b'}}>{requests.filter(r=>r.status.includes('PENDENTE')).length}</div></div>
+                 <div className="glass-card"><div className="stat-label">Processadas</div><div className="stat-value" style={{color:'#10b981'}}>{requests.filter(r=>['APROVADO','REPROVADO'].includes(r.status)).length}</div></div>
                </div>
-
-               {/* NOVO WIDGET DE ONBOARDING */}
-               <div className="glass-card" style={{marginTop:'20px', marginBottom:'20px', borderLeft: '4px solid #10b981'}}>
-                  <h3 style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'15px'}}>
-                      <UserPlus size={20} color="#10b981"/> Próximos Onboardings (Contratações)
-                  </h3>
-                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(250px, 1fr))', gap:'15px'}}>
-                      {requests.filter(r => r.type === 'HIRING' && !['REPROVADO'].includes(r.status)).map(r => {
-                            let data = { startDate: '', future: { role: '', dept: '' }, info: '' };
-                            try { data = JSON.parse(r.details); } catch(e){}
-                            if (!data.startDate) return null;
-                            const [ano, mes, dia] = data.startDate.split('-');
-                            const dateObj = new Date(Number(ano), Number(mes)-1, Number(dia));
-                            const isToday = new Date().toDateString() === dateObj.toDateString();
-                            return (
-                                <div key={r.id} style={{background: 'rgba(255,255,255,0.05)', padding:'12px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.1)'}}>
-                                    <div style={{fontSize:'0.8rem', color: isToday ? '#10b981' : '#94a3b8', fontWeight:700, marginBottom:'5px', textTransform:'uppercase'}}>
-                                        {isToday ? 'HOJE!' : dateObj.toLocaleDateString('pt-BR', {weekday: 'long', day:'numeric', month:'long'})}
-                                    </div>
-                                    <div style={{fontWeight:600, fontSize:'1rem', color:'white'}}>{data.info.replace('Contratação - ', '')}</div>
-                                    <div style={{fontSize:'0.85rem', color:'#cbd5e1', marginTop:'2px'}}>{data.future?.role}</div>
-                                    <div style={{fontSize:'0.75rem', color:'#64748b'}}>{data.future?.dept}</div>
-                                </div>
-                            )
-                        })
-                      }
-                      {requests.filter(r => r.type === 'HIRING').length === 0 && <div style={{color:'#64748b', fontStyle:'italic'}}>Nenhum onboarding agendado.</div>}
-                  </div>
-               </div>
-
                <div className="dashboard-split">
-                  <div className="glass-card" id="req-form">
-                    <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}>
-                        {formType === 'NOMINATE_DEPUTY' ? <UserPlus size={20} color="#f59e0b"/> : <Zap size={20} color="#f59e0b"/>}
-                        {formType === 'NOMINATE_DEPUTY' ? 'Nomear Substituto (Deputy)' : 'Ações Rápidas'}
-                    </h3>
-                    
-                    <form onSubmit={handleCreateRequest} className="modern-form">
-                       {formType === 'NOMINATE_DEPUTY' ? (
-                           <div className="form-group full-width">
-                             <label>Quem será seu substituto?</label>
-                             <select className="modern-input" value={targetUserId} onChange={e => setTargetUserId(e.target.value)}>
-                                <option value="">-- Selecione o Colaborador --</option>
-                                {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                             </select>
-                             <p style={{fontSize:'0.8rem', color:'#94a3b8', marginTop:'5px'}}>* Esta ação passará por aprovação de SI.</p>
-                           </div>
-                       ) : (
-                           <>
-                             <div className="form-group full-width">
-                               <label>Colaborador (Beneficiário)</label>
-                               <select className="modern-input" value={targetUserId} onChange={e => setTargetUserId(e.target.value)}>
-                                  <option value="">-- Eu mesmo ({currentUser?.name}) --</option>
-                                  {allUsers.filter(u => u.id !== currentUser?.id).sort((a,b) => a.name.localeCompare(b.name)).map(u => (
-                                    <option key={u.id} value={u.id}>{u.name} - {u.role?.name || 'Sem Cargo'}</option>
-                                  ))}
-                               </select>
-                             </div>
-                             <div className="form-group full-width">
-                               <label>Tipo de Solicitação</label>
-                               <select onChange={e=>{setFormType(e.target.value); setTargetDept(''); setTargetRole(''); setFormDetails('')}} className="modern-input" value={formType}>
-                                 <option value="CHANGE_ROLE">Alteração de Cargo / Departamento</option>
-                                 <option value="ACCESS_TOOL">Acesso a Ferramenta</option>
-                               </select>
-                             </div>
-                             {formType === 'CHANGE_ROLE' ? (
-                               <>
-                                 <div className="form-group">
-                                   <label>Novo Departamento</label>
-                                   <select className="modern-input" value={targetDept} onChange={e => { setTargetDept(e.target.value); setTargetRole(''); }}>
-                                     <option value="">-- Selecione o Depto --</option>
-                                     {structure.map(d => (<option key={d.id} value={d.name}>{d.name}</option>))}
-                                   </select>
-                                 </div>
-                                 <div className="form-group">
-                                   <label>Novo Cargo</label>
-                                   <select className="modern-input" value={targetRole} onChange={e => setTargetRole(e.target.value)} disabled={!targetDept}>
-                                     <option value="">-- Selecione o Cargo --</option>
-                                     {availableRoles.map((r, i) => (<option key={i} value={r.name}>{r.name.split('(')[0].trim()}</option>))}
-                                   </select>
-                                 </div>
-                               </>
-                             ) : (
-                               <>
-                                <div className="form-group full-width">
-                                    <label>Ferramenta Desejada</label>
-                                    <select onChange={e=>setFormDetails(e.target.value)} className="modern-input" value={formDetails}>
-                                      <option value="">-- Selecione a Ferramenta --</option>
-                                      {tools.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
-                                    </select>
-                                 </div>
-                                 <div className="form-group full-width" style={{background:'rgba(245, 158, 11, 0.1)', padding:'15px', borderRadius:'10px', border:'1px solid rgba(245, 158, 11, 0.3)'}}>
-                                     <label style={{display:'flex', alignItems:'center', gap:'10px', cursor:'pointer', color:'#f59e0b', fontWeight:'bold'}}>
-                                         <input type="checkbox" checked={isExtraordinary} onChange={e=>setIsExtraordinary(e.target.checked)} />
-                                         <ShieldAlert size={18}/> Solicitar Acesso Extraordinário / Admin?
-                                     </label>
-                                 </div>
-                               </>
-                             )}
-                           </>
-                       )}
-                       <div className="form-group full-width">
-                         <label>Justificativa</label>
-                         <input placeholder="Motivo..." value={formJustification} onChange={e=>setFormJustification(e.target.value)} className="modern-input"/>
-                       </div>
-                       <button type="submit" className="primary-btn full-width">Enviar Solicitação</button>
-                    </form>
+                  <div className="left-panel-stack" style={{display:'flex', flexDirection:'column', gap:'20px', flex: 2}}>
+                      {systemProfile !== 'VIEWER' && (
+                        <div className="glass-card">
+                           <h3 style={{marginBottom:'15px', display:'flex', alignItems:'center', gap:'10px'}}><Clock size={20} color="#f59e0b"/> Aprovações Pendentes</h3>
+                           <table className="modern-table"><thead><tr><th>Solicitante</th><th>Pedido</th><th>Status</th><th style={{textAlign:'right'}}>Ação</th></tr></thead><tbody>{requests.filter(r=> r.status.includes('PENDENTE')).slice(0, 5).map(r => (<tr key={r.id}><td style={{fontWeight:500}}>{r.requester?.name}</td><td style={{color:'#cbd5e1', fontSize:'0.85rem'}}>Detalhes...</td><td><StatusBadge status={r.status}/></td><td style={{textAlign:'right'}}><div style={{display:'flex', gap:'10px', justifyContent:'flex-end'}}><button onClick={()=>handleApprove(r.id,'APROVAR')} className="btn-icon btn-approve"><CheckCircle size={18}/></button><button onClick={()=>handleApprove(r.id,'REPROVAR')} className="btn-icon btn-reject"><XCircle size={18}/></button></div></td></tr>))}</tbody></table>
+                        </div>
+                      )}
+                      <div className="glass-card"><h3 style={{marginBottom:'15px', display:'flex', alignItems:'center', gap:'10px'}}><List size={20} color="#0ea5e9"/> Minhas Solicitações Recentes</h3><table className="modern-table"><thead><tr><th>Data</th><th>Tipo</th><th>Status</th></tr></thead><tbody>{requests.filter(r => r.requesterId === currentUser?.id).slice(0,5).map(r => (<tr key={r.id}><td>{new Date(r.createdAt).toLocaleDateString()}</td><td>{r.type === 'ACCESS_TOOL' ? 'Acesso Ferramenta' : r.type}</td><td><StatusBadge status={r.status} /></td></tr>))}</tbody></table><div style={{marginTop:'15px', fontSize:'0.85rem', color:'#94a3b8', fontStyle:'italic'}}>* Para abrir novas solicitações, use o comando <strong>/theris</strong> no Slack.</div></div>
+                      {['SUPER_ADMIN', 'ADMIN', 'APPROVER'].includes(systemProfile) && (
+                          <div className="glass-card" id="deputy-form">
+                            <h3 style={{marginBottom:'20px', display:'flex', alignItems:'center', gap:'10px'}}><UserPlus size={20} color="#0ea5e9"/> Configurar Substituto (Deputy)</h3>
+                            <div style={{display:'flex', alignItems:'center', gap:'20px', marginBottom:'20px', padding:'15px', background:'rgba(255,255,255,0.05)', borderRadius:'10px'}}><div><span style={{color:'#64748b', fontSize:'0.8rem', textTransform:'uppercase'}}>Deputy Atual:</span></div><div style={{fontWeight:600, color: currentUser?.myDeputy ? '#10b981' : '#64748b'}}>{currentUser?.myDeputy ? currentUser.myDeputy.name : 'Nenhum definido'}</div></div>
+                            <form onSubmit={handleDeputyRequest} className="modern-form"><div className="form-group full-width"><label>Indicar Novo Deputy</label><select className="modern-input" value={targetUserId} onChange={e => setTargetUserId(e.target.value)}><option value="">-- Selecione um colaborador --</option>{allUsers.filter(u => u.id !== currentUser?.id).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div><button type="submit" className="primary-btn full-width">Solicitar Troca</button></form>
+                          </div>
+                      )}
                   </div>
-                  <ActivityFeed requests={requests} />
+                  <div style={{flex: 1}}><ActivityFeed requests={requests} /></div>
                </div>
             </div>
           )}
 
-          {activeTab === 'REQUESTS' && systemProfile !== 'VIEWER' && (
-            <div className="glass-card full-height">
-               <table className="modern-table">
-                  <thead><tr><th>SOLICITANTE</th><th>PEDIDO</th><th>STATUS</th><th style={{textAlign:'right'}}>AÇÃO</th></tr></thead>
-                  <tbody>
-                     {requests.filter(r=> !['APROVADO','REPROVADO'].includes(r.status)).map(r => {
-                        let info = 'Detalhes...';
-                        try { info = JSON.parse(r.details).info } catch (e) {}
-                        const isSelf = r.requesterId === currentUser?.id;
-                        const canAct = systemProfile === 'SUPER_ADMIN' || !isSelf;
-                        return (
-                        <tr key={r.id}>
-                           <td style={{fontWeight:500}}>{r.requester?.name} {r.isExtraordinary && <ShieldAlert size={14} color="#f59e0b" style={{verticalAlign:'middle'}}/>}</td>
-                           <td style={{color:'#cbd5e1'}}>{info}</td>
-                           <td><StatusBadge status={r.status} /></td>
-                           <td style={{textAlign:'right'}}>
-                              {canAct ? (
-                                  <div style={{display:'flex', gap:'10px', justifyContent:'flex-end'}}>
-                                     <button onClick={()=>handleApprove(r.id,'APROVAR')} className="btn-icon btn-approve"><CheckCircle size={18}/></button>
-                                     <button onClick={()=>handleApprove(r.id,'REPROVAR')} className="btn-icon btn-reject"><XCircle size={18}/></button>
-                                  </div>
-                              ) : <span style={{fontSize:'0.75rem', color:'#64748b'}}>Bloqueado</span>}
-                           </td>
-                        </tr>
-                     )})}
-                  </tbody>
-               </table>
-            </div>
-          )}
-
-          {activeTab === 'HISTORY' && systemProfile !== 'VIEWER' && (
+          {activeTab === 'HISTORY' && (
              <div className="glass-card">
-                 <h3>Histórico de Transações & Auditoria</h3>
-                 <table className="modern-table">
-                    <thead><tr><th>ID REF</th><th>DATA</th><th>SOLICITANTE</th><th>DETALHES</th><th>APROVADO POR</th><th>STATUS</th></tr></thead>
-                    <tbody>
-                        {requests.filter(r => ['APROVADO', 'REPROVADO'].includes(r.status)).map(r => {
-                            let info = ''; try { info = JSON.parse(r.details).info } catch (e) {}
-                            return (
-                                <tr key={r.id}>
-                                    <td style={{fontFamily:'monospace', color:'#64748b', fontSize:'0.75rem'}}><Hash size={12}/> {r.id.slice(0, 8)}...</td>
-                                    <td style={{color:'#cbd5e1'}}>{new Date(r.updatedAt || r.createdAt).toLocaleDateString()}</td>
-                                    <td>{r.requester?.name}</td>
-                                    <td>{info}</td>
-                                    <td>{r.lastApprover ? r.lastApprover.name : '-'}</td>
-                                    <td><StatusBadge status={r.status} /></td>
-                                </tr>
-                            )
-                        })}
-                    </tbody>
-                 </table>
-             </div>
-          )}
-
-          {activeTab === 'ORG' && (systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN') && (
-            <div className="glass-card">
-              {structure.map(dept => (
-                <div key={dept.id} className="dept-item">
-                  <div onClick={() => setExpandedDepts(p => p.includes(dept.id)?p.filter(i=>i!==dept.id):[...p,dept.id])} className="dept-header">
-                     {expandedDepts.includes(dept.id) ? <ChevronDown size={18} color="#0ea5e9"/> : <ChevronRight size={18}/>} <span>{dept.name}</span>
-                  </div>
-                  {expandedDepts.includes(dept.id) && (
-                    <div className="dept-content">
-                      {dept.roles.map((r,i) => (
-                        <div key={i} className="role-group">
-                           <div className="role-title">{r.name}</div>
-                           <div className="user-tags">{r.users.map(u => <div key={u.id} className="user-tag">{u.name}</div>)}</div>
-                        </div>
-                      ))}
+                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px', flexWrap:'wrap', gap:'15px'}}><h3>Histórico de Transações e Auditoria</h3>
+                    <div className="filter-bar">
+                        <div className="filter-item"><Search size={16} color="#94a3b8"/><input placeholder="Buscar por Nome, Email ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="filter-input"/></div>
+                        <div className="filter-item"><Calendar size={16} color="#94a3b8"/><input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className="filter-input date-input"/></div>
+                        <div className="filter-item"><Filter size={16} color="#94a3b8"/><select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="filter-input select-input"><option value="ALL">Todos</option><option value="APROVADO">Aprovados</option><option value="REPROVADO">Reprovados</option></select></div>
+                        {(searchTerm || filterDate || filterStatus !== 'ALL') && (<button onClick={()=>{setSearchTerm(''); setFilterDate(''); setFilterStatus('ALL')}} style={{background:'none', border:'none', color:'#f59e0b', cursor:'pointer', fontSize:'0.8rem', textDecoration:'underline'}}>Limpar</button>)}
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          
-          {activeTab === 'TOOLS' && (systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN') && (
-             <div className="glass-card">
-                <h3>Catálogo de Ferramentas</h3>
-                <table className="modern-table">
-                   <thead><tr><th>NOME</th><th>OWNER</th></tr></thead>
-                   <tbody>{tools.map(t => (<tr key={t.id}><td>{t.name}</td><td>{t.owner?.name || 'Sem Dono'}</td></tr>))}</tbody>
-                </table>
+                 </div>
+                 <table className="modern-table"><thead><tr><th>ID TRANSAÇÃO</th><th>DATA</th><th>SOLICITANTE</th><th>EMAIL</th><th>DETALHES</th><th>STATUS</th></tr></thead><tbody>{getFilteredHistory().length === 0 ? (<tr><td colSpan={6} style={{textAlign:'center', padding:'30px', color:'#64748b'}}>Nenhum registro encontrado.</td></tr>) : (getFilteredHistory().map(r => { let info = ''; try { info = JSON.parse(r.details).info } catch (e) {} return (<tr key={r.id}><td style={{fontFamily:'monospace', color:'#64748b', fontSize:'0.8rem'}}><Hash size={12} style={{verticalAlign:'middle'}}/> {r.id.slice(0, 8)}...</td><td>{new Date(r.updatedAt).toLocaleDateString()}</td><td><div style={{fontWeight:600, color:'white'}}>{r.requester?.name}</div><div style={{fontSize:'0.7rem', color:'#64748b'}}>ID: {r.requesterId.slice(0,8)}...</div></td><td style={{color:'#cbd5e1', fontSize:'0.9rem'}}>{r.requester?.email}</td><td style={{color:'#94a3b8'}}>{info}</td><td><StatusBadge status={r.status} /></td></tr>) }))}</tbody></table>
              </div>
           )}
 
-          {activeTab === 'PROFILE' && (
-            <div className="profile-container">
-              <div className="glass-card profile-header-card"><div className="profile-avatar-lg">{currentUser?.name ? currentUser.name.charAt(0) : 'U'}</div><div><h1>{currentUser?.name}</h1><p>{currentUser?.role?.name}</p></div></div>
-              <div className="glass-card"><h3>Meus Acessos</h3><div className="access-list"><div className="access-item"><div className="icon"><Lock size={16}/></div><div className="info">Email Corporativo</div><div className="status active">Ativo</div></div></div></div>
-            </div>
-          )}
-
+          {activeTab === 'ORG' && (<div className="glass-card">{structure.map(dept => (<div key={dept.id} className="dept-item"><div onClick={() => setExpandedDepts(p => p.includes(dept.id)?p.filter(i=>i!==dept.id):[...p,dept.id])} className="dept-header">{expandedDepts.includes(dept.id) ? <ChevronDown size={18} color="#0ea5e9"/> : <ChevronRight size={18}/>} <span>{dept.name}</span></div>{expandedDepts.includes(dept.id) && (<div className="dept-content">{dept.roles.map((r,i) => (<div key={i} className="role-group"><div className="role-title">{r.name}</div><div className="user-tags">{r.users.map(u => <div key={u.id} className="user-tag">{u.name}</div>)}</div></div>))}</div>)}</div>))}</div>)}
+          {activeTab === 'TOOLS' && (<div className="glass-card"><h3>Catálogo de Ferramentas</h3><table className="modern-table"><thead><tr><th>NOME</th><th>OWNER</th></tr></thead><tbody>{tools.map(t => (<tr key={t.id}><td>{t.name}</td><td>{t.owner?.name || 'Sem Dono'}</td></tr>))}</tbody></table></div>)}
         </div>
       </main>
     </div>
