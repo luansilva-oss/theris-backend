@@ -27,17 +27,17 @@ export const createSolicitacao = async (req: Request, res: Response) => {
   try {
     const { requesterId, type, details, justification, isExtraordinary } = req.body;
 
-    // Garante que details seja uma string (para o banco PostgreSQL)
-    const detailsString = typeof details === 'object' ? JSON.stringify(details) : details;
+    // Garante que details seja uma string
+    const detailsString = typeof details === 'object' ? JSON.stringify(details) : String(details);
 
     const newRequest = await prisma.request.create({
       data: {
-        requesterId,
-        type,
-        status: 'PENDENTE_GESTOR', // Status inicial padrão
+        requesterId: String(requesterId),
+        type: String(type),
+        status: 'PENDENTE_GESTOR',
         details: detailsString,
-        justification,
-        isExtraordinary: isExtraordinary || false
+        justification: justification ? String(justification) : null,
+        isExtraordinary: Boolean(isExtraordinary)
       }
     });
 
@@ -52,17 +52,20 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 export const updateSolicitacao = async (req: Request, res: Response) => {
   const { id } = req.params;
   
-  // CORREÇÃO CRÍTICA DO ERRO DE BUILD:
-  // Forçamos o tipo para string para o TypeScript não reclamar de (string | string[])
-  const status = req.body.status as string;
-  const approverId = req.body.approverId as string;
+  // CORREÇÃO DEFINITIVA DO ERRO TS2322:
+  // Convertendo explicitamente para String() para garantir que não é um Array
+  const rawStatus = req.body.status;
+  const rawApproverId = req.body.approverId;
+
+  const status = typeof rawStatus === 'string' ? rawStatus : String(rawStatus);
+  const approverId = rawApproverId ? String(rawApproverId) : undefined;
 
   try {
     const updated = await prisma.request.update({
       where: { id },
       data: {
-        status,
-        approverId,
+        status: status,
+        approverId: approverId,
         updatedAt: new Date()
       }
     });
