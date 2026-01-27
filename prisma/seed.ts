@@ -3,100 +3,124 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Iniciando Seed...');
+  console.log('🌱 Iniciando Seed (Corrigido)...');
 
-  // 1. Limpeza de tabelas (na ordem correta para não quebrar chaves estrangeiras)
+  // 1. Limpeza (Apaga tudo para recomeçar do zero e evitar duplicações)
   try {
     await prisma.request.deleteMany();
     await prisma.tool.deleteMany();
     await prisma.user.deleteMany();
     await prisma.role.deleteMany();
     await prisma.department.deleteMany();
-    console.log('🧹 Banco limpo.');
+    console.log('🧹 Banco limpo com sucesso.');
   } catch (e) {
-    console.log('⚠️ Banco já estava limpo ou erro ao limpar (ignorando)...');
+    console.log('⚠️ Banco já estava limpo (ignorando)...');
   }
 
-  // 2. Criar Departamentos Essenciais
-  const deptBoard = await prisma.department.create({
-    data: { name: 'Board' }
-  });
-
-  const deptTech = await prisma.department.create({
-    data: { name: 'Tecnologia e Segurança' }
-  });
-
-  const deptRH = await prisma.department.create({
-    data: { name: 'Recursos Humanos' }
-  });
+  // --------------------------------------------------------
+  // 2. CRIAR DEPARTAMENTOS
+  // --------------------------------------------------------
+  const deptBoard = await prisma.department.create({ data: { name: 'Board / Diretoria' } });
+  const deptTech = await prisma.department.create({ data: { name: 'Tecnologia (TI)' } });
+  const deptRH = await prisma.department.create({ data: { name: 'Recursos Humanos' } });
+  const deptVendas = await prisma.department.create({ data: { name: 'Comercial / Vendas' } });
 
   console.log('✅ Departamentos criados.');
 
-  // 3. Criar Roles (Cargos) - AGORA LIGADOS AOS DEPARTAMENTOS
-  // O erro acontecia aqui: agora passamos o departmentId
-  const roleCEO = await prisma.role.create({
-    data: {
-      name: 'CEO',
-      departmentId: deptBoard.id
-    }
-  });
-
-  const roleAnalista = await prisma.role.create({
-    data: {
-      name: 'Analista de Segurança',
-      departmentId: deptTech.id
-    }
-  });
+  // --------------------------------------------------------
+  // 3. CRIAR ROLES (CARGOS)
+  // --------------------------------------------------------
   
-  const roleGestor = await prisma.role.create({
+  // ADMIN
+  const roleAdmin = await prisma.role.create({
+    data: { name: 'Admin de Sistemas', departmentId: deptTech.id }
+  });
+
+  // CEO / DIRETOR
+  const roleCEO = await prisma.role.create({
+    data: { name: 'CEO', departmentId: deptBoard.id }
+  });
+
+  // GESTOR
+  const roleGerente = await prisma.role.create({
+    data: { name: 'Gerente de RH', departmentId: deptRH.id }
+  });
+
+  // COLABORADOR
+  const roleVendedor = await prisma.role.create({
+    data: { name: 'Executivo de Vendas', departmentId: deptVendas.id }
+  });
+
+  console.log('✅ Roles criadas.');
+
+  // --------------------------------------------------------
+  // 4. CRIAR USUÁRIOS (AGORA COM O EMAIL CERTO)
+  // --------------------------------------------------------
+
+  // --- SEU USUÁRIO (ADMIN) ---
+  const adminUser = await prisma.user.create({
     data: {
-      name: 'Gerente de RH',
-      departmentId: deptRH.id
+      name: 'Luan Silva',
+      email: 'luan.silva@grupo-3c.com', // <--- CORRIGIDO AQUI!
+      departmentId: deptTech.id,
+      roleId: roleAdmin.id,
     }
   });
 
-  console.log('✅ Roles criadas e vinculadas.');
-
-  // 4. Criar Usuário SUPER ADMIN (Vladimir)
-  const vladimir = await prisma.user.create({
+  // --- DIRETOR (VLADIMIR) ---
+  const directorUser = await prisma.user.create({
     data: {
-      name: 'Vladimir Antonio Sesar',
-      email: 'vladimir.sesar@grupo3c.com.br', // Ajuste se necessário
+      name: 'Vladimir Sesar',
+      email: 'vladimir.sesar@grupo-3c.com', // Corrigi o domínio aqui também por garantia
       departmentId: deptBoard.id,
       roleId: roleCEO.id,
     }
   });
 
-  // 5. Criar Usuário ADMIN de TI (Luan)
-  const luan = await prisma.user.create({
+  // --- GESTOR DE EXEMPLO ---
+  const managerUser = await prisma.user.create({
     data: {
-      name: 'Luan Silva',
-      email: 'luan.silva@grupo3c.com.br', // Ajuste se necessário
-      departmentId: deptTech.id,
-      roleId: roleAnalista.id,
-      managerId: vladimir.id // Vladimir é gestor do Luan
+      name: 'Gestor de Teste',
+      email: 'gestor@grupo-3c.com',
+      departmentId: deptRH.id,
+      roleId: roleGerente.id,
+      managerId: directorUser.id
     }
   });
 
-  // 6. Criar Ferramentas
+  // --- COLABORADOR COMUM ---
+  const commonUser = await prisma.user.create({
+    data: {
+      name: 'Colaborador Vendas',
+      email: 'vendedor@grupo-3c.com',
+      departmentId: deptVendas.id,
+      roleId: roleVendedor.id,
+      managerId: managerUser.id
+    }
+  });
+
+  console.log('✅ Usuários criados com sucesso.');
+
+  // --------------------------------------------------------
+  // 5. CRIAR FERRAMENTAS INICIAIS
+  // --------------------------------------------------------
   await prisma.tool.create({
     data: {
-      name: 'Jira',
+      name: 'Jira Software',
       description: 'Gestão de Projetos e Chamados',
-      ownerId: luan.id
+      ownerId: adminUser.id
     }
   });
 
   await prisma.tool.create({
     data: {
       name: 'HubSpot',
-      description: 'CRM de Vendas e Marketing',
-      ownerId: vladimir.id
+      description: 'CRM e Marketing',
+      ownerId: directorUser.id
     }
   });
 
-  console.log('✅ Ferramentas criadas.');
-  console.log('🏁 Seed Concluído com Sucesso!');
+  console.log('🏁 Seed Concluído! Pode testar o login.');
 }
 
 main()
