@@ -10,36 +10,40 @@ datasource db {
 // --- ESTRUTURA ORGANIZACIONAL ---
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  name         String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(uuid())
+  email          String   @unique
+  name           String
+  
+  // 👇 CAMPO NOVO ADICIONADO PARA CORRIGIR O ERRO
+  systemProfile  String   @default("VIEWER") 
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // Relacionamentos Hierárquicos
-  roleId       String?
-  role         Role?    @relation(fields: [roleId], references: [id])
-  
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id])
+  roleId         String?
+  role           Role?    @relation(fields: [roleId], references: [id])
+   
+  departmentId   String?
+  department     Department? @relation(fields: [departmentId], references: [id])
 
   // Gestão Direta (Quem é meu chefe?)
-  managerId    String?
-  manager      User?    @relation("ManagerSubordinates", fields: [managerId], references: [id])
-  subordinates User[]   @relation("ManagerSubordinates")
+  managerId      String?
+  manager        User?    @relation("ManagerSubordinates", fields: [managerId], references: [id])
+  subordinates   User[]   @relation("ManagerSubordinates")
 
   // Deputy (Meu substituto oficial)
-  myDeputyId   String?
-  myDeputy     User?    @relation("UserDeputy", fields: [myDeputyId], references: [id])
-  deputyOf     User[]   @relation("UserDeputy")
+  myDeputyId     String?
+  myDeputy       User?    @relation("UserDeputy", fields: [myDeputyId], references: [id])
+  deputyOf       User[]   @relation("UserDeputy")
 
   // Solicitações
   requestsMade     Request[] @relation("Requester")
   requestsApproved Request[] @relation("Approver")
 
   // Ferramentas que é dono (Owner)
-  toolsOwned    Tool[] @relation("ToolOwner")
-  toolsSubOwned Tool[] @relation("ToolSubOwner")
+  toolsOwned     Tool[] @relation("ToolOwner")
+  toolsSubOwned  Tool[] @relation("ToolSubOwner")
 }
 
 model Department {
@@ -63,10 +67,10 @@ model Tool {
   id          String  @id @default(uuid())
   name        String  @unique
   description String?
-  
+   
   ownerId     String?
   owner       User?   @relation("ToolOwner", fields: [ownerId], references: [id])
-  
+   
   subOwnerId  String?
   subOwner    User?   @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
 }
@@ -77,11 +81,11 @@ model Request {
   id              String   @id @default(uuid())
   type            String   // 'ACCESS_TOOL', 'CHANGE_ROLE', 'NOMINATE_DEPUTY', etc.
   status          String   // 'PENDENTE_GESTOR', 'PENDENTE_OWNER', 'APROVADO', 'REPROVADO'
-  
+   
   details         String   // JSON string com os dados (ferramenta, nível de acesso, etc)
   justification   String?
   isExtraordinary Boolean  @default(false)
-  
+   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -92,6 +96,6 @@ model Request {
   // Quem aprovou por último
   approverId      String?
   approver        User?    @relation("Approver", fields: [approverId], references: [id])
-  
+   
   currentApproverRole String? // 'MANAGER', 'OWNER', 'SI_ANALYST'
 }
