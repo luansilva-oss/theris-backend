@@ -5,22 +5,29 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
+// 👇 DEFINIÇÃO DE TIPO (Isso acalma o TypeScript)
+interface GoogleUserInfo {
+  email: string;
+  name: string;
+  picture?: string;
+  sub?: string;
+}
+
 export const googleLogin = async (req: Request, res: Response) => {
   try {
-    // O Frontend pode mandar 'credential' (jeito antigo) ou 'accessToken' (jeito novo)
     const { credential, accessToken } = req.body;
 
     let email = '';
     let name = '';
 
-    // CENÁRIO 1: Novo Botão Customizado (Manda accessToken)
+    // --- CENÁRIO 1: Novo Botão Customizado (Manda accessToken) ---
     if (accessToken) {
-      // Com o accessToken, perguntamos ao Google quem é o usuário
       const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       
-      const googleUser = await response.json();
+      // 👇 AQUI ESTAVA O ERRO: Adicionamos "as GoogleUserInfo"
+      const googleUser = (await response.json()) as GoogleUserInfo;
       
       if (!googleUser.email) {
         return res.status(400).json({ error: 'Email não retornado pelo Google.' });
@@ -29,7 +36,7 @@ export const googleLogin = async (req: Request, res: Response) => {
       email = googleUser.email;
       name = googleUser.name;
     } 
-    // CENÁRIO 2: Botão Padrão Antigo (Manda credential/JWT)
+    // --- CENÁRIO 2: Botão Antigo (Manda credential/JWT) ---
     else if (credential) {
       const ticket = await client.verifyIdToken({
         idToken: credential,
@@ -47,15 +54,12 @@ export const googleLogin = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Nenhum token fornecido.' });
     }
 
-    // --- A PARTIR DAQUI A LÓGICA É IGUAL PARA OS DOIS ---
+    // --- LÓGICA COMUM (Buscar no Banco) ---
 
-    // 1. Verificar domínio (Segurança Extra)
-    if (!email.endsWith('@grupo-3c.com') && !email.endsWith('@3cplus.com.br')) { // Adicione seus domínios
-       // Opcional: Se for super admin ou exceção, deixar passar.
-       // Por enquanto, vamos buscar no banco pra ver se existe.
-    }
+    // 1. Opcional: Validar domínio
+    // if (!email.endsWith('@grupo-3c.com')) { ... }
 
-    // 2. Buscar usuário no Banco
+    // 2. Buscar usuário
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
@@ -70,15 +74,17 @@ export const googleLogin = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Usuário não cadastrado no sistema.' });
     }
 
-    // 3. Sucesso! Retornar dados do usuário e perfil
+    // 3. Sucesso
     return res.json({
       user,
-      profile: user.systemProfile, // 'ADMIN', 'VIEWER', etc.
-      token: 'sessao-criada' // Aqui você geraria seu JWT de sessão do Theris se tiver
+      profile: user.systemProfile,
+      token: 'sessao-simulada-jwt'
     });
 
   } catch (error) {
     console.error('Erro no login:', error);
-    return res.status(500).json({ error: 'Erro interno no servidor.' });
+    // Cast do erro para acessar message se necessário
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    return res.status(500).json({ error: 'Erro interno no servidor.', details: errorMessage });
   }
 };
