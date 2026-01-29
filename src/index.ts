@@ -3,11 +3,11 @@ import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
 
-// Importa Controladores
+// Controladores
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
 import { googleLogin } from './controllers/authController';
 
-// Importa o Receiver do Slack
+// Slack
 import { slackReceiver } from './services/slackService'; 
 
 dotenv.config();
@@ -18,16 +18,17 @@ const prisma = new PrismaClient();
 // --- CORS ---
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
 
-// ⚠️ ROTA DO SLACK (Deve vir ANTES do express.json)
-// O Slack envia dados brutos que o receiver precisa validar
+// ⚠️ ROTA DO SLACK (CRÍTICO: TEM QUE SER A PRIMEIRA ROTA)
+// O Slack envia dados brutos (raw body) que o receiver precisa validar.
+// Se passar pelo express.json() abaixo, o Slack para de funcionar.
 app.use('/api/slack', slackReceiver.router);
 
-// --- JSON MIDDLEWARE (Para o Frontend React) ---
+// --- JSON MIDDLEWARE (Para o Frontend/React) ---
 app.use(express.json());
 
-// --- ROTAS DO FRONTEND ---
+// --- ROTAS DO SISTEMA ---
 
-// Login (Novo método)
+// Login
 app.post('/api/login/google', googleLogin);
 
 // Dados Auxiliares
@@ -51,10 +52,9 @@ app.get('/api/solicitacoes', getSolicitacoes);
 app.post('/api/solicitacoes', createSolicitacao);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);
 
-// --- INICIALIZAÇÃO ---
+// --- START ---
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Backend rodando na porta ${PORT}`);
-  console.log(`📡 URL para o Slack: https://seu-app.onrender.com/api/slack/events`);
+  console.log(`🚀 Theris Backend rodando na porta ${PORT}`);
 });

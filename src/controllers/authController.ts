@@ -12,13 +12,14 @@ export const googleLogin = async (req: Request, res: Response) => {
     let email = '';
     let name = '';
 
-    // --- ROTA NOVA (Botão Customizado Viaj.AI) ---
+    // --- CENÁRIO 1: Novo Botão Customizado (Manda accessToken) ---
     if (accessToken) {
+      // Pergunta diretamente ao Google quem é o usuário
       const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       
-      // 'any' evita erros de build no Render
+      // 'any' para evitar travar o build do Render com tipagem estrita agora
       const googleUser: any = await response.json();
 
       if (!googleUser.email) {
@@ -28,7 +29,7 @@ export const googleLogin = async (req: Request, res: Response) => {
       email = googleUser.email;
       name = googleUser.name;
     } 
-    // --- ROTA ANTIGA (Fallback) ---
+    // --- CENÁRIO 2: Legado (Se algo mandar credential) ---
     else if (credential) {
       const ticket = await client.verifyIdToken({
         idToken: credential,
@@ -38,21 +39,23 @@ export const googleLogin = async (req: Request, res: Response) => {
       email = payload?.email || '';
       name = payload?.name || '';
     } else {
-      return res.status(400).json({ error: 'Token não fornecido.' });
+      return res.status(400).json({ error: 'Nenhum token fornecido.' });
     }
 
-    // --- LÓGICA DE LOGIN ---
+    // --- LÓGICA DE NEGÓCIO ---
     if (!email) return res.status(400).json({ error: 'Email inválido.' });
 
+    // Busca usuário e carrega TODOS os dados necessários
     const user = await prisma.user.findUnique({
       where: { email },
       include: { role: true, department: true, manager: true, myDeputy: true }
     });
 
     if (!user) {
-      return res.status(403).json({ error: 'Usuário não cadastrado.' });
+      return res.status(403).json({ error: 'Usuário não cadastrado no sistema.' });
     }
 
+    // Sucesso!
     return res.json({
       user,
       profile: user.systemProfile,
@@ -60,7 +63,7 @@ export const googleLogin = async (req: Request, res: Response) => {
     });
 
   } catch (error) {
-    console.error('Erro:', error);
-    return res.status(500).json({ error: 'Erro interno.' });
+    console.error('Erro Auth:', error);
+    return res.status(500).json({ error: 'Erro interno no servidor.' });
   }
 };
