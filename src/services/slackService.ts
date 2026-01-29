@@ -28,7 +28,7 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
       view: {
         type: 'modal',
         callback_id: 'theris_main_modal',
-        title: { type: 'plain_text', text: 'Theris OS' },
+        title: { type: 'plain_text', text: 'Theris' },
         blocks: [
           { type: 'section', text: { type: 'mrkdwn', text: '👋 *Painel de Governança*\nO que você precisa hoje?' } },
           
@@ -149,9 +149,9 @@ slackApp.action('btn_tool_access', async ({ ack, body, client }) => {
     await client.views.push({
       trigger_id: (body as any).trigger_id,
       view: {
-        type: 'modal', callback_id: 'submit_tool_access', title: { type: 'plain_text', text: 'Acesso Ferramenta' }, submit: { type: 'plain_text', text: 'Solicitar' },
+        type: 'modal', callback_id: 'submit_tool_access', title: { type: 'plain_text', text: 'Acesso para ferramentas' }, submit: { type: 'plain_text', text: 'Solicitar' },
         blocks: [
-          { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'nome da Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_curr', label: { type: 'plain_text', text: 'Nível Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Nível Desejado' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
@@ -170,8 +170,8 @@ slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
         type: 'modal', callback_id: 'submit_tool_extra', title: { type: 'plain_text', text: 'Acesso Extra' }, submit: { type: 'plain_text', text: 'Solicitar' },
         blocks: [
           { type: 'input', block_id: 'blk_collab', label: { type: 'plain_text', text: 'Quem receberá o acesso?' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Permissão Necessária' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Permissão Necessária (nível de acesso)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa (Compliance)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
         ]
       }
