@@ -87,11 +87,17 @@ model Request {
   id              String   @id @default(uuid())
   requesterId     String
   requester       User     @relation(fields: [requesterId], references: [id])
+  
   type            String
   status          String   @default("PENDENTE_GESTOR")
+  
+  // ADICIONE ESTA LINHA 👇
+  currentApproverRole String? // Ex: 'MANAGER', 'SI_ANALYST', 'HEAD'
+  
   details         String   // JSON string
   justification   String?
   isExtraordinary Boolean  @default(false)
+  
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
