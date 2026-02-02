@@ -2,18 +2,18 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    // Adicionei DOM para resolver o erro "Cannot find name 'document'"
     "lib": [
       "ES2020",
       "DOM",
       "DOM.Iterable"
     ],
+    // Configurações para o Node.js (Backend)
     "module": "CommonJS",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    // Resolve os erros do React/JSX
+    // Suporte a React (para o editor não reclamar)
     "jsx": "react-jsx",
-    // Resolve os erros do Slack (implicit any)
+    // Configurações Relaxadas (para evitar erros de tipagem chatos)
     "strict": false,
     "noImplicitAny": false,
     "outDir": "./dist-server",
@@ -21,5 +21,15 @@
   },
   "include": [
     "src"
+  ],
+  // ⚠️ AQUI ESTÁ A CORREÇÃO MÁGICA:
+  // Mandamos o compilador do Backend IGNORAR os arquivos de entrada do Frontend
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-server",
+    "src/App.tsx",
+    "src/main.tsx",
+    "src/vite-env.d.ts"
   ]
 }
