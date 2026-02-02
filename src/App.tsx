@@ -7,15 +7,19 @@ import {
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
 
-const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3000`;
+// --- CORREÇÃO CRÍTICA AQUI ---
+// Se estiver rodando localmente, aponta para o backend na porta 3000.
+// Se estiver em produção (Render), usa string vazia para o navegador usar o caminho relativo (/api/...)
+const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:3000'
+  : '';
 
-// --- INTERFACES ATUALIZADAS ---
+// --- INTERFACES ---
 interface User {
   id: string; name: string; email: string; role?: { name: string }; department?: { name: string };
   manager?: { id: string; name: string; }; myDeputy?: { id: string; name: string; };
 }
 
-// A interface TOOL agora suporta a governança completa
 interface Tool {
   id: string;
   name: string;
@@ -79,33 +83,31 @@ export default function App() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
-  const [expandedDepts, setExpandedDepts] = useState<string[]>([]);
 
-  // Filtros
+  // Filtros (mantidos para uso futuro)
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterDate, setFilterDate] = useState('');
-  const [filterStatus, setFilterStatus] = useState('ALL');
-  const [targetUserId, setTargetUserId] = useState('');
-
-  const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const loadData = async () => {
     try {
+      // Como API_URL pode ser vazio em produção, a rota vira apenas "/api/..." (relativo)
       const [resStruct, resTools, resUsers, resReqs] = await Promise.all([
-        fetch(`${API_URL}/api/structure`), fetch(`${API_URL}/api/tools`), fetch(`${API_URL}/api/users`), fetch(`${API_URL}/api/solicitacoes`)
+        fetch(`${API_URL}/api/structure`),
+        fetch(`${API_URL}/api/tools`),
+        fetch(`${API_URL}/api/users`),
+        fetch(`${API_URL}/api/solicitacoes`)
       ]);
 
-      setStructure(await resStruct.json());
-      setTools(await resTools.json());
-      setAllUsers(await resUsers.json());
-      setRequests(await resReqs.json());
-    } catch (e) { console.error(e); }
+      if (resStruct.ok) setStructure(await resStruct.json());
+      if (resTools.ok) setTools(await resTools.json());
+      if (resUsers.ok) setAllUsers(await resUsers.json());
+      if (resReqs.ok) setRequests(await resReqs.json());
+    } catch (e) { console.error("Erro ao carregar dados:", e); }
   };
 
   useEffect(() => {
     if (isLoggedIn) {
       loadData();
-      const interval = setInterval(loadData, 5000); // Auto-refresh a cada 5s
+      const interval = setInterval(loadData, 10000); // Aumentei para 10s para não sobrecarregar
       return () => clearInterval(interval);
     }
   }, [isLoggedIn]);
@@ -114,30 +116,38 @@ export default function App() {
   const handleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       try {
+        console.log("Enviando token para:", `${API_URL}/api/login/google`);
         const res = await fetch(`${API_URL}/api/login/google`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accessToken: tokenResponse.access_token })
         });
+
         const data = await res.json();
-        if (res.ok) { setCurrentUser(data.user); setSystemProfile(data.profile); setIsLoggedIn(true); }
-        else { alert(`Erro: ${data.error}`); }
-      } catch (error) { alert("Erro de conexão"); }
-    }, onError: () => alert('Falha Login Google')
+
+        if (res.ok) {
+          setCurrentUser(data.user);
+          setSystemProfile(data.profile);
+          setIsLoggedIn(true);
+        } else {
+          alert(`Erro no login: ${data.error || 'Falha desconhecida'}`);
+        }
+      } catch (error) {
+        console.error(error);
+        alert("Erro de conexão com o servidor. Verifique o console.");
+      }
+    }, onError: () => alert('O Google recusou o login.')
   });
 
   const handleApprove = async (id: string, action: 'APROVAR' | 'REPROVAR') => {
-    if (!confirm(`Confirmar ${action}?`)) return;
-    const res = await fetch(`${API_URL}/api/solicitacoes/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: action, approverId: currentUser?.id })
-    });
-    if (res.ok) loadData();
-  };
-
-  const handleDeputyRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // Lógica simplificada de deputy request
-    alert("Funcionalidade em desenvolvimento");
+    if (!confirm(`Deseja realmente ${action}?`)) return;
+    try {
+      const res = await fetch(`${API_URL}/api/solicitacoes/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: action, approverId: currentUser?.id })
+      });
+      if (res.ok) loadData();
+      else alert("Erro ao processar aprovação.");
+    } catch (e) { alert("Erro de conexão."); }
   };
 
   // --- RENDER ---
@@ -145,7 +155,11 @@ export default function App() {
     <div className="login-wrapper">
       <div className="login-card">
         <div className="brand-header"><div className="logo-container"><Bird size={28} color="white" /></div><h1 className="brand-title">Theris OS</h1></div>
-        <button onClick={() => handleLogin()} className="google-btn-custom"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" /> Entrar com Google</button>
+        <p style={{ textAlign: 'center', color: '#94a3b8', marginBottom: '20px' }}>Faça login com sua conta institucional</p>
+        <button onClick={() => handleLogin()} className="google-btn-custom">
+          <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="G" />
+          Entrar com Google
+        </button>
       </div>
     </div>
   );
@@ -173,7 +187,7 @@ export default function App() {
 
       <main className="main-area">
         <header className="header-bar">
-          <div><h2 style={{ color: '#7C3AED', margin: 0 }}>Painel / {activeTab}</h2></div>
+          <div><h2 style={{ color: '#7C3AED', margin: 0 }}>Painel / {activeTab === 'DASHBOARD' ? 'Visão Geral' : activeTab}</h2></div>
           <div className="status-badge"><div className="dot"></div> Online</div>
         </header>
 
@@ -188,17 +202,26 @@ export default function App() {
                   {systemProfile !== 'VIEWER' && (
                     <div className="glass-card">
                       <h3><Clock size={20} /> Pendências</h3>
-                      <table className="modern-table">
-                        <thead><tr><th>Quem</th><th>O quê</th><th>Status</th><th>Ação</th></tr></thead>
-                        <tbody>{requests.filter(r => r.status.includes('PENDENTE')).map(r => (
-                          <tr key={r.id}>
-                            <td>{r.requester?.name}</td>
-                            <td>{JSON.parse(r.details).info || JSON.parse(r.details).tool || 'Pedido'}</td>
-                            <td><StatusBadge status={r.status} /></td>
-                            <td><button onClick={() => handleApprove(r.id, 'APROVAR')} className="btn-icon btn-approve"><CheckCircle size={16} /></button></td>
-                          </tr>
-                        ))}</tbody>
-                      </table>
+                      {requests.filter(r => r.status.includes('PENDENTE')).length === 0 ? (
+                        <p style={{ color: '#94a3b8', padding: '10px' }}>Nenhuma pendência no momento.</p>
+                      ) : (
+                        <table className="modern-table">
+                          <thead><tr><th>Quem</th><th>O quê</th><th>Status</th><th>Ação</th></tr></thead>
+                          <tbody>{requests.filter(r => r.status.includes('PENDENTE')).map(r => (
+                            <tr key={r.id}>
+                              <td>{r.requester?.name}</td>
+                              <td>{JSON.parse(r.details).info || JSON.parse(r.details).tool || 'Pedido'}</td>
+                              <td><StatusBadge status={r.status} /></td>
+                              <td>
+                                <div style={{ display: 'flex', gap: '5px' }}>
+                                  <button onClick={() => handleApprove(r.id, 'APROVAR')} title="Aprovar" className="btn-icon btn-approve"><CheckCircle size={16} /></button>
+                                  <button onClick={() => handleApprove(r.id, 'REPROVAR')} title="Reprovar" className="btn-icon btn-reject" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.1)', padding: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}><XCircle size={16} /></button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                      )}
                     </div>
                   )}
                   <div className="glass-card">
