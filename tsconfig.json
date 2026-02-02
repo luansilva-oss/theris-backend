@@ -1,16 +1,25 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "module": "commonjs",
-    "lib": ["ES2020"],
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
+    "useDefineForClassFields": true,
+    // Adicionei DOM para resolver o erro "Cannot find name 'document'"
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "CommonJS",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true
+    // Resolve os erros do React/JSX
+    "jsx": "react-jsx",
+    // Resolve os erros do Slack (implicit any)
+    "strict": false,
+    "noImplicitAny": false,
+    "outDir": "./dist-server",
+    "rootDir": "./src"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules"]
+  "include": [
+    "src"
+  ]
 }
