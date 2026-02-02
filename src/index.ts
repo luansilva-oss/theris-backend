@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
+import path from 'path'; // <--- Importante para achar os arquivos do site
 
 // Controladores
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
@@ -40,12 +41,10 @@ app.get('/api/tools', async (req, res) => {
   try {
     const tools = await prisma.tool.findMany({
       include: {
-        // Quem manda?
         owner: { select: { name: true, email: true } },
         subOwner: { select: { name: true, email: true } },
-        // Quem usa?
         accesses: {
-          where: { status: 'ACTIVE' }, // Apenas acessos ativos
+          where: { status: 'ACTIVE' },
           include: {
             user: { select: { name: true, email: true } }
           }
@@ -70,6 +69,15 @@ app.get('/api/users', async (req, res) => {
 app.get('/api/solicitacoes', getSolicitacoes);
 app.post('/api/solicitacoes', createSolicitacao);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);
+
+// --- SERVIR FRONTEND (VITE) ---
+// Isso diz ao Express: "Pegue os arquivos da pasta 'dist' (que o vite build criou) e mostre no navegador"
+app.use(express.static(path.join(__dirname, '../dist')));
+
+// Qualquer rota que não seja API, manda para o React (SPA)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
+});
 
 // --- START ---
 const PORT = process.env.PORT || 3000;
