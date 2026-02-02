@@ -96,7 +96,7 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
 // --- ATUALIZAR (APROVAR + GATILHO DE ACESSO) ---
 export const updateSolicitacao = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { status, approverId } = req.body; // Esperado: 'APROVADO' ou 'REPROVADO'
+  const { status, approverId } = req.body;
 
   try {
     // 1. Busca dados originais
@@ -104,9 +104,14 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
     // 2. Atualiza Status
+    // CORREÇÃO: Forçamos approverId ser string ou null para evitar erro de array
     const updatedRequest = await prisma.request.update({
       where: { id },
-      data: { status, approverId, updatedAt: new Date() }
+      data: {
+        status: String(status),
+        approverId: approverId ? String(approverId) : null,
+        updatedAt: new Date()
+      }
     });
 
     // 3. O GATILHO: Se Aprovou ferramenta, grava o acesso no banco
@@ -114,9 +119,11 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       try {
         const details = JSON.parse(request.details);
         const toolName = details.tool || details.toolName;
-        // Se for "Extraordinário" para outra pessoa, usa o beneficiaryId, senão o próprio solicitante
         const targetUserId = details.beneficiaryId || request.requesterId;
-        const level = details.target || details.targetAccess || 'Membro';
+
+        // CORREÇÃO TS: Força conversão para String para evitar erro 'string | string[]'
+        const rawLevel = details.target || details.targetAccess || 'Membro';
+        const level = String(rawLevel);
 
         if (toolName) {
           const tool = await prisma.tool.findUnique({ where: { name: toolName } });
@@ -127,7 +134,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               data: {
                 toolId: tool.id,
                 userId: targetUserId,
-                accessLevel: level,
+                accessLevel: level, // Agora garantido ser string
                 status: 'ACTIVE'
               }
             });
@@ -136,7 +143,6 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         }
       } catch (triggerError) {
         console.error("❌ Erro no gatilho de acesso automático:", triggerError);
-        // Não falhamos o request HTTP, apenas logamos o erro do trigger
       }
     }
 
