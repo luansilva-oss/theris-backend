@@ -1,96 +1,117 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { findToolApprover } from '../services/approvalService';
 
 const prisma = new PrismaClient();
 
-// --- LISTAR SOLICITAÇÕES ---
-export const getSolicitacoes = async (req: Request, res: Response) => {
-  try {
-    const requests = await prisma.request.findMany({
-      include: {
-        requester: true,
-        approver: true
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-    res.json(requests);
-  } catch (error) {
-    console.error("Erro ao buscar solicitações:", error);
-    res.status(500).json({ error: "Erro ao buscar solicitações" });
-  }
-};
-
-// --- CRIAR SOLICITAÇÃO ---
+// CRIAR SOLICITAÇÃO
 export const createSolicitacao = async (req: Request, res: Response) => {
   try {
-    // Tratamos o body como 'any' para extrair os dados sem burocracia de tipos
-    const body = req.body as any;
+    const { requesterId, type, details, justification, isExtraordinary } = req.body;
 
-    const requesterId: string = String(body.requesterId);
-    const type: string = String(body.type);
-    
-    // Tratamento especial para details (JSON ou String)
-    let detailsString: string = "";
-    if (typeof body.details === 'object') {
-        detailsString = JSON.stringify(body.details);
-    } else {
-        detailsString = String(body.details || "");
+    // Converte details para string se vier como objeto
+    const detailsString = typeof details === 'string' ? details : JSON.stringify(details);
+    const detailsObj = typeof details === 'string' ? JSON.parse(details) : details;
+
+    let approverId = null;
+    let currentApproverRole = 'MANAGER'; // Padrão
+    let status = 'PENDENTE_GESTOR';
+
+    // --- LÓGICA DE DECISÃO DE APROVADOR ---
+
+    // CASO 1: É SOBRE FERRAMENTA? (Owner/SubOwner)
+    if (['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(type) || isExtraordinary) {
+      try {
+        const toolName = detailsObj.tool || detailsObj.toolName || detailsObj.info.split(': ')[1];
+
+        if (toolName) {
+          // Usa nosso serviço inteligente
+          const route = await findToolApprover(toolName);
+          approverId = route.approverId;
+          currentApproverRole = route.role; // Ex: 'OWNER', 'DEPUTY_OWNER'
+
+          // Se for Deputy ou Sub, status reflete isso
+          if (route.role.includes('OWNER')) status = 'PENDENTE_OWNER';
+          if (route.role.includes('SI')) status = 'PENDENTE_SI';
+        }
+      } catch (error) {
+        console.warn("Não foi possível achar o Owner automático:", error);
+        // Se falhar, cai para o SI por segurança
+        status = 'PENDENTE_SI';
+        currentApproverRole = 'SI_ANALYST';
+      }
     }
 
-    const justification: string | null = body.justification ? String(body.justification) : null;
-    const isExtraordinary: boolean = Boolean(body.isExtraordinary);
+    // CASO 2: RH / DEPT PESSOAL (Promoção, Contratação)
+    else {
+      // Busca o Gestor Direto do solicitante
+      const requester = await prisma.user.findUnique({
+        where: { id: requesterId },
+        include: { manager: true }
+      });
 
+      if (requester?.manager) {
+        approverId = requester.manager.id;
+      } else {
+        // Se não tem gestor (ex: CEO), cai para Admin/RH
+        status = 'PENDENTE_RH';
+      }
+    }
+
+    // --- CRIAÇÃO NO BANCO ---
     const newRequest = await prisma.request.create({
       data: {
         requesterId,
         type,
-        status: 'PENDENTE_GESTOR',
         details: detailsString,
         justification,
-        isExtraordinary
+        status,
+        currentApproverRole,
+        approverId, // Pode ser null se não achou (fica pendente na fila geral)
+        isExtraordinary: !!isExtraordinary
       }
     });
 
-    res.json(newRequest);
+    return res.status(201).json(newRequest);
+
   } catch (error) {
-    console.error("Erro ao criar solicitação:", error);
-    res.status(500).json({ error: "Erro ao criar solicitação" });
+    console.error('Erro ao criar solicitação:', error);
+    return res.status(500).json({ error: 'Erro interno ao processar solicitação.' });
   }
 };
 
-// --- ATUALIZAR STATUS (APROVAR/REPROVAR) ---
-export const updateSolicitacao = async (req: Request, res: Response) => {
+// LISTAR SOLICITAÇÕES
+export const getSolicitacoes = async (req: Request, res: Response) => {
   try {
-    // 1. Extração e Limpeza do ID (Onde estava o erro TS2322)
-    // Forçamos o 'req.params.id' a ser tratado como string pura antes de tocar no Prisma
-    const rawId = req.params.id;
-    const safeId: string = String(rawId);
+    const requests = await prisma.request.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        requester: { select: { id: true, name: true, email: true, department: true } },
+        lastApprover: { select: { id: true, name: true } }
+      }
+    });
+    return res.json(requests);
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao buscar solicitações' });
+  }
+};
 
-    // 2. Extração e Limpeza do Body
-    const body = req.body as any;
-    const safeStatus: string = String(body.status);
-    
-    // ApproverId pode ser nulo, então tratamos separadamente
-    let safeApproverId: string | null = null;
-    if (body.approverId) {
-        safeApproverId = String(body.approverId);
-    }
+// ATUALIZAR (APROVAR/REPROVAR)
+export const updateSolicitacao = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status, approverId } = req.body; // status: 'APROVADO' | 'REPROVADO'
 
-    // 3. Chamada ao Banco (Agora as variáveis são garantidamente strings)
+  try {
     const updated = await prisma.request.update({
-      where: { id: safeId },
+      where: { id },
       data: {
-        status: safeStatus,
-        approverId: safeApproverId,
+        status,
+        approverId,
         updatedAt: new Date()
       }
     });
-    
-    res.json(updated);
+    return res.json(updated);
   } catch (error) {
-    console.error("Erro ao atualizar solicitação:", error);
-    res.status(500).json({ error: "Erro ao atualizar solicitação" });
+    return res.status(500).json({ error: 'Erro ao atualizar solicitação' });
   }
 };

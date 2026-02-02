@@ -1,3 +1,4 @@
+// 1. CONFIGURAÇÕES
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,95 +8,140 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- ESTRUTURA ORGANIZACIONAL ---
-
+// 2. MODELO DE USUÁRIO (CENTRAL)
 model User {
-  id             String   @id @default(uuid())
-  email          String   @unique
-  name           String
+  id            String   @id @default(uuid())
+  email         String   @unique
+  name          String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   
-  // 👇 CAMPO NOVO ADICIONADO PARA CORRIGIR O ERRO
-  systemProfile  String   @default("VIEWER") 
+  // --- PERFIL DE SISTEMA ---
+  // "SUPER_ADMIN", "ADMIN", "APPROVER", "VIEWER"
+  systemProfile String   @default("VIEWER") 
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  // --- ORGANOGRAMA ---
+  departmentId  String?
+  department    Department? @relation(fields: [departmentId], references: [id])
+  
+  roleId        String?
+  role          Role?       @relation(fields: [roleId], references: [id])
 
-  // Relacionamentos Hierárquicos
-  roleId         String?
-  role           Role?    @relation(fields: [roleId], references: [id])
-   
-  departmentId   String?
-  department     Department? @relation(fields: [departmentId], references: [id])
+  // --- HIERARQUIA (Gestor Direto) ---
+  managerId     String?
+  manager       User?       @relation("ManagerSubordinate", fields: [managerId], references: [id])
+  subordinates  User[]      @relation("ManagerSubordinate")
 
-  // Gestão Direta (Quem é meu chefe?)
-  managerId      String?
-  manager        User?    @relation("ManagerSubordinates", fields: [managerId], references: [id])
-  subordinates   User[]   @relation("ManagerSubordinates")
+  // --- REGRA DO DEPUTY (Substituto) ---
+  // Quem eu escolhi para me substituir nas férias/ausência
+  myDeputyId    String?
+  myDeputy      User?       @relation("DeputyDelegation", fields: [myDeputyId], references: [id])
+  
+  // Lista de pessoas que me escolheram como substituto
+  deputyFor     User[]      @relation("DeputyDelegation")
+  
+  // Se TRUE, o Deputy recebe as notificações e pode aprovar por mim
+  isDeputyActive Boolean    @default(false)
 
-  // Deputy (Meu substituto oficial)
-  myDeputyId     String?
-  myDeputy       User?    @relation("UserDeputy", fields: [myDeputyId], references: [id])
-  deputyOf       User[]   @relation("UserDeputy")
+  // --- GOVERNANÇA DE FERRAMENTAS ---
+  // Ferramentas que eu sou Dono (Owner)
+  ownedTools    Tool[]      @relation("ToolOwner")
+  
+  // Ferramentas que eu sou Sub-Dono (Backup)
+  subOwnedTools Tool[]      @relation("ToolSubOwner")
 
-  // Solicitações
-  requestsMade     Request[] @relation("Requester")
-  requestsApproved Request[] @relation("Approver")
+  // Meus Acessos (Quais ferramentas eu uso e qual nível)
+  accesses      ToolAccess[]
 
-  // Ferramentas que é dono (Owner)
-  toolsOwned     Tool[] @relation("ToolOwner")
-  toolsSubOwned  Tool[] @relation("ToolSubOwner")
+  // --- FLUXO DE SOLICITAÇÕES ---
+  requests      Request[]   @relation("RequestRequester") // Pedidos que eu fiz
+  approvals     Request[]   @relation("RequestApprover")  // Pedidos que eu aprovei/rejeitei
 }
 
+// 3. ESTRUTURA ORGANIZACIONAL
 model Department {
-  id    String @id @default(uuid())
-  name  String @unique
-  roles Role[]
-  users User[]
+  id        String   @id @default(uuid())
+  name      String   @unique // Ex: "Tecnologia", "Comercial"
+  users     User[]
+  roles     Role[]
 }
 
 model Role {
   id           String     @id @default(uuid())
-  name         String
+  name         String     // Ex: "Analista de Suporte", "Head de Vendas"
   departmentId String
   department   Department @relation(fields: [departmentId], references: [id])
   users        User[]
+  
+  // KBS (Kit Básico Setorial) - Ferramentas padrão para este cargo
+  kbsTools     Tool[]     @relation("KBSTools") 
 }
 
-// --- FERRAMENTAS & ACESSOS ---
-
+// 4. FERRAMENTAS (SOFTWARES)
 model Tool {
-  id          String  @id @default(uuid())
-  name        String  @unique
+  id          String   @id @default(uuid())
+  name        String   @unique // Ex: "ClickUp", "Jumpcloud", "AWS"
   description String?
-   
+  
+  // Quem aprova acessos para essa ferramenta
   ownerId     String?
-  owner       User?   @relation("ToolOwner", fields: [ownerId], references: [id])
-   
+  owner       User?    @relation("ToolOwner", fields: [ownerId], references: [id])
+  
   subOwnerId  String?
-  subOwner    User?   @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
+  subOwner    User?    @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
+
+  // Quem tem acesso
+  accesses    ToolAccess[]
+  
+  // Cargos que recebem isso automaticamente (KBS)
+  kbsRoles    Role[]   @relation("KBSTools")
+
+  createdAt   DateTime @default(now())
 }
 
-// --- SOLICITAÇÕES (WORKFLOW) ---
+// 5. ACESSOS INDIVIDUAIS (Quem usa o quê)
+model ToolAccess {
+  id          String   @id @default(uuid())
+  
+  toolId      String
+  tool        Tool     @relation(fields: [toolId], references: [id])
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  // Nível de acesso na ferramenta (Ex: "Admin", "Member", "Read-Only")
+  accessLevel String   
+  
+  status      String   @default("ACTIVE") // ACTIVE, SUSPENDED, REVOKED
+  grantedAt   DateTime @default(now())
+}
 
+// 6. SOLICITAÇÕES (WORKFLOW)
 model Request {
-  id              String   @id @default(uuid())
-  type            String   // 'ACCESS_TOOL', 'CHANGE_ROLE', 'NOMINATE_DEPUTY', etc.
-  status          String   // 'PENDENTE_GESTOR', 'PENDENTE_OWNER', 'APROVADO', 'REPROVADO'
-   
-  details         String   // JSON string com os dados (ferramenta, nível de acesso, etc)
-  justification   String?
-  isExtraordinary Boolean  @default(false)
-   
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
+  id                  String   @id @default(uuid())
+  
   // Quem pediu
-  requesterId     String
-  requester       User     @relation("Requester", fields: [requesterId], references: [id])
+  requesterId         String
+  requester           User     @relation("RequestRequester", fields: [requesterId], references: [id])
+  
+  // Tipo: "ACCESS_TOOL", "CHANGE_ROLE", "HIRING", "FIRING", "NOMINATE_DEPUTY"
+  type                String   
+  
+  // Status: "PENDENTE_GESTOR", "PENDENTE_OWNER", "PENDENTE_SI", "APROVADO", "REPROVADO"
+  status              String   @default("PENDENTE_GESTOR")
+  
+  // Detalhes JSON (Flexível para guardar info do Slack, justificativas, dados antigos/novos)
+  details             String   @db.Text 
+  justification       String?
+  
+  // Quem aprovou/finalizou
+  approverId          String?
+  lastApprover        User?    @relation("RequestApprover", fields: [approverId], references: [id])
+  
+  // Controle de Fila
+  currentApproverRole String?  // Ex: "MANAGER", "OWNER", "SI_ANALYST"
+  isExtraordinary     Boolean  @default(false)
 
-  // Quem aprovou por último
-  approverId      String?
-  approver        User?    @relation("Approver", fields: [approverId], references: [id])
-   
-  currentApproverRole String? // 'MANAGER', 'OWNER', 'SI_ANALYST'
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
