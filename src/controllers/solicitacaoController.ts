@@ -4,34 +4,21 @@ import { findToolApprover } from '../services/approvalService';
 
 const prisma = new PrismaClient();
 
-// --- FUNÇÕES AUXILIARES PARA ACALMAR O TYPESCRIPT ---
-// Força qualquer coisa a virar uma string simples, pegando o primeiro item se for array
-const safeString = (value: any): string => {
-  if (Array.isArray(value)) return String(value[0]);
-  if (!value) return "";
-  return String(value);
-};
-
-// O mesmo, mas permite retornar null (para campos opcionais)
-const safeStringOrNull = (value: any): string | null => {
-  if (!value) return null;
-  if (Array.isArray(value)) return String(value[0]);
-  return String(value);
-};
-
 // --- CRIAR SOLICITAÇÃO ---
 export const createSolicitacao = async (req: Request, res: Response) => {
   try {
-    // Cast brutal para 'any' na entrada
+    // ⚠️ CAST NUCLEAR: Desliga a checagem de tipos do Express para o body
     const body = req.body as any;
 
-    const requesterId = safeString(body.requesterId);
-    const type = safeString(body.type);
-    const details = body.details; // Mantém original para processar
-    const justification = body.justification ? safeString(body.justification) : null;
+    const requesterId = String(body.requesterId);
+    const type = String(body.type);
+    const details = body.details;
+    const justification = body.justification ? String(body.justification) : null;
     const isExtraordinary = Boolean(body.isExtraordinary);
 
     const detailsString = typeof details === 'string' ? details : JSON.stringify(details);
+
+    // Parse seguro para extrair nome da ferramenta
     const detailsObj = typeof details === 'string' ? JSON.parse(details) : details;
 
     let approverId: string | null = null;
@@ -112,37 +99,55 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
 // --- ATUALIZAR ---
 export const updateSolicitacao = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const body = req.body as any;
 
-  // 1. Extração Higienizada dos dados
-  // Aqui garantimos que SÃO strings antes de tocar no Prisma
-  const statusInput: string = safeString(body.status);
-  const approverIdInput: string | null = safeStringOrNull(body.approverId);
+  // ⚠️ CAST NUCLEAR: Tratamos como 'any' para evitar erro TS2322 (string | string[])
+  const body = req.body as any;
 
   try {
     const request = await prisma.request.findUnique({ where: { id } });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
+    // Tratamento MANUAL:
+    // Se vier array, pega o primeiro. Se vier string, usa ela.
+    // E no final, envolvemos em String() para garantir o tipo primitivo.
+
+    let safeStatus = '';
+    if (Array.isArray(body.status)) {
+      safeStatus = String(body.status[0]);
+    } else {
+      safeStatus = String(body.status);
+    }
+
+    let safeApproverId: string | null = null;
+    if (body.approverId) {
+      if (Array.isArray(body.approverId)) {
+        safeApproverId = String(body.approverId[0]);
+      } else {
+        safeApproverId = String(body.approverId);
+      }
+    }
+
+    // Agora o TypeScript sabe que safeStatus é string e safeApproverId é string | null
     const updatedRequest = await prisma.request.update({
       where: { id },
       data: {
-        status: statusInput,       // Agora é garantido ser string
-        approverId: approverIdInput, // Agora é garantido ser string | null
+        status: safeStatus,
+        approverId: safeApproverId,
         updatedAt: new Date()
       }
     });
 
     // GATILHO DE ACESSO
-    if (statusInput === 'APROVADO' && ['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(request.type)) {
+    if (safeStatus === 'APROVADO' && ['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(request.type)) {
       try {
         const details = JSON.parse(request.details);
         const toolName = details.tool || details.toolName;
-        // targetUserId vem do beneficiaryId ou do próprio requester
-        const targetUserId = details.beneficiaryId ? safeString(details.beneficiaryId) : request.requesterId;
+        // Pega ID do beneficiário ou do solicitante. Converte para string seguro.
+        const rawTarget = details.beneficiaryId || request.requesterId;
+        const targetUserId = Array.isArray(rawTarget) ? String(rawTarget[0]) : String(rawTarget);
 
-        // Garante nível de acesso como string
         const rawLevel = details.target || details.targetAccess || 'Membro';
-        const accessLevelInput: string = safeString(rawLevel);
+        const accessLevel = Array.isArray(rawLevel) ? String(rawLevel[0]) : String(rawLevel);
 
         if (toolName) {
           const tool = await prisma.tool.findUnique({ where: { name: toolName } });
@@ -152,7 +157,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               data: {
                 toolId: tool.id,
                 userId: targetUserId,
-                accessLevel: accessLevelInput, // Garantido ser string
+                accessLevel: accessLevel,
                 status: 'ACTIVE'
               }
             });
