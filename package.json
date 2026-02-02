@@ -39,5 +39,8 @@
     "google-auth-library": "^9.0.0",
     "@slack/bolt": "^3.12.2"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  }
 }
