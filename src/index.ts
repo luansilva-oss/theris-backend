@@ -51,7 +51,7 @@ app.get('/api/structure', async (req, res) => {
 app.get('/api/tools', async (req, res) => {
   try {
     const tools = await prisma.tool.findMany({
-      include: {
+      include: {l
         // Quem aprova?
         owner: { select: { name: true, email: true } },
         subOwner: { select: { name: true, email: true } },
