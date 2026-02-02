@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
-import path from 'path'; // <--- Importante para achar os arquivos do site
+import path from 'path'; // Importante para gerenciar os caminhos das pastas
 
 // Controladores
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
@@ -17,9 +17,10 @@ const app = express();
 const prisma = new PrismaClient();
 
 // --- CORS ---
+// Permite conexões de qualquer origem (útil para dev/prod)
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
 
-// ⚠️ ROTA DO SLACK (Deve vir ANTES do express.json)
+// ⚠️ ROTA DO SLACK (Deve vir ANTES do express.json para processar webhooks corretamente)
 app.use('/api/slack', slackReceiver.router);
 
 // --- JSON MIDDLEWARE ---
@@ -28,21 +29,33 @@ app.use(express.json());
 // --- ROTAS DE AUTENTICAÇÃO ---
 app.post('/api/login/google', googleLogin);
 
-// --- ROTAS DE DADOS ---
+// --- ROTAS DE DADOS (API) ---
 
-// 1. Estrutura (Departamentos)
+// 1. Estrutura Organizacional (Departamentos e Cargos)
 app.get('/api/structure', async (req, res) => {
-  const data = await prisma.department.findMany({ include: { roles: { include: { users: true } } } });
-  res.json(data);
+  try {
+    const data = await prisma.department.findMany({
+      include: {
+        roles: {
+          include: { users: true }
+        }
+      }
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar estrutura.' });
+  }
 });
 
-// 2. Ferramentas (ATUALIZADO PARA GOVERNANÇA)
+// 2. Ferramentas (COM GOVERNANÇA: Owners, Sub-Owners e Usuários)
 app.get('/api/tools', async (req, res) => {
   try {
     const tools = await prisma.tool.findMany({
       include: {
+        // Quem aprova?
         owner: { select: { name: true, email: true } },
         subOwner: { select: { name: true, email: true } },
+        // Quem tem acesso ativo?
         accesses: {
           where: { status: 'ACTIVE' },
           include: {
@@ -59,28 +72,45 @@ app.get('/api/tools', async (req, res) => {
   }
 });
 
-// 3. Usuários
+// 3. Usuários (Com detalhes de hierarquia e deputy)
 app.get('/api/users', async (req, res) => {
-  const data = await prisma.user.findMany({ include: { role: true, department: true, myDeputy: true } });
-  res.json(data);
+  try {
+    const data = await prisma.user.findMany({
+      include: {
+        role: true,
+        department: true,
+        myDeputy: true
+      }
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao buscar usuários.' });
+  }
 });
 
-// --- ROTAS DE SOLICITAÇÕES ---
+// --- ROTAS DE SOLICITAÇÕES (WORKFLOW) ---
 app.get('/api/solicitacoes', getSolicitacoes);
 app.post('/api/solicitacoes', createSolicitacao);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);
 
 // --- SERVIR FRONTEND (VITE) ---
-// Isso diz ao Express: "Pegue os arquivos da pasta 'dist' (que o vite build criou) e mostre no navegador"
-app.use(express.static(path.join(__dirname, '../dist')));
+// Configuração para produção no Render:
+// O Backend compilado está em '/dist-server/index.js'
+// O Frontend compilado está em '/dist/index.html'
+// Portanto, voltamos um nível (..) e entramos em 'dist'
+const frontendPath = path.resolve(__dirname, '../dist');
 
-// Qualquer rota que não seja API, manda para o React (SPA)
+// Serve os arquivos estáticos (JS, CSS, Imagens)
+app.use(express.static(frontendPath));
+
+// Redireciona qualquer rota desconhecida para o React (SPA)
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
+  res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-// --- START ---
+// --- START SERVER ---
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Theris Backend rodando na porta ${PORT}`);
+  console.log(`📂 Servindo frontend de: ${frontendPath}`);
 });
