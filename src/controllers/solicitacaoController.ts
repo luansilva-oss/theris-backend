@@ -7,12 +7,19 @@ const prisma = new PrismaClient();
 // --- CRIAR SOLICITAÇÃO ---
 export const createSolicitacao = async (req: Request, res: Response) => {
   try {
-    const { requesterId, type, details, justification, isExtraordinary } = req.body;
+    // Cast para any para evitar conflitos de tipagem estrita do Express
+    const body = req.body as any;
+
+    const requesterId = body.requesterId;
+    const type = body.type;
+    const details = body.details;
+    const justification = body.justification;
+    const isExtraordinary = body.isExtraordinary;
 
     const detailsString = typeof details === 'string' ? details : JSON.stringify(details);
     const detailsObj = typeof details === 'string' ? JSON.parse(details) : details;
 
-    let approverId = null;
+    let approverId: string | null = null;
     let currentApproverRole = 'MANAGER';
     let status = 'PENDENTE_GESTOR';
 
@@ -87,39 +94,45 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
   }
 };
 
-// --- ATUALIZAR (CORRIGIDO PARA O ERRO TS2322) ---
+// --- ATUALIZAR (SOLUÇÃO FINAL PARA O ERRO DE BUILD) ---
 export const updateSolicitacao = async (req: Request, res: Response) => {
   const { id } = req.params;
-  // Pegamos do body, mas tratamos como 'unknown' para forçar tipagem depois
-  const { status, approverId } = req.body;
+
+  // ⚠️ O PULO DO GATO: Usamos 'as any' para desligar a checagem estrita aqui
+  const body = req.body as any;
+  const rawStatus = body.status;
+  const rawApproverId = body.approverId;
 
   try {
     const request = await prisma.request.findUnique({ where: { id } });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
-    // CORREÇÃO DEFINITIVA: 
-    // Se status for array, pega o primeiro. Se for string, usa ela. Depois força string.
-    const safeStatus = Array.isArray(status) ? status[0] : status;
-    const safeApproverId = Array.isArray(approverId) ? approverId[0] : approverId;
+    // Tratamento manual e forçado para String
+    const finalStatus = Array.isArray(rawStatus) ? String(rawStatus[0]) : String(rawStatus);
+
+    let finalApproverId: string | null = null;
+    if (rawApproverId) {
+      finalApproverId = Array.isArray(rawApproverId) ? String(rawApproverId[0]) : String(rawApproverId);
+    }
 
     const updatedRequest = await prisma.request.update({
       where: { id },
       data: {
-        status: String(safeStatus), // Força conversão para String simples
-        approverId: safeApproverId ? String(safeApproverId) : null, // Força String ou null
+        status: finalStatus,
+        approverId: finalApproverId,
         updatedAt: new Date()
       }
     });
 
     // GATILHO DE ACESSO
-    if (String(safeStatus) === 'APROVADO' && ['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(request.type)) {
+    if (finalStatus === 'APROVADO' && ['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(request.type)) {
       try {
         const details = JSON.parse(request.details);
         const toolName = details.tool || details.toolName;
         const targetUserId = details.beneficiaryId || request.requesterId;
 
         const rawLevel = details.target || details.targetAccess || 'Membro';
-        const safeLevel = Array.isArray(rawLevel) ? rawLevel[0] : rawLevel;
+        const finalLevel = Array.isArray(rawLevel) ? String(rawLevel[0]) : String(rawLevel);
 
         if (toolName) {
           const tool = await prisma.tool.findUnique({ where: { name: toolName } });
@@ -129,7 +142,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               data: {
                 toolId: tool.id,
                 userId: targetUserId,
-                accessLevel: String(safeLevel),
+                accessLevel: finalLevel,
                 status: 'ACTIVE'
               }
             });
