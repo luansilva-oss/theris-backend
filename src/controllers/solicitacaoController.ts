@@ -4,17 +4,32 @@ import { findToolApprover } from '../services/approvalService';
 
 const prisma = new PrismaClient();
 
+// --- FUNÇÕES AUXILIARES PARA ACALMAR O TYPESCRIPT ---
+// Força qualquer coisa a virar uma string simples, pegando o primeiro item se for array
+const safeString = (value: any): string => {
+  if (Array.isArray(value)) return String(value[0]);
+  if (!value) return "";
+  return String(value);
+};
+
+// O mesmo, mas permite retornar null (para campos opcionais)
+const safeStringOrNull = (value: any): string | null => {
+  if (!value) return null;
+  if (Array.isArray(value)) return String(value[0]);
+  return String(value);
+};
+
 // --- CRIAR SOLICITAÇÃO ---
 export const createSolicitacao = async (req: Request, res: Response) => {
   try {
-    // Cast para any para evitar conflitos de tipagem estrita do Express
+    // Cast brutal para 'any' na entrada
     const body = req.body as any;
 
-    const requesterId = body.requesterId;
-    const type = body.type;
-    const details = body.details;
-    const justification = body.justification;
-    const isExtraordinary = body.isExtraordinary;
+    const requesterId = safeString(body.requesterId);
+    const type = safeString(body.type);
+    const details = body.details; // Mantém original para processar
+    const justification = body.justification ? safeString(body.justification) : null;
+    const isExtraordinary = Boolean(body.isExtraordinary);
 
     const detailsString = typeof details === 'string' ? details : JSON.stringify(details);
     const detailsObj = typeof details === 'string' ? JSON.parse(details) : details;
@@ -66,7 +81,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
         status,
         currentApproverRole,
         approverId,
-        isExtraordinary: !!isExtraordinary
+        isExtraordinary
       }
     });
 
@@ -94,45 +109,40 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
   }
 };
 
-// --- ATUALIZAR (SOLUÇÃO FINAL PARA O ERRO DE BUILD) ---
+// --- ATUALIZAR ---
 export const updateSolicitacao = async (req: Request, res: Response) => {
   const { id } = req.params;
-
-  // ⚠️ O PULO DO GATO: Usamos 'as any' para desligar a checagem estrita aqui
   const body = req.body as any;
-  const rawStatus = body.status;
-  const rawApproverId = body.approverId;
+
+  // 1. Extração Higienizada dos dados
+  // Aqui garantimos que SÃO strings antes de tocar no Prisma
+  const statusInput: string = safeString(body.status);
+  const approverIdInput: string | null = safeStringOrNull(body.approverId);
 
   try {
     const request = await prisma.request.findUnique({ where: { id } });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
-    // Tratamento manual e forçado para String
-    const finalStatus = Array.isArray(rawStatus) ? String(rawStatus[0]) : String(rawStatus);
-
-    let finalApproverId: string | null = null;
-    if (rawApproverId) {
-      finalApproverId = Array.isArray(rawApproverId) ? String(rawApproverId[0]) : String(rawApproverId);
-    }
-
     const updatedRequest = await prisma.request.update({
       where: { id },
       data: {
-        status: finalStatus,
-        approverId: finalApproverId,
+        status: statusInput,       // Agora é garantido ser string
+        approverId: approverIdInput, // Agora é garantido ser string | null
         updatedAt: new Date()
       }
     });
 
     // GATILHO DE ACESSO
-    if (finalStatus === 'APROVADO' && ['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(request.type)) {
+    if (statusInput === 'APROVADO' && ['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(request.type)) {
       try {
         const details = JSON.parse(request.details);
         const toolName = details.tool || details.toolName;
-        const targetUserId = details.beneficiaryId || request.requesterId;
+        // targetUserId vem do beneficiaryId ou do próprio requester
+        const targetUserId = details.beneficiaryId ? safeString(details.beneficiaryId) : request.requesterId;
 
+        // Garante nível de acesso como string
         const rawLevel = details.target || details.targetAccess || 'Membro';
-        const finalLevel = Array.isArray(rawLevel) ? String(rawLevel[0]) : String(rawLevel);
+        const accessLevelInput: string = safeString(rawLevel);
 
         if (toolName) {
           const tool = await prisma.tool.findUnique({ where: { name: toolName } });
@@ -142,7 +152,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               data: {
                 toolId: tool.id,
                 userId: targetUserId,
-                accessLevel: finalLevel,
+                accessLevel: accessLevelInput, // Garantido ser string
                 status: 'ACTIVE'
               }
             });
