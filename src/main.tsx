@@ -6,7 +6,7 @@ import './index.css' // Importa estilos globais se tiver, senão remova esta lin
 // Configuração do Google OAuth (Substitua pelo seu Client ID se tiver, ou deixe vazio por enquanto)
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
-const clientId = "SEU_CLIENT_ID_DO_GOOGLE";
+const clientId = "1029553168345-73cpprt1cgu0qmi119huuo6sjhhbk4sb.apps.googleusercontent.com";
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
