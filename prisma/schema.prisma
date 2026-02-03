@@ -7,12 +7,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// (Opcional: Pode manter ou remover Department/Role se não estiver usando ativamente, 
+// mas desconectei do User para facilitar o CSV)
 model Department {
   id        String   @id @default(uuid())
   name      String
   createdAt DateTime @default(now())
   roles     Role[]
-  users     User[]
 }
 
 model Role {
@@ -20,61 +21,65 @@ model Role {
   name         String
   departmentId String
   department   Department @relation(fields: [departmentId], references: [id])
-  users        User[]
 }
 
 model User {
-  id           String     @id @default(uuid())
-  name         String
-  email        String     @unique
-  roleId       String?
-  role         Role?      @relation(fields: [roleId], references: [id])
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id])
+  id            String    @id @default(uuid())
+  name          String
+  email         String    @unique
   
-  // Hierarquia
-  managerId    String?
-  manager      User?      @relation("ManagerToSubordinate", fields: [managerId], references: [id])
-  subordinates User[]     @relation("ManagerToSubordinate")
-  
-  myDeputyId   String?    @unique
-  myDeputy     User?      @relation("DeputyRelation", fields: [myDeputyId], references: [id])
-  deputyOf     User?      @relation("DeputyRelation")
+  // --- MUDANÇA 1: Simplificado para facilitar importação do CSV ---
+  department    String?   // Agora é texto simples (Ex: "Comercial")
+  jobTitle      String?   // Cargo (Ex: "SDR")
+  // ---------------------------------------------------------------
 
-  // Ferramentas que ele é dono
-  toolsOwned   Tool[]     @relation("ToolOwner")
+  roleId        String?
+  // role       Role?     @relation(fields: [roleId], references: [id]) // Comentei para evitar erros se não tiver roles
+
+  // Hierarquia (Gestor)
+  managerId     String?
+  manager       User?     @relation("ManagerToSubordinate", fields: [managerId], references: [id])
+  subordinates  User[]    @relation("ManagerToSubordinate")
+  
+  // Deputado/Substituto
+  myDeputyId    String?   @unique
+  myDeputy      User?     @relation("DeputyRelation", fields: [myDeputyId], references: [id])
+  deputyOf      User?     @relation("DeputyRelation")
+
+  // Ferramentas
+  toolsOwned    Tool[]    @relation("ToolOwner")
   toolsSubOwned Tool[]    @relation("ToolSubOwner")
 
-  // Acessos que ele tem (NOVO! 👇)
-  accesses     Access[]
+  // Acessos
+  accesses      Access[]
 
   // Solicitações
-  requests     Request[]
-  // NOVOS CAMPOS PARA MFA
-  mfaCode       String?    // O código de 6 dígitos
-  mfaExpiresAt  DateTime?  // Validade do código (3 horas)
+  requests      Request[] @relation("Requester") // Quem pediu
+  approvals     Request[] @relation("Approver")  // Quem aprovou (NOVO PARA AUDITORIA)
+
+  // MFA
+  mfaCode       String?   
+  mfaExpiresAt  DateTime? 
 }
 
 model Tool {
-  id          String   @id @default(uuid())
-  name        String
+  id            String   @id @default(uuid())
+  name          String
   
-  ownerId     String?
-  owner       User?    @relation("ToolOwner", fields: [ownerId], references: [id])
+  ownerId       String?
+  owner         User?    @relation("ToolOwner", fields: [ownerId], references: [id])
   
-  subOwnerId  String?
-  subOwner    User?    @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
+  subOwnerId    String?
+  subOwner      User?    @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
 
-  // Quem tem acesso a essa ferramenta (NOVO! 👇)
-  accesses    Access[]
+  accesses      Access[]
 
-  createdAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
 }
 
-// --- TABELA NOVA (Copie tudo isso) ---
 model Access {
   id        String   @id @default(uuid())
-  status    String   @default("ACTIVE") // ACTIVE, REVOKED, PENDING
+  status    String   @default("ACTIVE") 
   
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -84,23 +89,28 @@ model Access {
   
   createdAt DateTime @default(now())
 }
-// -------------------------------------
 
 model Request {
-  id              String   @id @default(uuid())
-  requesterId     String
-  requester       User     @relation(fields: [requesterId], references: [id])
+  id                  String   @id @default(uuid())
   
-  type            String
-  status          String   @default("PENDENTE_GESTOR")
+  requesterId         String
+  requester           User     @relation("Requester", fields: [requesterId], references: [id])
   
-  // ADICIONE ESTA LINHA 👇
-  currentApproverRole String? // Ex: 'MANAGER', 'SI_ANALYST', 'HEAD'
+  // --- MUDANÇA 2: Campos para Auditoria ---
+  approverId          String?
+  approver            User?    @relation("Approver", fields: [approverId], references: [id])
+  adminNote           String?  // O motivo da aprovação/reprovação
+  // ----------------------------------------
+
+  type                String
+  status              String   @default("PENDENTE_GESTOR")
   
-  details         String   // JSON string
-  justification   String?
-  isExtraordinary Boolean  @default(false)
+  currentApproverRole String? 
   
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  details             String   // JSON string
+  justification       String?
+  isExtraordinary     Boolean  @default(false)
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }

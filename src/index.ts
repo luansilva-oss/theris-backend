@@ -6,9 +6,10 @@ import path from 'path';
 
 // --- IMPORTAÇÕES DOS CONTROLADORES ---
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
-// ATUALIZADO: Importamos sendMfa e verifyMfa aqui 👇
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getAllTools } from './controllers/toolController';
+// 1. ADICIONADO AQUI 👇
+import { getAllUsers } from './controllers/userController';
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -24,15 +25,15 @@ app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }
 // ⚠️ ROTA DO SLACK (IMPORTANTE: Deve vir ANTES do express.json)
 app.use('/api/slack', slackReceiver.router);
 
-// --- JSON MIDDLEWARE (Necessário para ler o body das requisições abaixo) ---
+// --- JSON MIDDLEWARE ---
 app.use(express.json());
 
 // ============================================================
-// --- ROTAS DE AUTENTICAÇÃO E MFA (AQUI!) ---
+// --- ROTAS DE AUTENTICAÇÃO E MFA ---
 // ============================================================
 app.post('/api/login/google', googleLogin);
-app.post('/api/auth/send-mfa', sendMfa);     // <--- Nova rota
-app.post('/api/auth/verify-mfa', verifyMfa); // <--- Nova rota
+app.post('/api/auth/send-mfa', sendMfa);
+app.post('/api/auth/verify-mfa', verifyMfa);
 
 // ============================================================
 // --- ROTAS DE DADOS ---
@@ -53,17 +54,8 @@ app.get('/api/structure', async (req, res) => {
 // 2. Ferramentas
 app.get('/api/tools', getAllTools);
 
-// 3. Usuários
-app.get('/api/users', async (req, res) => {
-  try {
-    const data = await prisma.user.findMany({
-      include: { role: true, department: true, myDeputy: true }
-    });
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao buscar usuários.' });
-  }
-});
+// 3. Usuários (ATUALIZADO PARA USAR O CONTROLLER NOVO) 👇
+app.get('/api/users', getAllUsers);
 
 // ============================================================
 // --- WORKFLOW (SOLICITAÇÕES) ---
@@ -84,7 +76,6 @@ app.get('*', (req, res) => {
 
 // --- START ---
 const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0';
 app.listen(PORT, () => {
   console.log(`🚀 Theris Backend rodando na porta ${PORT}`);
 });
