@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Server, FileText, LogOut, Bird,
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
   Search, Bell, Lock, Layers, ChevronDown, ChevronRight,
-  Users // <--- ÍCONE NOVO
+  Users // Ícone para Gestão de Pessoas
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
@@ -13,8 +13,22 @@ import { ModalObservacao } from './components/ModalObservacao';
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
 // --- TYPES ---
-interface User { id: string; name: string; email: string; jobTitle?: string; department?: string; manager?: { name: string }; }
-interface Tool { id: string; name: string; owner?: User; subOwner?: User; accesses?: { user: User; status: string }[]; }
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  jobTitle?: string;
+  department?: string;
+  manager?: { name: string };
+}
+
+interface Tool {
+  id: string;
+  name: string;
+  owner?: User;
+  subOwner?: User;
+  accesses?: { user: User; status: string }[];
+}
 
 interface Request {
   id: string;
@@ -30,7 +44,7 @@ interface Request {
 
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER';
 
-const SESSION_DURATION = 3 * 60 * 60 * 1000;
+const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 Horas
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -48,7 +62,7 @@ export default function App() {
   // DADOS
   const [tools, setTools] = useState<Tool[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
-  const [allUsers, setAllUsers] = useState<User[]>([]); // <--- ESTADO PARA LISTA DE PESSOAS
+  const [allUsers, setAllUsers] = useState<User[]>([]); // Lista de colaboradores
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
@@ -107,7 +121,7 @@ export default function App() {
       }
       if (resReqs.ok) setRequests(await resReqs.json());
 
-      // BUSCA USUÁRIOS SE A ABA FOR PESSOAS
+      // Carrega usuários se estiver na aba de gestão
       if (activeTab === 'PEOPLE') {
         const resUsers = await fetch(`${API_URL}/api/users`);
         if (resUsers.ok) setAllUsers(await resUsers.json());
@@ -122,7 +136,7 @@ export default function App() {
       const interval = setInterval(loadData, 10000);
       return () => clearInterval(interval);
     }
-  }, [isLoggedIn, activeTab]); // Adicionei activeTab para recarregar quando mudar de aba
+  }, [isLoggedIn, activeTab]);
 
   // Actions
   const handleLogin = useGoogleLogin({
@@ -252,7 +266,6 @@ export default function App() {
         <div className="nav-section">
           <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Visão Geral</div>
 
-          {/* NOVA ABA GESTÃO DE PESSOAS */}
           <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => setActiveTab('PEOPLE')}><Users size={18} /> Gestão de Pessoas</div>
 
           <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Layers size={18} /> Catálogo</div>
@@ -337,7 +350,7 @@ export default function App() {
             </div>
           )}
 
-          {/* GESTÃO DE PESSOAS (NOVA TELA) */}
+          {/* GESTÃO DE PESSOAS */}
           {activeTab === 'PEOPLE' && (
             <div className="fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -349,10 +362,10 @@ export default function App() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #27272a', color: '#a1a1aa', textAlign: 'left' }}>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>NOME COMPLETO</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>CARGO</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>DEPARTAMENTO</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>GESTOR DIRETO</th>
+                      <th style={{ padding: '16px', fontWeight: 600, width: '30%' }}>NOME</th>
+                      <th style={{ padding: '16px', fontWeight: 600, width: '25%' }}>CARGO</th>
+                      <th style={{ padding: '16px', fontWeight: 600, width: '20%' }}>DEPARTAMENTO</th>
+                      <th style={{ padding: '16px', fontWeight: 600, width: '25%' }}>GESTOR DIRETO</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -360,23 +373,27 @@ export default function App() {
                       <tr key={u.id} style={{ borderBottom: '1px solid #1f1f22', color: '#e4e4e7' }}>
                         <td style={{ padding: '16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#4c1d95', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>
+                            <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#4c1d95', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 'bold' }}>
                               {u.name.charAt(0)}
                             </div>
-                            <div>
-                              <div style={{ fontWeight: 500 }}>{u.name}</div>
-                              <div style={{ fontSize: 11, color: '#71717a' }}>{u.email}</div>
-                            </div>
+                            <span style={{ fontWeight: 500 }}>{u.name}</span>
                           </div>
                         </td>
                         <td style={{ padding: '16px', color: '#d4d4d8' }}>{u.jobTitle || '-'}</td>
                         <td style={{ padding: '16px' }}>
-                          <span style={{ padding: '2px 8px', borderRadius: 4, background: '#27272a', color: '#a1a1aa', fontSize: 12 }}>
-                            {u.department || 'N/A'}
-                          </span>
+                          {u.department ? (
+                            <span style={{ padding: '2px 8px', borderRadius: 4, background: '#27272a', color: '#a1a1aa', fontSize: 12 }}>
+                              {u.department}
+                            </span>
+                          ) : '-'}
                         </td>
                         <td style={{ padding: '16px', color: '#a78bfa' }}>
-                          {u.manager ? u.manager.name : <span style={{ color: '#52525b', fontStyle: 'italic' }}>-</span>}
+                          {u.manager ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#a78bfa' }}></div>
+                              {u.manager.name}
+                            </div>
+                          ) : <span style={{ color: '#52525b', fontStyle: 'italic' }}>-</span>}
                         </td>
                       </tr>
                     ))}
