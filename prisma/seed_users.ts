@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // ====================================================================
-// LISTA DE DADOS (Copiada da tua planilha)
+// LISTA DE DADOS (Oficial)
 // ====================================================================
 const usersList = [
     { name: "Alexander Eduardo dos Reis", jobTitle: "Líder de Professional Service", department: "Professional Service", managerName: "Ricardo Borges Camargo" },
@@ -135,7 +135,6 @@ const usersList = [
     { name: "Isabely Wendler", jobTitle: "Gestor de Projetos", department: "Operações", managerName: "Ricardo Borges Camargo" }
 ];
 
-// Função simples para normalizar texto (tira acentos e minúsculas)
 const normalize = (str: string) => {
     return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 };
@@ -146,71 +145,58 @@ function generateEmail(name: string): string {
 }
 
 async function main() {
-    console.log(`🚀 Iniciando sincronização INTELIGENTE de ${usersList.length} colaboradores...`);
+    console.log(`🚀 Iniciando REINICIALIZAÇÃO COMPLETA de ${usersList.length} colaboradores...`);
 
-    // 1. PRIMEIRO: Baixa quem já está no banco (Logins do Google)
-    const existingDbUsers = await prisma.user.findMany();
-    console.log(`📊 Encontrados ${existingDbUsers.length} usuários já existentes no banco.`);
+    // ======================================================
+    // 1. LIMPEZA TOTAL (Isso resolve a duplicação/triplicação)
+    // ======================================================
+    console.log('🗑️  Apagando registros antigos para evitar duplicatas...');
 
-    // 2. TENTAR ENRIQUECER DADOS DOS EXISTENTES
-    for (const csvUser of usersList) {
-        const csvNameNormalized = normalize(csvUser.name);
+    // Apaga tabelas dependentes primeiro (se houver) para evitar erro de Foreign Key
+    try { await prisma.access.deleteMany(); } catch { }
+    try { await prisma.request.deleteMany(); } catch { }
 
-        // Tenta achar alguém no banco com nome parecido
-        // Ex: Banco="Luan Silva", CSV="Luan Matheus da Silva" -> Match!
-        const matchedUser = existingDbUsers.find(dbUser => {
-            const dbNameNormalized = normalize(dbUser.name);
-            return dbNameNormalized === csvNameNormalized ||
-                csvNameNormalized.includes(dbNameNormalized) ||
-                dbNameNormalized.includes(csvNameNormalized);
-        });
+    // Apaga todos os usuários
+    try {
+        await prisma.user.deleteMany();
+        console.log('✅ Banco de dados limpo com sucesso.');
+    } catch (e) {
+        console.error('⚠️ Aviso ao limpar banco:', e);
+    }
 
-        if (matchedUser) {
-            // Encontramos! Vamos atualizar os dados dele
-            // console.log(`✅ Match encontrado: "${matchedUser.name}" <-> "${csvUser.name}". Atualizando...`);
-            try {
-                await prisma.user.update({
-                    where: { id: matchedUser.id },
-                    data: {
-                        jobTitle: csvUser.jobTitle,
-                        department: csvUser.department,
-                        // name: csvUser.name // Opcional: Atualizar para o nome completo da planilha
-                    }
-                });
-            } catch (e) { console.error("Erro update", e) }
-        } else {
-            // Se não achou ninguém, cria um novo (com o email gerado)
-            // console.log(`✨ Usuário novo: "${csvUser.name}". Criando...`);
-            try {
-                await prisma.user.upsert({
-                    where: { email: generateEmail(csvUser.name) },
-                    update: {
-                        name: csvUser.name,
-                        jobTitle: csvUser.jobTitle,
-                        department: csvUser.department
-                    },
-                    create: {
-                        email: generateEmail(csvUser.name),
-                        name: csvUser.name,
-                        jobTitle: csvUser.jobTitle,
-                        department: csvUser.department
-                    }
-                });
-            } catch (e) { console.error("Erro create", e) }
+    // ======================================================
+    // 2. CADASTRAR A LISTA OFICIAL DO ZERO
+    // ======================================================
+    console.log('🔄 Cadastrando lista oficial...');
+
+    for (const u of usersList) {
+        const email = generateEmail(u.name);
+
+        try {
+            await prisma.user.create({
+                data: {
+                    email: email,
+                    name: u.name,
+                    jobTitle: u.jobTitle,
+                    department: u.department
+                }
+            });
+        } catch (e: any) {
+            console.error(`❌ Erro em ${u.name}:`, e.message);
         }
     }
 
-    // 3. CONECTAR GESTORES (Segunda passada)
+    // ======================================================
+    // 3. CONECTAR GESTORES
+    // ======================================================
     console.log('🔗 Conectando hierarquia...');
     for (const u of usersList) {
         if (u.managerName) {
             try {
-                // Busca o funcionário (alvo) - tenta pelo nome completo
                 const employee = await prisma.user.findFirst({
-                    where: { name: { contains: u.name, mode: 'insensitive' } }
+                    where: { name: { equals: u.name, mode: 'insensitive' } }
                 });
 
-                // Busca o gestor - tenta pelo nome (match parcial)
                 const manager = await prisma.user.findFirst({
                     where: { name: { contains: u.managerName, mode: 'insensitive' } }
                 });
@@ -225,7 +211,7 @@ async function main() {
         }
     }
 
-    console.log('🏁 Sincronização finalizada!');
+    console.log('🏁 Sincronização finalizada! (Sem duplicatas)');
 }
 
 main()
