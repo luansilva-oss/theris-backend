@@ -8,7 +8,6 @@ import path from 'path';
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getAllTools } from './controllers/toolController';
-// 1. ADICIONADO AQUI 👇
 import { getAllUsers } from './controllers/userController';
 
 // Slack
@@ -22,14 +21,14 @@ const prisma = new PrismaClient();
 // --- CORS ---
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
 
-// ⚠️ ROTA DO SLACK (IMPORTANTE: Deve vir ANTES do express.json)
+// ⚠️ ROTA DO SLACK
 app.use('/api/slack', slackReceiver.router);
 
 // --- JSON MIDDLEWARE ---
 app.use(express.json());
 
 // ============================================================
-// --- ROTAS DE AUTENTICAÇÃO E MFA ---
+// --- ROTAS DE AUTENTICAÇÃO ---
 // ============================================================
 app.post('/api/login/google', googleLogin);
 app.post('/api/auth/send-mfa', sendMfa);
@@ -39,11 +38,13 @@ app.post('/api/auth/verify-mfa', verifyMfa);
 // --- ROTAS DE DADOS ---
 // ============================================================
 
-// 1. Estrutura (Departamentos)
+// 1. Estrutura (CORRIGIDO: Removemos o include users que dava erro)
 app.get('/api/structure', async (req, res) => {
   try {
     const data = await prisma.department.findMany({
-      include: { roles: { include: { users: true } } }
+      include: {
+        roles: true // <--- MUDANÇA AQUI: Removemos { include: { users: true } }
+      }
     });
     res.json(data);
   } catch (error) {
@@ -54,7 +55,7 @@ app.get('/api/structure', async (req, res) => {
 // 2. Ferramentas
 app.get('/api/tools', getAllTools);
 
-// 3. Usuários (ATUALIZADO PARA USAR O CONTROLLER NOVO) 👇
+// 3. Usuários (Usa o controller novo que criamos)
 app.get('/api/users', getAllUsers);
 
 // ============================================================
@@ -65,7 +66,7 @@ app.post('/api/solicitacoes', createSolicitacao);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);
 
 // ============================================================
-// --- SERVIR FRONTEND (PRODUÇÃO) ---
+// --- SERVIR FRONTEND ---
 // ============================================================
 const frontendPath = path.resolve(__dirname, '../dist');
 app.use(express.static(frontendPath));
