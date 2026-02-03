@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Server, FileText, LogOut, Bird,
-  ArrowLeft, Shield, CheckCircle, Clock, Crown,
+  ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown, // Adicionei XCircle
   Search, Bell, Lock, Layers, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
@@ -15,7 +15,20 @@ const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:300
 // --- TYPES ---
 interface User { id: string; name: string; email: string; }
 interface Tool { id: string; name: string; owner?: User; subOwner?: User; accesses?: { user: User; status: string }[]; }
-interface Request { id: string; details: string; status: string; createdAt: string; requester: User; type: string; }
+
+// INTERFACE ATUALIZADA PARA AUDITORIA
+interface Request {
+  id: string;
+  details: string;
+  status: string;
+  createdAt: string;
+  updatedAt?: string; // Data da decisão
+  requester: User;
+  approver?: User;    // Quem aprovou/reprovou
+  type: string;
+  adminNote?: string; // Observação do modal
+}
+
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER';
 
 const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 Horas
@@ -39,7 +52,7 @@ export default function App() {
 
   // --- NOVOS ESTADOS PARA O MODAL ---
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar'>('aprovar'); // Usado pelo Modal (visual)
+  const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar'>('aprovar');
   const [modalTargetId, setModalTargetId] = useState<string | null>(null);
   // ----------------------------------
 
@@ -142,25 +155,21 @@ export default function App() {
 
   const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); setActiveTab('DASHBOARD'); setSelectedTool(null); setIsMfaRequired(false); };
 
-  // --- LÓGICA NOVA: ABRIR MODAL ---
+  // --- LÓGICA MODAL ---
   const handleOpenApprove = (id: string, action: 'APROVAR' | 'REPROVAR') => {
     setModalTargetId(id);
-    // Converte o status da API (UPPERCASE) para o tipo do Modal (lowercase)
     setModalAction(action === 'APROVAR' ? 'aprovar' : 'reprovar');
     setModalOpen(true);
   };
 
-  // --- LÓGICA NOVA: CONFIRMAR NO MODAL ---
   const handleConfirmApprove = async (note: string) => {
     if (!modalTargetId) return;
 
-    // Validação: Reprovação exige motivo
     if (modalAction === 'reprovar' && !note.trim()) {
       alert("⚠️ Para recusar, é obrigatório informar o motivo.");
-      return; // Não fecha o modal
+      return;
     }
 
-    // Converte de volta para o padrão da API
     const apiStatus = modalAction === 'aprovar' ? 'APROVAR' : 'REPROVAR';
 
     try {
@@ -174,7 +183,6 @@ export default function App() {
         })
       });
 
-      // Sucesso
       loadData();
       setModalOpen(false);
       setModalTargetId(null);
@@ -296,7 +304,6 @@ export default function App() {
                           <p>Solicitante: {r.requester?.name}</p>
                         </div>
                         <div className="action-buttons">
-                          {/* ATENÇÃO: AQUI MUDOU A CHAMADA DA FUNÇÃO */}
                           <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Aprovar</button>
                           <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusar</button>
                         </div>
@@ -389,11 +396,105 @@ export default function App() {
             </div>
           )}
 
-          {activeTab === 'HISTORY' && <div className="card-base"><h3 style={{ margin: 0, color: 'white' }}>Logs de Auditoria</h3><p style={{ color: '#71717a' }}>Em construção.</p></div>}
+          {/* TABELA DE AUDITORIA COMPLETA */}
+          {activeTab === 'HISTORY' && (
+            <div className="fade-in">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Logs de Auditoria</h2>
+                <div style={{ fontSize: 12, color: '#71717a' }}>
+                  Total de Registros: {requests.filter(r => r.status !== 'PENDENTE').length}
+                </div>
+              </div>
+
+              <div className="card-base" style={{ padding: 0, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #27272a', color: '#a1a1aa', textAlign: 'left' }}>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>STATUS</th>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>SOLICITANTE</th>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>RESPONSÁVEL (APROVADOR)</th>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>DATA & HORA</th>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>OBSERVAÇÃO</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requests
+                      .filter(r => r.status !== 'PENDENTE')
+                      .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
+                      .map(r => (
+                        <tr key={r.id} style={{ borderBottom: '1px solid #1f1f22', color: '#e4e4e7' }}>
+
+                          {/* STATUS */}
+                          <td style={{ padding: '16px' }}>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '20px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              backgroundColor: r.status === 'APROVADO' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                              color: r.status === 'APROVADO' ? '#34d399' : '#f87171',
+                              border: r.status === 'APROVADO' ? '1px solid #059669' : '1px solid #b91c1c',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5
+                            }}>
+                              {r.status === 'APROVADO' ? <CheckCircle size={10} /> : <XCircle size={10} />}
+                              {r.status}
+                            </span>
+                          </td>
+
+                          {/* SOLICITANTE */}
+                          <td style={{ padding: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#3f3f46', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>
+                                {r.requester.name.charAt(0)}
+                              </div>
+                              <span>{r.requester.name}</span>
+                            </div>
+                          </td>
+
+                          {/* APROVADOR */}
+                          <td style={{ padding: '16px' }}>
+                            {r.approver ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <Shield size={14} color="#a78bfa" />
+                                <span style={{ color: '#a78bfa' }}>{r.approver.name}</span>
+                              </div>
+                            ) : (
+                              <span style={{ color: '#52525b', fontStyle: 'italic' }}>Sistema / Automático</span>
+                            )}
+                          </td>
+
+                          {/* DATA */}
+                          <td style={{ padding: '16px', color: '#a1a1aa' }}>
+                            {new Date(r.updatedAt || r.createdAt).toLocaleString('pt-BR', {
+                              day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </td>
+
+                          {/* NOTA */}
+                          <td style={{ padding: '16px', color: '#71717a', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.adminNote}>
+                            {r.adminNote || '-'}
+                          </td>
+
+                        </tr>
+                      ))}
+
+                    {requests.filter(r => r.status !== 'PENDENTE').length === 0 && (
+                      <tr>
+                        <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#52525b' }}>
+                          Nenhum registro de auditoria encontrado.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
-      {/* COMPONENTE DO MODAL (FORA DO MAIN) */}
       <ModalObservacao
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
