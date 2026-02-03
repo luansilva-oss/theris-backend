@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // ====================================================================
-// LISTA DE DADOS (Igual fizemos nas Ferramentas)
+// LISTA DE DADOS (Copiada da tua planilha)
 // ====================================================================
 const usersList = [
     { name: "Alexander Eduardo dos Reis", jobTitle: "Líder de Professional Service", department: "Professional Service", managerName: "Ricardo Borges Camargo" },
@@ -146,59 +146,80 @@ function generateEmail(name: string): string {
 }
 
 async function main() {
-    console.log(`🚀 Iniciando importação de ${usersList.length} usuários (Método Estático)...`);
+    console.log(`🚀 Iniciando sincronização inteligente de ${usersList.length} colaboradores...`);
 
-    // 1. CRIAR USUÁRIOS
-    console.log('🔄 Gravando usuários no banco...');
+    // 1. CRIAR OU ATUALIZAR (Busca por E-mail OU Nome)
     for (const u of usersList) {
-        const email = generateEmail(u.name);
+        const generatedEmail = generateEmail(u.name);
 
         try {
-            await prisma.user.upsert({
-                where: { email },
-                update: {
-                    name: u.name,
-                    jobTitle: u.jobTitle,
-                    department: u.department
-                },
-                create: {
-                    email,
-                    name: u.name,
-                    jobTitle: u.jobTitle,
-                    department: u.department
-                    // SEM PASSWORD (banco não tem esse campo)
+            // Tenta achar alguém com esse email OU com esse nome exato (insensitive)
+            let existingUser = await prisma.user.findFirst({
+                where: {
+                    OR: [
+                        { email: generatedEmail },
+                        { name: { equals: u.name, mode: 'insensitive' } }
+                    ]
                 }
             });
+
+            if (existingUser) {
+                // ATUALIZA O EXISTENTE (Mesmo se o email for diferente, ex: login do Google)
+                await prisma.user.update({
+                    where: { id: existingUser.id },
+                    data: {
+                        // Só atualiza o nome se o banco estiver vazio ou estranho, mas forçamos para garantir o match
+                        // name: u.name, 
+                        jobTitle: u.jobTitle,
+                        department: u.department
+                    }
+                });
+                // console.log(`✅ Atualizado: ${u.name}`);
+            } else {
+                // CRIA NOVO SE NÃO ACHAR NINGUÉM
+                await prisma.user.create({
+                    data: {
+                        email: generatedEmail,
+                        name: u.name,
+                        jobTitle: u.jobTitle,
+                        department: u.department
+                    }
+                });
+                // console.log(`✨ Criado: ${u.name}`);
+            }
         } catch (e: any) {
-            console.error(`❌ Erro ao salvar ${u.name}:`, e.message);
+            console.error(`❌ Erro em ${u.name}:`, e.message);
         }
     }
 
-    // 2. CONECTAR GESTORES
+    // 2. CONECTAR GESTORES (Segunda passada para garantir que todos existem)
     console.log('🔗 Conectando hierarquia...');
     for (const u of usersList) {
         if (u.managerName) {
-            const email = generateEmail(u.name);
             try {
-                const manager = await prisma.user.findFirst({
-                    where: {
-                        name: { contains: u.managerName, mode: 'insensitive' }
-                    }
+                // Busca o funcionário (alvo)
+                const employee = await prisma.user.findFirst({
+                    where: { name: { equals: u.name, mode: 'insensitive' } }
                 });
 
-                if (manager) {
+                // Busca o gestor
+                const manager = await prisma.user.findFirst({
+                    where: { name: { contains: u.managerName, mode: 'insensitive' } }
+                });
+
+                if (employee && manager) {
                     await prisma.user.update({
-                        where: { email },
+                        where: { id: employee.id },
                         data: { managerId: manager.id }
                     });
                 }
             } catch (e) {
-                // Silencia erros de update se user não existir
+                // Ignora falhas pontuais
             }
         }
     }
 
-    console.log('🏁 Importação finalizada!');
+    console.log('🏁 Sincronização finalizada!');
 }
 
 main()
