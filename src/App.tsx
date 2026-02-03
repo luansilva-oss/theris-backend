@@ -1,11 +1,14 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  LayoutDashboard, Server, FileText, LogOut, Bird, Activity,
-  ArrowLeft, Shield, Mail, ChevronDown, ChevronRight, CheckCircle,
-  XCircle, Clock, Crown, Zap, User as UserIcon, Bell, Search, Lock, Layers
+  LayoutDashboard, Server, FileText, LogOut, Bird,
+  ArrowLeft, Shield, CheckCircle, Clock, Crown,
+  Search, Bell, Lock, Layers, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
+
+// IMPORTAÇÃO DO NOVO COMPONENTE
+import { ModalObservacao } from './components/ModalObservacao';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -25,7 +28,7 @@ export default function App() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isMfaRequired, setIsMfaRequired] = useState(false);
-  const [mfaCode, setMfaCode] = useState(''); // String única
+  const [mfaCode, setMfaCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('theris_activeTab') || 'DASHBOARD');
@@ -33,6 +36,12 @@ export default function App() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
+
+  // --- NOVOS ESTADOS PARA O MODAL ---
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar'>('aprovar'); // Usado pelo Modal (visual)
+  const [modalTargetId, setModalTargetId] = useState<string | null>(null);
+  // ----------------------------------
 
   // Stats
   const stats = {
@@ -87,17 +96,15 @@ export default function App() {
   // Actions
   const handleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
-      setIsLoading(true); // Ativa loading
+      setIsLoading(true);
       try {
         const res = await fetch(`${API_URL}/api/login/google`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken: tokenResponse.access_token }) });
         const data = await res.json();
         if (res.ok) {
           setCurrentUser(data.user); setSystemProfile(data.profile);
-          // Pede o envio do e-mail
           await fetch(`${API_URL}/api/auth/send-mfa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: data.user.id }) });
-
-          setIsLoading(false); // Desativa loading
-          setIsMfaRequired(true); // Mostra tela de código
+          setIsLoading(false);
+          setIsMfaRequired(true);
         } else {
           alert(data.error);
           setIsLoading(false);
@@ -129,21 +136,51 @@ export default function App() {
   };
 
   const handleMfaChange = (value: string) => {
-    // Permite apenas números, max 6
     const clean = value.replace(/\D/g, '').slice(0, 6);
     setMfaCode(clean);
   };
 
   const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); setActiveTab('DASHBOARD'); setSelectedTool(null); setIsMfaRequired(false); };
 
-  const handleApprove = async (id: string, action: 'APROVAR' | 'REPROVAR') => {
-    const note = window.prompt(action === 'APROVAR' ? "Observação (Opcional):" : "⚠️ Motivo da Reprovação:");
-    if (action === 'REPROVAR' && !note) return alert("Motivo obrigatório.");
-    if (note === null) return;
+  // --- LÓGICA NOVA: ABRIR MODAL ---
+  const handleOpenApprove = (id: string, action: 'APROVAR' | 'REPROVAR') => {
+    setModalTargetId(id);
+    // Converte o status da API (UPPERCASE) para o tipo do Modal (lowercase)
+    setModalAction(action === 'APROVAR' ? 'aprovar' : 'reprovar');
+    setModalOpen(true);
+  };
+
+  // --- LÓGICA NOVA: CONFIRMAR NO MODAL ---
+  const handleConfirmApprove = async (note: string) => {
+    if (!modalTargetId) return;
+
+    // Validação: Reprovação exige motivo
+    if (modalAction === 'reprovar' && !note.trim()) {
+      alert("⚠️ Para recusar, é obrigatório informar o motivo.");
+      return; // Não fecha o modal
+    }
+
+    // Converte de volta para o padrão da API
+    const apiStatus = modalAction === 'aprovar' ? 'APROVAR' : 'REPROVAR';
+
     try {
-      await fetch(`${API_URL}/api/solicitacoes/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: action, approverId: currentUser?.id, adminNote: note }) });
+      await fetch(`${API_URL}/api/solicitacoes/${modalTargetId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: apiStatus,
+          approverId: currentUser?.id,
+          adminNote: note
+        })
+      });
+
+      // Sucesso
       loadData();
-    } catch (e) { alert("Erro de conexão."); }
+      setModalOpen(false);
+      setModalTargetId(null);
+    } catch (e) {
+      alert("Erro de conexão ao processar solicitação.");
+    }
   };
 
   const getGroupedAccesses = (tool: Tool) => {
@@ -162,10 +199,7 @@ export default function App() {
         <h2 style={{ color: 'white', margin: 0 }}>Código de Segurança</h2>
         <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
           Enviamos um código para <strong>{currentUser?.email}</strong>.
-          <br /><span style={{ fontSize: '0.8rem', opacity: 0.7 }}>(Verifique o Console/Logs se estiver em teste)</span>
         </p>
-
-        {/* INPUT ÚNICO E GRANDE */}
         <input
           className="mfa-input-single"
           type="text"
@@ -174,7 +208,6 @@ export default function App() {
           placeholder="000000"
           autoFocus
         />
-
         <button onClick={handleMfaVerify} className="btn-verify" disabled={isLoading}>
           {isLoading ? 'Verificando...' : 'Confirmar Acesso'}
         </button>
@@ -227,10 +260,9 @@ export default function App() {
 
         <div className="content-scroll">
 
-          {/* DASHBOARD (BENTO GRID FLUIDO) */}
+          {/* DASHBOARD */}
           {activeTab === 'DASHBOARD' && (
             <div className="bento-grid fade-in">
-
               <div className="card-base cell-hero" style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #09090b 100%)', borderColor: '#312e81' }}>
                 <h1 style={{ fontSize: '28px', color: 'white', marginBottom: 10 }}>Olá, {currentUser?.name.split(' ')[0]}</h1>
                 <p style={{ color: '#a5b4fc' }}>Painel de controle operacional ativo.</p>
@@ -264,8 +296,9 @@ export default function App() {
                           <p>Solicitante: {r.requester?.name}</p>
                         </div>
                         <div className="action-buttons">
-                          <button className="btn-mini approve" onClick={() => handleApprove(r.id, 'APROVAR')}>Aprovar</button>
-                          <button className="btn-mini reject" onClick={() => handleApprove(r.id, 'REPROVAR')}>Recusar</button>
+                          {/* ATENÇÃO: AQUI MUDOU A CHAMADA DA FUNÇÃO */}
+                          <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Aprovar</button>
+                          <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusar</button>
                         </div>
                       </div>
                     ))
@@ -285,7 +318,6 @@ export default function App() {
                   ))}
                 </div>
               </div>
-
             </div>
           )}
 
@@ -307,7 +339,7 @@ export default function App() {
             </div>
           )}
 
-          {/* TOOL DETAILS (FULL SCREEN) */}
+          {/* TOOL DETAILS */}
           {activeTab === 'TOOLS' && selectedTool && (
             <div className="fade-in">
               <button onClick={() => { setSelectedTool(null); setExpandedLevel(null) }} className="btn-text" style={{ marginBottom: 20 }}><ArrowLeft size={16} /> Voltar</button>
@@ -360,6 +392,16 @@ export default function App() {
           {activeTab === 'HISTORY' && <div className="card-base"><h3 style={{ margin: 0, color: 'white' }}>Logs de Auditoria</h3><p style={{ color: '#71717a' }}>Em construção.</p></div>}
         </div>
       </main>
+
+      {/* COMPONENTE DO MODAL (FORA DO MAIN) */}
+      <ModalObservacao
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onConfirm={handleConfirmApprove}
+        titulo={modalAction === 'aprovar' ? 'Confirmar Aprovação' : 'Confirmar Reprovação'}
+        tipo={modalAction}
+      />
+
     </div>
   );
 }
