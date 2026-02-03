@@ -1,196 +1,129 @@
-LIDERANÇAS,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Grupo 3C,Alexander Eduardo dos Reis,Líder de Professional Service,Professional Service,Ricardo Borges Camargo
-Grupo 3C,Camila Brunetti Thomé,Líder de Farmer,Comercial,Camila Souza de Oliveira
-Grupo 3C,Camila Souza de Oliveira,Head Comercial,Comercial,Jaqueline de Souza
-Grupo 3C,Carlos Henrique Marques,Tech Lead,Produto,Guilherme Pimpão Cavalcante
-Grupo 3C,Caroline Fatima de Gois Fila,Líder de Vendas PME,Comercial,Camila Souza de Oliveira
-Grupo 3C,Emily Godoy Da Silva,Líder de Parcerias,Parcerias,Wagner Wolff Pretto
-Grupo 3C,Gabriel Krysa,Tech Lead,Produto,Guilherme Pimpão Cavalcante
-Grupo 3C,Jehnnifer Xavier Padilha,Líder de Enterprise,Comercial,Camila Souza de Oliveira
-Grupo 3C,José Fernando Mosquer,Líder de Atendimento ao Cliente,Atendimento ao Cliente,Ricardo Borges Camargo
-Grupo 3C,Kawanna Barbosa Cordeiro,Coordenadora do Instituto 3C,Instituto 3C,Lucas Limberger
-Grupo 3C,Michele Bodot dos Anjos,Líder PME,Comercial,Ricardo Borges Camargo
-Grupo 3C,Pablo Emanuel da Silva,Líder de automações,Automações,Ricardo Borges Camargo
-Grupo 3C,Rafael Blaka Schimanski,Líder de marketing,Marketing,Wagner Wolff Pretto
-Grupo 3C,Vladimir Antonio Sesar,Líder de Segurança da Informação,Tecnologia e Segurança,Diogo Henrique Hartmann
-Grupo 3C,Guilherme Pinheiro,Head de Produto,FiqOn,Guilherme Pimpão Cavalcante
-Grupo 3C,Pietro Limberger,CEO Dizify,Dizify,Lucas Limberger
-Grupo 3C,Marieli Aparecida Ferreira Thomen,Tech Lead,Produto,Pietro Limberger
-Grupo 3C,Taryk,Líder de Vendas Dizify,Comercial Dizify,Pietro Limberger
-Grupo 3C,Thomas Arnon Schmidt Ferreira,Líder Enterprise,Comercial,Camila Souza de Oliveira
-,,,,
-BOARD,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Grupo 3C,Ney Eurico Pereira,CEO,Board,—
-Grupo 3C,Wagner Wolff Pretto,CMO,Board,Ney Eurico Pereira
-Grupo 3C,Lucas Limberger,CPO,Board,Ney Eurico Pereira
-Grupo 3C,Ricardo Borges Camargo,COO,Board,Ney Eurico Pereira
-Grupo 3C,Guilherme Pimpão Cavalcante,CPOX,Board,Ney Eurico Pereira
-Grupo 3C,Diogo Henrique Hartmann,CTO,Board,Ney Eurico Pereira
-Grupo 3C,Aline Alda da Fonseca Bocchi,CFO,Board,Ney Eurico Pereira
-Grupo 3C,Jaqueline de Souza,CSO,Board,Ney Eurico Pereira
-,,,,
-ADMINISTRATIVO,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Grupo 3C,Bruno Sahaidak,Analista Contábil,Administrativo,Aline Alda da Fonseca Bocchi
-Grupo 3C,Fernando Vantroba Takakusa,Assistente Financeiro,Administrativo,Aline Alda da Fonseca Bocchi
-Grupo 3C,Gabriely Garcia,Assistente Jurídico,Administrativo,Aline Alda da Fonseca Bocchi
-Grupo 3C,Maria Eduarda Nezelo Rosa,Assistente Jurídico,Administrativo,Aline Alda da Fonseca Bocchi
-Grupo 3C,Raphael Pires Ida,Analista de Departamento Pessoal,Administrativo,Aline Alda da Fonseca Bocchi
-Grupo 3C,Sthephany Tomacheski de Moraes,Assistente Financeiro,Administrativo,Aline Alda da Fonseca Bocchi
-,,,,
-PRODUTO 3C,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-3C+,Andrieli de Oliveira Javorski,Desenvolvedor Front-end,Produto 3C+,Gabriel Krysa
-3C+,Matheus Rocha Camargo,Desenvolvedor Front-end,Produto 3C+,Gabriel Krysa
-3C+,Bruno Garcia,Desenvolvedor Back-End,Produto 3C+,Gabriel Krysa
-3C+,José Pablo Streiski Neto,Desenvolvedor Back-End,Produto 3C+,Gabriel Krysa
-3C+,Eduardo Mateus dos Santos Gonçalves,Desenvolvedor Back-End,Produto 3C+,Gabriel Krysa
-3C+,Gabriel Pires Ida,UX Designer,Produto 3C+,Carlos Henrique Marques
-3C+,Vanderlei Assis de Andrade Junior,P.O,Produto 3C+,Carlos Henrique Marques
-Grupo 3C,Matheus Oliveira,Analista de Automações,Produto,Guilherme Pimpão
-,,,,
-PRODUTOS DIZPAROS E NIAH,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-3C+,Gustavo Delonzek Brizola,Desenvolvedor Full-stack,Produto 3C+,Gabriel Krysa
-,,,,
-PRODUTO EVOLUX,,,,
-Empresa,Nome completo,Cargo ,Departamento,Gestor Direto
-Evolux,Luis Fernando Paganini,Desenvolvedor Front-end,Produto Evolux,Carlos Henrique Marques
-Evolux,Guilherme Ferreira Ribas,Desenvolvedor Front-end,Produto Evolux,Carlos Henrique Marques
-Evolux,Pedro Henrique Ferreira do Nascimento,Desenvolvedor Back-End,Produto Evolux,Carlos Henrique Marques
-Evolux,Bruno Levy de Arruda,DevOps,Produto Evolux,Carlos Henrique Marques
-,,,,
-PRODUTO FIQON,,,,
-Empresa,Nome completo,Cargo ,Departamento,Gestor Direto
-FiqOn,Lucas Schupchek de Jesus,Desenvolvedor Back-End,Produto FiqOn,Guilherme Pinheiro
-FiqOn,Lucas Matheus da Cruz,Desenvolvedor Back-End,Produto FiqOn,Guilherme Pinheiro
-FiqOn,Yuri Karas Regis Pacheco de Miranda Lima,Desenvolvedor Front-End,Produto FiqOn,Guilherme Pinheiro
-,,,,
-PRODUTO DIZIFY,,,,
-Empresa,Nome completo,Cargo ,Departamento,Gestor Direto
-Dizify,Julia Gabrielly Martins Araujo,Desenvolvedor Back-End,Produto Dizify,Marieli Aparecida Ferreira Thomen
-Dizify,Maria Fernanda Ribeiro,Desenvolvedor Front-End,Produto Dizify,Marieli Aparecida Ferreira Thomen
-Dizify,Jeferson da Cruz,Desenvolvedor Back-End,Produto Dizify,Marieli Aparecida Ferreira Thomen
-,,,,
-COMERCIAL CONTACT,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-3C,Thomas Arnon Schmidt Ferreira,Líder Enterprise,Comercial Contact,Jaqueline de Souza
-3C,Leonardo Kauan Ferraz,Closer,Comercial Contact,Jehnnifer Xavier Padilha
-3C,André Luiz Paluski,Closer,Comercial Contact,Jehnnifer Xavier Padilha
-3C,Joyce Cordeiro,Closer,Comercial Contact,Jehnnifer Xavier Padilha
-3C,Kesley Luis de Oliveira,Closer,Comercial Contact,Jehnnifer Xavier Padilha
-3C,Rosiane Correa,Closer,Comercial Contact,Jehnnifer Xavier Padilha
-3C,Mateus Gerik,Closer,Comercial Contact,Jehnnifer Xavier Padilha
-3C,Lucio Marcos Nascimento Ramos,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
-3C,Guilherme Mello Minuzzi,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
-3C,Ketlin Tainá Zaluski de Oliveira,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
-3C,Leandro dos Santos Mülhstdtt da Silva,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
-3C,Gustavo dos Santos Dangui,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
-3C,Willian Samuel de Oliveira,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
-3C,Alexsandy Correa dos Santos,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
-3C,Deborah Peres,SalesOps,Comercial Contact,Thomas Arnon Schmidt Ferreira
-,,,,
-EXPANSÃO,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-3C,Maria Eduarda Merhet Padilha,Farmer,Expansão,Camila Brunetti Thomé
-3C,Daniel Felipe da Silva Souza,Farmer,Expansão,Camila Brunetti Thomé
-3C,Kauane Lemos Bastos,Farmer,Expansão,Camila Brunetti Thomé
-3C,Taissa Guilliane Gomes Almeida,Farmer,Expansão,Camila Brunetti Thomé
-,,,,
-COMERCIAL PME,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-3C,Rafaela Guedes Pinto Cavalcante Stephan,Closer,Comercial Contact,Michele Bodot dos Anjos
-3C,Cirene Laiza da Cruz Lara,Closer,Comercial Contact,Michele Bodot dos Anjos
-3C,Maycon José Barbosa Padilha,Closer,Comercial Contact,Michele Bodot dos Anjos
-3C,Lucas Fontoura de Almeida,Closer,Comercial Contact,Michele Bodot dos Anjos
-3C,Roberta Gomes Ribeiro,Closer,Comercial Contact,Michele Bodot dos Anjos
-3C,Lucas Antonio Costa,Closer,Comercial Contact,Michele Bodot dos Anjos
-3C,Gabriel Schneider Bernadini,Recuperador,Comercial Contact,Michele Bodot dos Anjos
-3C,Bianca da Cunha,Closer,Comercial Contact,Michele Bodot dos Anjos
-,,,,
-COMERCIAL DIZIFY,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Dizify,Eduardo Elias,Closer,Comercial Dizify,Pietro Limberger
-Dizify,Iago Moura do Prado,Closer,Comercial Dizify,Pietro Limberger
-,,,,
-TECNOLOGIA E SEGURANÇA,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Grupo 3C,Allan Von Stein Portela,Analista de Segurança e Infraestrutura,Tecnologia e Segurança,Vladimir Antonio Sesar
-Grupo 3C,Luan Matheus da Silva,Analista de Segurança da Informação,Tecnologia e Segurança,Vladimir Antonio Sesar
-Grupo 3C,Ian Ronska Nepomoceno,Analista de Custos,Tecnologia e Segurança,Diogo Henrique Hartmann
-Grupo 3C,João Paulo Vasconcelos,DevOps,Tecnologia e Segurança,Diogo Henrique Hartmann
-,,,,
-PROFESSIONAL SERVICE,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Grupo 3C,Gabriel de Lima Machado,Analista de PS,Professional Service,Alexander Eduardo dos Reis
-Grupo 3C,Wesley Diogo do Vale,Analista de PS,Professional Service,Alexander Eduardo dos Reis
-Grupo 3C,Eduardo Wosiak,Professional Service,Professional Service,Alexander Eduardo dos Reis
-,,,,
-ATENDIMENTO AO CLIENTE 3C,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-3C,Felipe Moreira do Nascimento,Analista PME,Atendimento ao Cliente,José Fernando Mosquer
-3C,Filipe Ferreira Rovea,Analista PME,Atendimento ao Cliente,José Fernando Mosquer
-3C,Rian Lucas de Matos Almeida,Key Account,Atendimento ao Cliente,José Fernando Mosquer
-3C,Alana Maiumy Gaspar,Key Account,Atendimento ao Cliente,José Fernando Mosquer
-3C,Mônica de Paula Neves,Implantadora,Atendimento ao Cliente,José Fernando Mosquer
-3C,Gabrielle Andrade Prestes,Implantadora,Atendimento ao Cliente,José Fernando Mosquer
-Evolux,Mathaus Kozkodai Alves,Suporte Evolux,Atendimento ao Cliente,José Fernando Mosquer
-,,,,
-ATENDIMENTO AO CLIENTE FIQON,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-FiqOn,Pedro Arthur Lobregati Barreto,Analista de Suporte Técnico,Atendimento ao Cliente FiqOn,Guilherme Pinheiro
-FiqOn,Roberty Augusto dos Santos Machado,Analista de Suporte Técnico,Atendimento ao Cliente FiqOn,Guilherme Pinheiro
-FiqOn,Matheus Lorenzo Siqueira,Analista de Suporte Técnico,Atendimento ao Cliente FiqOn,Guilherme Pinheiro
-,,,,
-MARKETING,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Grupo 3C,Igor de Azevedo Ribeiro,Gestor de Projetos,Marketing,Rafael Blaka Schimanski
-Grupo 3C,Annelise Ribeiro de Souza,Gestor de Tráfego Pago,Marketing,Rafael Blaka Schimanski
-Grupo 3C,Rebeca Costa de Lima,Copywriter,Marketing,Rafael Blaka Schimanski
-Grupo 3C,Leonardo Luiz Maciel,Marketing Ops / Analista de Growth,Marketing,Rafael Blaka Schimanski
-Grupo 3C,Kauê Pszdzimirski de Vargas,Designer,Marketing,Rafael Blaka Schimanski
-Grupo 3C,Ana Luiza de Souza Ida,Social Media,Marketing,Rafael Blaka Schimanski
-Grupo 3C,Richard Matheus Mendes Cordeiro,Filmmaker,Marketing,Rafael Blaka Schimanski
-Grupo 3C,João Marcos Costa de Lima,Editor de vídeos,Marketing,Rafael Blaka Schimanski
-Grupo 3C,Gustavo Santos Schneider,Web Developer,Marketing,Rafael Blaka Schimanski
-Grupo 3C,Alan Armstrong,Gestor de Projetos,Marketing,Wagner Wolff Pretto
-,,,,
-STARTUPS,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Grupo 3C,Maria Cecilia Blaka Schimanski,Copywriter,Marketing,Richard Matheus Mendes Cordeiro
-Grupo 3C,Vinícius Costa Leal,Social Media,Marketing,Richard Matheus Mendes Cordeiro
-,,,,
-PARCERIAS,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-3C,Maria Eduarda Araújo Gora,Assistente de Parceria,Parcerias,Emily Godoy Da Silva
-3C,Pamela Eduarda Rocha,Assistente de Parcerias,Parcerias,Emily Godoy Da Silva
-,,,,
-AUTOMAÇÕES,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Grupo 3C,Vinícius Biasi Assmann,Analista de Automações,Automações,Pablo Emanuel da Silva
-Grupo 3C,Thiago Henrique Meneguim Marcondes,Analista de Automações,Automações,Pablo Emanuel da Silva
-Grupo 3C,José Eduardo Giannini Zimmermann,Analista de Automações,Automações,Pablo Emanuel da Silva
-Grupo 3C,Eduardo Portes Bueno,Analista de Automações,Automações,Pablo Emanuel da Silva
-,,,,
-P&P,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Grupo 3C,Gislene Cristiane Santos Machado,Analista de Recrutamento e Seleção,Pessoas e Cultura,Lucas Limberger
-Grupo 3C,Renata Czapiewski Silva,Analista de Pessoas e Cultura,Pessoas e Cultura,Lucas Limberger
-Grupo 3C,Ana Paula Antunes,Assistente Geral,Pessoas e Cultura,Lucas Limberger
-Grupo 3C,Andreia Vieira Cunha,Zeladora,Pessoas e Cultura,Lucas Limberger
-Grupo 3C,Elen Daiane De Souza,Zeladora,Pessoas e Cultura,Lucas Limberger
-Grupo 3C,Ivonete Soares,Zeladora,Pessoas e Cultura,Lucas Limberger
-Grupo 3C,Matheus Araujo Ribeiro de Britto,Porteiro,Pessoas e Cultura,Lucas Limberger
-Grupo 3C,Paulo Fernando Bertoli,Porteiro,Pessoas e Cultura,Lucas Limberger
-,,,,
-INSTITUTO,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-Instituto 3C,Gladston Kordiak,Monitor Instituto 3C,Instituto 3C,Kawanna Barbosa Cordeiro
-Instituto 3C,Victor Raphael Pedroso de Lima,Monitor Instituto 3C,Instituto 3C,Kawanna Barbosa Cordeiro
-Instituto 3C,Gabrieli Estefani dos Anjos Almeida,Assistente de Recrutamento e Seleção,Instituto 3C,Kawanna Barbosa Cordeiro
-,,,,
-OPERAÇÕES,,,,
-Empresa,Nome completo,Cargo,Departamento,Gestor Direto
-3C,Isabely Wendler,Gestor de Projetos,Operações,Ricardo Borges Camargo
+Nome completo,Cargo,Departamento,Gestor Direto
+Alexander Eduardo dos Reis,Líder de Professional Service,Professional Service,Ricardo Borges Camargo
+Camila Brunetti Thomé,Líder de Farmer,Comercial,Camila Souza de Oliveira
+Camila Souza de Oliveira,Head Comercial,Comercial,Jaqueline de Souza
+Carlos Henrique Marques,Tech Lead,Produto,Guilherme Pimpão Cavalcante
+Caroline Fatima de Gois Fila,Líder de Vendas PME,Comercial,Camila Souza de Oliveira
+Emily Godoy Da Silva,Líder de Parcerias,Parcerias,Wagner Wolff Pretto
+Gabriel Krysa,Tech Lead,Produto,Guilherme Pimpão Cavalcante
+Jehnnifer Xavier Padilha,Líder de Enterprise,Comercial,Camila Souza de Oliveira
+José Fernando Mosquer,Líder de Atendimento ao Cliente,Atendimento ao Cliente,Ricardo Borges Camargo
+Kawanna Barbosa Cordeiro,Coordenadora do Instituto 3C,Instituto 3C,Lucas Limberger
+Michele Bodot dos Anjos,Líder PME,Comercial,Ricardo Borges Camargo
+Pablo Emanuel da Silva,Líder de automações,Automações,Ricardo Borges Camargo
+Rafael Blaka Schimanski,Líder de marketing,Marketing,Wagner Wolff Pretto
+Vladimir Antonio Sesar,Líder de Segurança da Informação,Tecnologia e Segurança,Diogo Henrique Hartmann
+Guilherme Pinheiro,Head de Produto,FiqOn,Guilherme Pimpão Cavalcante
+Pietro Limberger,CEO Dizify,Dizify,Lucas Limberger
+Marieli Aparecida Ferreira Thomen,Tech Lead,Produto,Pietro Limberger
+Taryk,Líder de Vendas Dizify,Comercial Dizify,Pietro Limberger
+Thomas Arnon Schmidt Ferreira,Líder Enterprise,Comercial,Camila Souza de Oliveira
+Ney Eurico Pereira,CEO,Board,—
+Wagner Wolff Pretto,CMO,Board,Ney Eurico Pereira
+Lucas Limberger,CPO,Board,Ney Eurico Pereira
+Ricardo Borges Camargo,COO,Board,Ney Eurico Pereira
+Guilherme Pimpão Cavalcante,CPOX,Board,Ney Eurico Pereira
+Diogo Henrique Hartmann,CTO,Board,Ney Eurico Pereira
+Aline Alda da Fonseca Bocchi,CFO,Board,Ney Eurico Pereira
+Jaqueline de Souza,CSO,Board,Ney Eurico Pereira
+Bruno Sahaidak,Analista Contábil,Administrativo,Aline Alda da Fonseca Bocchi
+Fernando Vantroba Takakusa,Assistente Financeiro,Administrativo,Aline Alda da Fonseca Bocchi
+Gabriely Garcia,Assistente Jurídico,Administrativo,Aline Alda da Fonseca Bocchi
+Maria Eduarda Nezelo Rosa,Assistente Jurídico,Administrativo,Aline Alda da Fonseca Bocchi
+Raphael Pires Ida,Analista de Departamento Pessoal,Administrativo,Aline Alda da Fonseca Bocchi
+Sthephany Tomacheski de Moraes,Assistente Financeiro,Administrativo,Aline Alda da Fonseca Bocchi
+Andrieli de Oliveira Javorski,Desenvolvedor Front-end,Produto 3C+,Gabriel Krysa
+Matheus Rocha Camargo,Desenvolvedor Front-end,Produto 3C+,Gabriel Krysa
+Bruno Garcia,Desenvolvedor Back-End,Produto 3C+,Gabriel Krysa
+José Pablo Streiski Neto,Desenvolvedor Back-End,Produto 3C+,Gabriel Krysa
+Eduardo Mateus dos Santos Gonçalves,Desenvolvedor Back-End,Produto 3C+,Gabriel Krysa
+Gabriel Pires Ida,UX Designer,Produto 3C+,Carlos Henrique Marques
+Vanderlei Assis de Andrade Junior,P.O,Produto 3C+,Carlos Henrique Marques
+Matheus Oliveira,Analista de Automações,Produto,Guilherme Pimpão
+Gustavo Delonzek Brizola,Desenvolvedor Full-stack,Produto 3C+,Gabriel Krysa
+Luis Fernando Paganini,Desenvolvedor Front-end,Produto Evolux,Carlos Henrique Marques
+Guilherme Ferreira Ribas,Desenvolvedor Front-end,Produto Evolux,Carlos Henrique Marques
+Pedro Henrique Ferreira do Nascimento,Desenvolvedor Back-End,Produto Evolux,Carlos Henrique Marques
+Bruno Levy de Arruda,DevOps,Produto Evolux,Carlos Henrique Marques
+Lucas Schupchek de Jesus,Desenvolvedor Back-End,Produto FiqOn,Guilherme Pinheiro
+Lucas Matheus da Cruz,Desenvolvedor Back-End,Produto FiqOn,Guilherme Pinheiro
+Yuri Karas Regis Pacheco de Miranda Lima,Desenvolvedor Front-End,Produto FiqOn,Guilherme Pinheiro
+Julia Gabrielly Martins Araujo,Desenvolvedor Back-End,Produto Dizify,Marieli Aparecida Ferreira Thomen
+Maria Fernanda Ribeiro,Desenvolvedor Front-End,Produto Dizify,Marieli Aparecida Ferreira Thomen
+Jeferson da Cruz,Desenvolvedor Back-End,Produto Dizify,Marieli Aparecida Ferreira Thomen
+Thomas Arnon Schmidt Ferreira,Líder Enterprise,Comercial Contact,Jaqueline de Souza
+Leonardo Kauan Ferraz,Closer,Comercial Contact,Jehnnifer Xavier Padilha
+André Luiz Paluski,Closer,Comercial Contact,Jehnnifer Xavier Padilha
+Joyce Cordeiro,Closer,Comercial Contact,Jehnnifer Xavier Padilha
+Kesley Luis de Oliveira,Closer,Comercial Contact,Jehnnifer Xavier Padilha
+Rosiane Correa,Closer,Comercial Contact,Jehnnifer Xavier Padilha
+Mateus Gerik,Closer,Comercial Contact,Jehnnifer Xavier Padilha
+Lucio Marcos Nascimento Ramos,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
+Guilherme Mello Minuzzi,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
+Ketlin Tainá Zaluski de Oliveira,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
+Leandro dos Santos Mülhstdtt da Silva,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
+Gustavo dos Santos Dangui,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
+Willian Samuel de Oliveira,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
+Alexsandy Correa dos Santos,Closer,Comercial Contact,Thomas Arnon Schmidt Ferreira
+Deborah Peres,SalesOps,Comercial Contact,Thomas Arnon Schmidt Ferreira
+Maria Eduarda Merhet Padilha,Farmer,Expansão,Camila Brunetti Thomé
+Daniel Felipe da Silva Souza,Farmer,Expansão,Camila Brunetti Thomé
+Kauane Lemos Bastos,Farmer,Expansão,Camila Brunetti Thomé
+Taissa Guilliane Gomes Almeida,Farmer,Expansão,Camila Brunetti Thomé
+Rafaela Guedes Pinto Cavalcante Stephan,Closer,Comercial Contact,Michele Bodot dos Anjos
+Cirene Laiza da Cruz Lara,Closer,Comercial Contact,Michele Bodot dos Anjos
+Maycon José Barbosa Padilha,Closer,Comercial Contact,Michele Bodot dos Anjos
+Lucas Fontoura de Almeida,Closer,Comercial Contact,Michele Bodot dos Anjos
+Roberta Gomes Ribeiro,Closer,Comercial Contact,Michele Bodot dos Anjos
+Lucas Antonio Costa,Closer,Comercial Contact,Michele Bodot dos Anjos
+Gabriel Schneider Bernadini,Recuperador,Comercial Contact,Michele Bodot dos Anjos
+Bianca da Cunha,Closer,Comercial Contact,Michele Bodot dos Anjos
+Eduardo Elias,Closer,Comercial Dizify,Pietro Limberger
+Iago Moura do Prado,Closer,Comercial Dizify,Pietro Limberger
+Allan Von Stein Portela,Analista de Segurança e Infraestrutura,Tecnologia e Segurança,Vladimir Antonio Sesar
+Luan Matheus da Silva,Analista de Segurança da Informação,Tecnologia e Segurança,Vladimir Antonio Sesar
+Ian Ronska Nepomoceno,Analista de Custos,Tecnologia e Segurança,Diogo Henrique Hartmann
+João Paulo Vasconcelos,DevOps,Tecnologia e Segurança,Diogo Henrique Hartmann
+Gabriel de Lima Machado,Analista de PS,Professional Service,Alexander Eduardo dos Reis
+Wesley Diogo do Vale,Analista de PS,Professional Service,Alexander Eduardo dos Reis
+Eduardo Wosiak,Professional Service,Professional Service,Alexander Eduardo dos Reis
+Felipe Moreira do Nascimento,Analista PME,Atendimento ao Cliente,José Fernando Mosquer
+Filipe Ferreira Rovea,Analista PME,Atendimento ao Cliente,José Fernando Mosquer
+Rian Lucas de Matos Almeida,Key Account,Atendimento ao Cliente,José Fernando Mosquer
+Alana Maiumy Gaspar,Key Account,Atendimento ao Cliente,José Fernando Mosquer
+Mônica de Paula Neves,Implantadora,Atendimento ao Cliente,José Fernando Mosquer
+Gabrielle Andrade Prestes,Implantadora,Atendimento ao Cliente,José Fernando Mosquer
+Mathaus Kozkodai Alves,Suporte Evolux,Atendimento ao Cliente,José Fernando Mosquer
+Pedro Arthur Lobregati Barreto,Analista de Suporte Técnico,Atendimento ao Cliente FiqOn,Guilherme Pinheiro
+Roberty Augusto dos Santos Machado,Analista de Suporte Técnico,Atendimento ao Cliente FiqOn,Guilherme Pinheiro
+Matheus Lorenzo Siqueira,Analista de Suporte Técnico,Atendimento ao Cliente FiqOn,Guilherme Pinheiro
+Igor de Azevedo Ribeiro,Gestor de Projetos,Marketing,Rafael Blaka Schimanski
+Annelise Ribeiro de Souza,Gestor de Tráfego Pago,Marketing,Rafael Blaka Schimanski
+Rebeca Costa de Lima,Copywriter,Marketing,Rafael Blaka Schimanski
+Leonardo Luiz Maciel,Marketing Ops / Analista de Growth,Marketing,Rafael Blaka Schimanski
+Kauê Pszdzimirski de Vargas,Designer,Marketing,Rafael Blaka Schimanski
+Ana Luiza de Souza Ida,Social Media,Marketing,Rafael Blaka Schimanski
+Richard Matheus Mendes Cordeiro,Filmmaker,Marketing,Rafael Blaka Schimanski
+João Marcos Costa de Lima,Editor de vídeos,Marketing,Rafael Blaka Schimanski
+Gustavo Santos Schneider,Web Developer,Marketing,Rafael Blaka Schimanski
+Alan Armstrong,Gestor de Projetos,Marketing,Wagner Wolff Pretto
+Maria Cecilia Blaka Schimanski,Copywriter,Marketing,Richard Matheus Mendes Cordeiro
+Vinícius Costa Leal,Social Media,Marketing,Richard Matheus Mendes Cordeiro
+Maria Eduarda Araújo Gora,Assistente de Parceria,Parcerias,Emily Godoy Da Silva
+Pamela Eduarda Rocha,Assistente de Parcerias,Parcerias,Emily Godoy Da Silva
+Vinícius Biasi Assmann,Analista de Automações,Automações,Pablo Emanuel da Silva
+Thiago Henrique Meneguim Marcondes,Analista de Automações,Automações,Pablo Emanuel da Silva
+José Eduardo Giannini Zimmermann,Analista de Automações,Automações,Pablo Emanuel da Silva
+Eduardo Portes Bueno,Analista de Automações,Automações,Pablo Emanuel da Silva
+Gislene Cristiane Santos Machado,Analista de Recrutamento e Seleção,Pessoas e Cultura,Lucas Limberger
+Renata Czapiewski Silva,Analista de Pessoas e Cultura,Pessoas e Cultura,Lucas Limberger
+Ana Paula Antunes,Assistente Geral,Pessoas e Cultura,Lucas Limberger
+Andreia Vieira Cunha,Zeladora,Pessoas e Cultura,Lucas Limberger
+Elen Daiane De Souza,Zeladora,Pessoas e Cultura,Lucas Limberger
+Ivonete Soares,Zeladora,Pessoas e Cultura,Lucas Limberger
+Matheus Araujo Ribeiro de Britto,Porteiro,Pessoas e Cultura,Lucas Limberger
+Paulo Fernando Bertoli,Porteiro,Pessoas e Cultura,Lucas Limberger
+Gladston Kordiak,Monitor Instituto 3C,Instituto 3C,Kawanna Barbosa Cordeiro
+Victor Raphael Pedroso de Lima,Monitor Instituto 3C,Instituto 3C,Kawanna Barbosa Cordeiro
+Gabrieli Estefani dos Anjos Almeida,Assistente de Recrutamento e Seleção,Instituto 3C,Kawanna Barbosa Cordeiro
+Isabely Wendler,Gestor de Projetos,Operações,Ricardo Borges Camargo
