@@ -1,37 +1,36 @@
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Server, FileText, LogOut, Bird,
-  ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown, // Adicionei XCircle
-  Search, Bell, Lock, Layers, ChevronDown, ChevronRight
+  ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
+  Search, Bell, Lock, Layers, ChevronDown, ChevronRight,
+  Users // <--- ÍCONE NOVO
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
 
-// IMPORTAÇÃO DO NOVO COMPONENTE
 import { ModalObservacao } from './components/ModalObservacao';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
 // --- TYPES ---
-interface User { id: string; name: string; email: string; }
+interface User { id: string; name: string; email: string; jobTitle?: string; department?: string; manager?: { name: string }; }
 interface Tool { id: string; name: string; owner?: User; subOwner?: User; accesses?: { user: User; status: string }[]; }
 
-// INTERFACE ATUALIZADA PARA AUDITORIA
 interface Request {
   id: string;
   details: string;
   status: string;
   createdAt: string;
-  updatedAt?: string; // Data da decisão
+  updatedAt?: string;
   requester: User;
-  approver?: User;    // Quem aprovou/reprovou
+  approver?: User;
   type: string;
-  adminNote?: string; // Observação do modal
+  adminNote?: string;
 }
 
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER';
 
-const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 Horas
+const SESSION_DURATION = 3 * 60 * 60 * 1000;
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -45,16 +44,19 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('theris_activeTab') || 'DASHBOARD');
+
+  // DADOS
   const [tools, setTools] = useState<Tool[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]); // <--- ESTADO PARA LISTA DE PESSOAS
+
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
 
-  // --- NOVOS ESTADOS PARA O MODAL ---
+  // MODAL
   const [modalOpen, setModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar'>('aprovar');
   const [modalTargetId, setModalTargetId] = useState<string | null>(null);
-  // ----------------------------------
 
   // Stats
   const stats = {
@@ -86,9 +88,14 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // LOAD DATA
   const loadData = async () => {
     try {
-      const [resTools, resReqs] = await Promise.all([fetch(`${API_URL}/api/tools`), fetch(`${API_URL}/api/solicitacoes`)]);
+      const [resTools, resReqs] = await Promise.all([
+        fetch(`${API_URL}/api/tools`),
+        fetch(`${API_URL}/api/solicitacoes`)
+      ]);
+
       if (resTools.ok) {
         const toolsData = await resTools.json();
         setTools(toolsData);
@@ -99,12 +106,23 @@ export default function App() {
         }
       }
       if (resReqs.ok) setRequests(await resReqs.json());
+
+      // BUSCA USUÁRIOS SE A ABA FOR PESSOAS
+      if (activeTab === 'PEOPLE') {
+        const resUsers = await fetch(`${API_URL}/api/users`);
+        if (resUsers.ok) setAllUsers(await resUsers.json());
+      }
+
     } catch (e) { console.error(e); }
   };
 
   useEffect(() => {
-    if (isLoggedIn) { loadData(); const interval = setInterval(loadData, 10000); return () => clearInterval(interval); }
-  }, [isLoggedIn]);
+    if (isLoggedIn) {
+      loadData();
+      const interval = setInterval(loadData, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [isLoggedIn, activeTab]); // Adicionei activeTab para recarregar quando mudar de aba
 
   // Actions
   const handleLogin = useGoogleLogin({
@@ -155,7 +173,6 @@ export default function App() {
 
   const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); setActiveTab('DASHBOARD'); setSelectedTool(null); setIsMfaRequired(false); };
 
-  // --- LÓGICA MODAL ---
   const handleOpenApprove = (id: string, action: 'APROVAR' | 'REPROVAR') => {
     setModalTargetId(id);
     setModalAction(action === 'APROVAR' ? 'aprovar' : 'reprovar');
@@ -182,7 +199,6 @@ export default function App() {
           adminNote: note
         })
       });
-
       loadData();
       setModalOpen(false);
       setModalTargetId(null);
@@ -205,20 +221,9 @@ export default function App() {
       <div className="login-card mfa-container">
         <div className="mfa-icon-wrapper"><Lock size={40} color="#8b5cf6" /></div>
         <h2 style={{ color: 'white', margin: 0 }}>Código de Segurança</h2>
-        <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
-          Enviamos um código para <strong>{currentUser?.email}</strong>.
-        </p>
-        <input
-          className="mfa-input-single"
-          type="text"
-          value={mfaCode}
-          onChange={(e) => handleMfaChange(e.target.value)}
-          placeholder="000000"
-          autoFocus
-        />
-        <button onClick={handleMfaVerify} className="btn-verify" disabled={isLoading}>
-          {isLoading ? 'Verificando...' : 'Confirmar Acesso'}
-        </button>
+        <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>Enviamos um código para <strong>{currentUser?.email}</strong>.</p>
+        <input className="mfa-input-single" type="text" value={mfaCode} onChange={(e) => handleMfaChange(e.target.value)} placeholder="000000" autoFocus />
+        <button onClick={handleMfaVerify} className="btn-verify" disabled={isLoading}>{isLoading ? 'Verificando...' : 'Confirmar Acesso'}</button>
         <button onClick={() => { setIsMfaRequired(false); setCurrentUser(null); setMfaCode(''); }} style={{ background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', marginTop: 10 }}>Voltar</button>
       </div>
     </div>
@@ -241,11 +246,15 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      {/* SIDEBAR FIXED */}
+      {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="brand-box"><Bird size={24} color="#7c3aed" /> THERIS OS</div>
         <div className="nav-section">
           <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Visão Geral</div>
+
+          {/* NOVA ABA GESTÃO DE PESSOAS */}
+          <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => setActiveTab('PEOPLE')}><Users size={18} /> Gestão de Pessoas</div>
+
           <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Layers size={18} /> Catálogo</div>
           {['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(systemProfile) && <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Auditoria</div>}
         </div>
@@ -262,7 +271,7 @@ export default function App() {
       {/* MAIN CANVAS */}
       <main className="main-area">
         <header className="header-bar">
-          <div className="page-title">Pagina: <span>{activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab}</span></div>
+          <div className="page-title">Pagina: <span>{activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab}</span></div>
           <div style={{ display: 'flex', gap: 20 }}><Search size={18} color="#71717a" /><Bell size={18} color="#71717a" /></div>
         </header>
 
@@ -324,6 +333,55 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* GESTÃO DE PESSOAS (NOVA TELA) */}
+          {activeTab === 'PEOPLE' && (
+            <div className="fade-in">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Colaboradores</h2>
+                <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Usuários Cadastrados</div>
+              </div>
+
+              <div className="card-base" style={{ padding: 0, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #27272a', color: '#a1a1aa', textAlign: 'left' }}>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>NOME COMPLETO</th>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>CARGO</th>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>DEPARTAMENTO</th>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>GESTOR DIRETO</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allUsers.map(u => (
+                      <tr key={u.id} style={{ borderBottom: '1px solid #1f1f22', color: '#e4e4e7' }}>
+                        <td style={{ padding: '16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#4c1d95', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>
+                              {u.name.charAt(0)}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 500 }}>{u.name}</div>
+                              <div style={{ fontSize: 11, color: '#71717a' }}>{u.email}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ padding: '16px', color: '#d4d4d8' }}>{u.jobTitle || '-'}</td>
+                        <td style={{ padding: '16px' }}>
+                          <span style={{ padding: '2px 8px', borderRadius: 4, background: '#27272a', color: '#a1a1aa', fontSize: 12 }}>
+                            {u.department || 'N/A'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '16px', color: '#a78bfa' }}>
+                          {u.manager ? u.manager.name : <span style={{ color: '#52525b', fontStyle: 'italic' }}>-</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -396,16 +454,13 @@ export default function App() {
             </div>
           )}
 
-          {/* TABELA DE AUDITORIA COMPLETA */}
+          {/* AUDITORIA */}
           {activeTab === 'HISTORY' && (
             <div className="fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Logs de Auditoria</h2>
-                <div style={{ fontSize: 12, color: '#71717a' }}>
-                  Total de Registros: {requests.filter(r => r.status !== 'PENDENTE').length}
-                </div>
+                <div style={{ fontSize: 12, color: '#71717a' }}>Total de Registros: {requests.filter(r => r.status !== 'PENDENTE').length}</div>
               </div>
-
               <div className="card-base" style={{ padding: 0, overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
@@ -423,27 +478,18 @@ export default function App() {
                       .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
                       .map(r => (
                         <tr key={r.id} style={{ borderBottom: '1px solid #1f1f22', color: '#e4e4e7' }}>
-
-                          {/* STATUS */}
                           <td style={{ padding: '16px' }}>
                             <span style={{
-                              padding: '4px 10px',
-                              borderRadius: '20px',
-                              fontSize: 11,
-                              fontWeight: 700,
+                              padding: '4px 10px', borderRadius: '20px', fontSize: 11, fontWeight: 700,
                               backgroundColor: r.status === 'APROVADO' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
                               color: r.status === 'APROVADO' ? '#34d399' : '#f87171',
                               border: r.status === 'APROVADO' ? '1px solid #059669' : '1px solid #b91c1c',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5
+                              display: 'inline-flex', alignItems: 'center', gap: 5
                             }}>
                               {r.status === 'APROVADO' ? <CheckCircle size={10} /> : <XCircle size={10} />}
                               {r.status}
                             </span>
                           </td>
-
-                          {/* SOLICITANTE */}
                           <td style={{ padding: '16px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#3f3f46', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>
@@ -452,8 +498,6 @@ export default function App() {
                               <span>{r.requester.name}</span>
                             </div>
                           </td>
-
-                          {/* APROVADOR */}
                           <td style={{ padding: '16px' }}>
                             {r.approver ? (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -464,28 +508,16 @@ export default function App() {
                               <span style={{ color: '#52525b', fontStyle: 'italic' }}>Sistema / Automático</span>
                             )}
                           </td>
-
-                          {/* DATA */}
                           <td style={{ padding: '16px', color: '#a1a1aa' }}>
-                            {new Date(r.updatedAt || r.createdAt).toLocaleString('pt-BR', {
-                              day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit'
-                            })}
+                            {new Date(r.updatedAt || r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                           </td>
-
-                          {/* NOTA */}
                           <td style={{ padding: '16px', color: '#71717a', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.adminNote}>
                             {r.adminNote || '-'}
                           </td>
-
                         </tr>
                       ))}
-
                     {requests.filter(r => r.status !== 'PENDENTE').length === 0 && (
-                      <tr>
-                        <td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#52525b' }}>
-                          Nenhum registro de auditoria encontrado.
-                        </td>
-                      </tr>
+                      <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#52525b' }}>Nenhum registro de auditoria encontrado.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -495,14 +527,7 @@ export default function App() {
         </div>
       </main>
 
-      <ModalObservacao
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onConfirm={handleConfirmApprove}
-        titulo={modalAction === 'aprovar' ? 'Confirmar Aprovação' : 'Confirmar Reprovação'}
-        tipo={modalAction}
-      />
-
+      <ModalObservacao isOpen={modalOpen} onClose={() => setModalOpen(false)} onConfirm={handleConfirmApprove} titulo={modalAction === 'aprovar' ? 'Confirmar Aprovação' : 'Confirmar Reprovação'} tipo={modalAction} />
     </div>
   );
 }
