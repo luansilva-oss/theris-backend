@@ -4,51 +4,65 @@ import path from 'path';
 
 const prisma = new PrismaClient();
 
-async function main() {
-    console.log('🌱 Iniciando importação via CSV...');
+// Função para gerar email a partir do nome (ex: "João Silva" -> "joao.silva@grupo-3c.com")
+function generateEmail(name: string): string {
+    return name
+        .toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove acentos
+        .trim()
+        .replace(/\s+/g, '.') // Troca espaços por pontos
+        + '@grupo-3c.com';
+}
 
-    // 1. LER O ARQUIVO CSV
-    // Certifique-se que o arquivo "users.csv" está na pasta prisma/
+async function main() {
+    console.log('🌱 Iniciando importação (Nome | Cargo | Dept | Gestor)...');
+
     const filePath = path.join(__dirname, 'users.csv');
 
     if (!fs.existsSync(filePath)) {
-        console.error('❌ ERRO: Arquivo prisma/users.csv não encontrado.');
-        console.log('👉 Por favor, coloque o arquivo CSV na pasta prisma com o nome "users.csv".');
+        console.error('❌ Arquivo prisma/users.csv não encontrado.');
         return;
     }
 
     const fileContent = fs.readFileSync(filePath, 'utf-8');
 
-    // 2. PARSE DO CSV (Converter texto em Objetos)
+    // Lê as linhas
     const rows = fileContent.split('\n')
-        .map(line => line.trim()) // Remove espaços e quebras de linha (\r)
-        .filter(line => line.length > 0); // Remove linhas vazias
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
 
-    // Remove o cabeçalho (primeira linha)
-    const dataRows = rows.slice(1);
+    // Remove cabeçalho se existir (se a primeira linha tiver "Nome" ou "Cargo")
+    const firstRow = rows[0].toLowerCase();
+    const dataRows = (firstRow.includes('nome') || firstRow.includes('cargo')) ? rows.slice(1) : rows;
 
-    console.log(`📂 Arquivo lido. Encontrados ${dataRows.length} usuários para processar.`);
+    console.log(`📂 Processando ${dataRows.length} linhas...`);
 
     const usersData = dataRows.map(row => {
-        // Tenta separar por vírgula (,) ou ponto e vírgula (;) dependendo do formato do Excel
+        // Tenta detetar o separador (vírgula ou ponto e vírgula)
         const separator = row.includes(';') ? ';' : ',';
-        const columns = row.split(separator).map(c => c.trim());
+        const columns = row.split(separator).map(c => c.trim().replace(/^"|"$/g, '')); // Remove aspas extras
 
-        // Mapeamento das colunas (Ajuste conforme a ordem do teu CSV)
-        // Assumindo ordem: Nome | Email | Cargo | Departamento | Gestor Direto
+        // --- MAPEAMENTO BASEADO NA TUA ORDEM ---
+        // Coluna 0: Nome Completo
+        // Coluna 1: Cargo
+        // Coluna 2: Departamento
+        // Coluna 3: Gestor Direto
+
+        const rawName = columns[0] || "Sem Nome";
+
         return {
-            name: columns[0],
-            email: columns[1],
-            jobTitle: columns[2],
-            department: columns[3],
-            managerName: columns[4] && columns[4] !== '-' && columns[4] !== '' ? columns[4] : null
+            name: rawName,
+            email: generateEmail(rawName), // Gera o email automaticamente
+            jobTitle: columns[1] || null,
+            department: columns[2] || null,
+            managerName: columns[3] && columns[3] !== '-' ? columns[3] : null
         };
     });
 
-    // 3. CRIAR USUÁRIOS (Upsert)
-    console.log('🔄 Criando/Atualizando usuários no banco...');
+    // 1. CRIAR USUÁRIOS
+    console.log('🔄 Atualizando cadastros...');
     for (const u of usersData) {
-        if (!u.email) continue; // Pula se não tiver email
+        if (u.name === "Sem Nome") continue;
 
         await prisma.user.upsert({
             where: { email: u.email },
@@ -62,18 +76,19 @@ async function main() {
                 name: u.name,
                 jobTitle: u.jobTitle,
                 department: u.department,
-                password: '123' // Senha padrão
+                password: '123'
             }
         });
     }
 
-    // 4. CONECTAR GESTORES (Hierarquia)
-    console.log('🔗 Conectando hierarquia de gestores...');
+    // 2. CONECTAR GESTORES
+    console.log('🔗 Conectando hierarquia...');
     for (const u of usersData) {
         if (u.managerName) {
+            // Tenta achar o gestor pelo NOME (ignora maiúsculas/minúsculas)
             const manager = await prisma.user.findFirst({
                 where: {
-                    name: { equals: u.managerName, mode: 'insensitive' } // Busca insensível a maiúsculas/minúsculas
+                    name: { equals: u.managerName, mode: 'insensitive' }
                 }
             });
 
@@ -83,12 +98,13 @@ async function main() {
                     data: { managerId: manager.id }
                 });
             } else {
-                console.warn(`⚠️ Gestor não encontrado para ${u.name}: "${u.managerName}"`);
+                // Log para saberes se algum gestor não foi achado (talvez erro de digitação no CSV)
+                console.warn(`⚠️ Gestor "${u.managerName}" não encontrado para o funcionário ${u.name}`);
             }
         }
     }
 
-    console.log('✅ Gestão de Pessoas (TODOS OS USUÁRIOS) importada com sucesso!');
+    console.log('✅ Importação concluída!');
 }
 
 main()
