@@ -4,9 +4,10 @@ import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Controladores
+// --- IMPORTAÇÕES DOS CONTROLADORES ---
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
 import { googleLogin } from './controllers/authController';
+import { getAllTools } from './controllers/toolController'; // <--- O NOVO CONTROLADOR
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -19,7 +20,7 @@ const prisma = new PrismaClient();
 // --- CORS ---
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
 
-// ⚠️ ROTA DO SLACK
+// ⚠️ ROTA DO SLACK (Deve vir antes do express.json para o receptor funcionar)
 app.use('/api/slack', slackReceiver.router);
 
 // --- JSON MIDDLEWARE ---
@@ -42,28 +43,9 @@ app.get('/api/structure', async (req, res) => {
   }
 });
 
-// 2. Ferramentas (AQUI ESTAVA O ERRO PROVAVELMENTE)
-app.get('/api/tools', async (req, res) => {
-  try {
-    const tools = await prisma.tool.findMany({
-      include: {
-        owner: { select: { name: true, email: true } },     // <--- Vírgula aqui
-        subOwner: { select: { name: true, email: true } },  // <--- Vírgula aqui
-        accesses: {                                         // <--- Bloco novo
-          where: { status: 'ACTIVE' },
-          include: {
-            user: { select: { name: true, email: true } }
-          }
-        }
-      },
-      orderBy: { name: 'asc' }
-    });
-    res.json(tools);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Erro ao buscar ferramentas.' });
-  }
-});
+// 2. Ferramentas (CORREÇÃO AQUI 👇)
+// Usamos apenas o controlador importado. Ele já resolve tudo.
+app.get('/api/tools', getAllTools);
 
 // 3. Usuários
 app.get('/api/users', async (req, res) => {
@@ -83,10 +65,7 @@ app.post('/api/solicitacoes', createSolicitacao);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);
 
 // --- SERVIR FRONTEND ---
-// Backend em: dist-server/index.js
-// Frontend em: dist/index.html
 const frontendPath = path.resolve(__dirname, '../dist');
-
 app.use(express.static(frontendPath));
 
 app.get('*', (req, res) => {
