@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // 1. Configuração do Receptor HTTP (Para o Render)
+// Exportamos para usar no index.ts
 export const slackReceiver = new ExpressReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET || '',
   endpoints: '/events', // A rota final será /api/slack/events
@@ -20,7 +21,7 @@ const slackApp = new App({
 // ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
   // ACK IMEDIATO: O Slack exige resposta em <3s
-  await ack(); 
+  await ack();
 
   try {
     await client.views.open({
@@ -31,7 +32,7 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
         title: { type: 'plain_text', text: 'Theris' },
         blocks: [
           { type: 'section', text: { type: 'mrkdwn', text: '👋 *Painel de Governança*\nO que você precisa hoje?' } },
-          
+
           // BLOCO 1: PESSOAS
           { type: 'divider' },
           { type: 'section', text: { type: 'mrkdwn', text: '👤 *Gestão de Pessoas*' } },
@@ -69,8 +70,8 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
         ]
       }
     });
-  } catch (error) { 
-    console.error('❌ Erro Menu Principal:', error); 
+  } catch (error) {
+    console.error('❌ Erro Menu Principal:', error);
   }
 });
 
@@ -189,48 +190,48 @@ slackApp.action('link_security', async ({ ack }) => await ack());
 // ============================================================
 
 async function saveRequest(body: any, client: any, dbType: string, details: any, reason: string, msgSuccess: string, isExtraordinary = false) {
+  try {
+    const slackId = body.user.id;
+    let requesterId = '';
+
+    // Tenta achar o usuário no banco pelo email do Slack
     try {
-      const slackId = body.user.id;
-      let requesterId = '';
-
-      // Tenta achar o usuário no banco pelo email do Slack
-      try {
-          const info = await client.users.info({ user: slackId });
-          const email = info.user?.profile?.email;
-          if (email) {
-             const userDb = await prisma.user.findUnique({ where: { email } });
-             if (userDb) requesterId = userDb.id;
-          }
-      } catch (err) { console.log('Erro ao buscar user Slack:', err); }
-
-      // Fallback: Se não achar, pega o primeiro admin ou user do banco (para não travar teste)
-      if (!requesterId) {
-          const fallback = await prisma.user.findFirst();
-          if(fallback) requesterId = fallback.id;
+      const info = await client.users.info({ user: slackId });
+      const email = info.user?.profile?.email;
+      if (email) {
+        const userDb = await prisma.user.findUnique({ where: { email } });
+        if (userDb) requesterId = userDb.id;
       }
+    } catch (err) { console.log('Erro ao buscar user Slack:', err); }
 
-      if (!requesterId) throw new Error("Usuário não encontrado no sistema Theris.");
-
-      // Salva no Banco
-      await prisma.request.create({
-          data: {
-              requesterId,
-              type: dbType,
-              details: JSON.stringify(details),
-              justification: reason || 'Via Slack',
-              status: isExtraordinary ? 'PENDENTE_SI' : 'PENDENTE_GESTOR',
-              currentApproverRole: isExtraordinary ? 'SI_ANALYST' : 'MANAGER',
-              isExtraordinary
-          }
-      });
-
-      // Confirma no chat privado do usuário
-      await client.chat.postMessage({ channel: slackId, text: msgSuccess });
-
-    } catch (e) { 
-        console.error('❌ Erro ao salvar solicitação:', e); 
-        await client.chat.postMessage({ channel: body.user.id, text: "❌ Erro ao processar solicitação. Seu usuário existe no painel web?" });
+    // Fallback: Se não achar, pega o primeiro admin ou user do banco (para não travar teste)
+    if (!requesterId) {
+      const fallback = await prisma.user.findFirst();
+      if (fallback) requesterId = fallback.id;
     }
+
+    if (!requesterId) throw new Error("Usuário não encontrado no sistema Theris.");
+
+    // Salva no Banco
+    await prisma.request.create({
+      data: {
+        requesterId,
+        type: dbType,
+        details: JSON.stringify(details),
+        justification: reason || 'Via Slack',
+        status: isExtraordinary ? 'PENDENTE_SI' : 'PENDENTE_GESTOR',
+        currentApproverRole: isExtraordinary ? 'SI_ANALYST' : 'MANAGER',
+        isExtraordinary
+      }
+    });
+
+    // Confirma no chat privado do usuário
+    await client.chat.postMessage({ channel: slackId, text: msgSuccess });
+
+  } catch (e) {
+    console.error('❌ Erro ao salvar solicitação:', e);
+    await client.chat.postMessage({ channel: body.user.id, text: "❌ Erro ao processar solicitação. Seu usuário existe no painel web?" });
+  }
 }
 
 // Handlers de Submissão
@@ -239,9 +240,9 @@ slackApp.view('submit_move', async ({ ack, body, view, client }) => {
   const v = view.state.values;
   const name = v.blk_name.inp.value;
   const details = {
-      info: `Movimentação: ${name}`,
-      current: { role: v.blk_role_curr.inp.value, dept: v.blk_dept_curr.inp.value },
-      future: { role: v.blk_role_fut.inp.value, dept: v.blk_dept_fut.inp.value }
+    info: `Movimentação: ${name}`,
+    current: { role: v.blk_role_curr.inp.value, dept: v.blk_dept_curr.inp.value },
+    future: { role: v.blk_role_fut.inp.value, dept: v.blk_dept_fut.inp.value }
   };
   await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value!, `✅ Solicitação de movimentação para *${name}* criada com sucesso.`);
 });
@@ -252,11 +253,11 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   const name = v.blk_name.inp.value;
   const startDate = v.blk_date.picker.selected_date || 'A definir';
   const details = {
-      info: `Contratação: ${name}`,
-      startDate,
-      role: v.blk_role.inp.value,
-      dept: v.blk_dept.inp.value,
-      obs: v.blk_obs.inp.value
+    info: `Contratação: ${name}`,
+    startDate,
+    role: v.blk_role.inp.value,
+    dept: v.blk_dept.inp.value,
+    obs: v.blk_obs.inp.value
   };
   await saveRequest(body, client, 'HIRING', details, `Início: ${startDate}`, `✅ Contratação de *${name}* registrada.`);
 });
@@ -266,35 +267,89 @@ slackApp.view('submit_fire', async ({ ack, body, view, client }) => {
   const v = view.state.values;
   const name = v.blk_name.inp.value;
   const details = {
-      info: `Desligamento: ${name}`,
-      role: v.blk_role.inp.value,
-      dept: v.blk_dept.inp.value
+    info: `Desligamento: ${name}`,
+    role: v.blk_role.inp.value,
+    dept: v.blk_dept.inp.value
   };
   await saveRequest(body, client, 'FIRING', details, v.blk_reason.inp.value!, `⚠️ Desligamento de *${name}* registrado. Processo de offboarding iniciado.`);
 });
 
 slackApp.view('submit_tool_access', async ({ ack, body, view, client }) => {
-    await ack();
-    const v = view.state.values;
-    const tool = v.blk_tool.inp.value;
-    const details = {
-        info: `Acesso: ${tool}`,
-        tool,
-        current: v.blk_curr.inp.value,
-        target: v.blk_target.inp.value
-    };
-    await saveRequest(body, client, 'ACCESS_CHANGE', details, v.blk_reason.inp.value!, `✅ Pedido de alteração de acesso para *${tool}* enviado.`);
+  await ack();
+  const v = view.state.values;
+  const tool = v.blk_tool.inp.value;
+  const details = {
+    info: `Acesso: ${tool}`,
+    tool,
+    current: v.blk_curr.inp.value,
+    target: v.blk_target.inp.value
+  };
+  await saveRequest(body, client, 'ACCESS_CHANGE', details, v.blk_reason.inp.value!, `✅ Pedido de alteração de acesso para *${tool}* enviado.`);
 });
 
 slackApp.view('submit_tool_extra', async ({ ack, body, view, client }) => {
-    await ack();
-    const v = view.state.values;
-    const tool = v.blk_tool.inp.value;
-    const details = {
-        info: `Extraordinário: ${tool}`,
-        beneficiary: v.blk_collab.inp.value,
-        tool,
-        target: v.blk_target.inp.value
-    };
-    await saveRequest(body, client, 'ACCESS_TOOL', details, v.blk_reason.inp.value!, `🔥 Acesso extraordinário para *${tool}* enviado ao time de Segurança.`, true);
+  await ack();
+  const v = view.state.values;
+  const tool = v.blk_tool.inp.value;
+  const details = {
+    info: `Extraordinário: ${tool}`,
+    beneficiary: v.blk_collab.inp.value,
+    tool,
+    target: v.blk_target.inp.value
+  };
+  await saveRequest(body, client, 'ACCESS_TOOL', details, v.blk_reason.inp.value!, `🔥 Acesso extraordinário para *${tool}* enviado ao time de Segurança.`, true);
 });
+
+
+// ============================================================
+// 4. NOTIFICAÇÃO ATIVA (CHAMADO PELO CONTROLLER)
+// ============================================================
+
+export const sendSlackNotification = async (email: string, status: string, adminNote: string) => {
+  if (!slackApp) return;
+
+  try {
+    // 1. Tenta achar o ID do usuário no Slack pelo e-mail
+    const userLookup = await slackApp.client.users.lookupByEmail({ email });
+    const slackUserId = userLookup.user?.id;
+
+    if (slackUserId) {
+      // 2. Define a cor e o ícone
+      const isApproved = status === 'APROVADO';
+      const icon = isApproved ? '✅' : '❌';
+      const actionText = isApproved ? 'APROVADA' : 'REPROVADA';
+
+      // 3. Envia a DM Bonita
+      await slackApp.client.chat.postMessage({
+        channel: slackUserId,
+        text: `Sua solicitação foi ${actionText}`, // Fallback text
+        blocks: [
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: `${icon} Solicitação ${actionText}`,
+              emoji: true
+            }
+          },
+          {
+            type: "section",
+            fields: [
+              { type: "mrkdwn", text: `*Status:*\n${status}` },
+              { type: "mrkdwn", text: `*Justificativa do Gestor:*\n_${adminNote}_` }
+            ]
+          },
+          {
+            type: "context",
+            elements: [{ type: "mrkdwn", text: "Theris OS • Governança de Acessos" }]
+          }
+        ]
+      });
+      console.log(`🔔 Notificação enviada para ${email}`);
+    } else {
+      console.warn(`⚠️ Usuário Slack não encontrado para o email: ${email}`);
+    }
+  } catch (error) {
+    console.error('❌ Erro ao enviar notificação Slack:', error);
+  }
+};
