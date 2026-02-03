@@ -135,74 +135,82 @@ const usersList = [
     { name: "Isabely Wendler", jobTitle: "Gestor de Projetos", department: "Operações", managerName: "Ricardo Borges Camargo" }
 ];
 
+// Função simples para normalizar texto (tira acentos e minúsculas)
+const normalize = (str: string) => {
+    return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+};
+
 function generateEmail(name: string): string {
     if (!name) return `usuario.${Math.random()}@grupo-3c.com`;
-    return name
-        .toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .trim()
-        .replace(/\s+/g, '.')
-        + '@grupo-3c.com';
+    return normalize(name).replace(/\s+/g, '.') + '@grupo-3c.com';
 }
 
 async function main() {
-    console.log(`🚀 Iniciando sincronização inteligente de ${usersList.length} colaboradores...`);
+    console.log(`🚀 Iniciando sincronização INTELIGENTE de ${usersList.length} colaboradores...`);
 
-    // 1. CRIAR OU ATUALIZAR (Busca por E-mail OU Nome)
-    for (const u of usersList) {
-        const generatedEmail = generateEmail(u.name);
+    // 1. PRIMEIRO: Baixa quem já está no banco (Logins do Google)
+    const existingDbUsers = await prisma.user.findMany();
+    console.log(`📊 Encontrados ${existingDbUsers.length} usuários já existentes no banco.`);
 
-        try {
-            // Tenta achar alguém com esse email OU com esse nome exato (insensitive)
-            let existingUser = await prisma.user.findFirst({
-                where: {
-                    OR: [
-                        { email: generatedEmail },
-                        { name: { equals: u.name, mode: 'insensitive' } }
-                    ]
-                }
-            });
+    // 2. TENTAR ENRIQUECER DADOS DOS EXISTENTES
+    for (const csvUser of usersList) {
+        const csvNameNormalized = normalize(csvUser.name);
 
-            if (existingUser) {
-                // ATUALIZA O EXISTENTE (Mesmo se o email for diferente, ex: login do Google)
+        // Tenta achar alguém no banco com nome parecido
+        // Ex: Banco="Luan Silva", CSV="Luan Matheus da Silva" -> Match!
+        const matchedUser = existingDbUsers.find(dbUser => {
+            const dbNameNormalized = normalize(dbUser.name);
+            return dbNameNormalized === csvNameNormalized ||
+                csvNameNormalized.includes(dbNameNormalized) ||
+                dbNameNormalized.includes(csvNameNormalized);
+        });
+
+        if (matchedUser) {
+            // Encontramos! Vamos atualizar os dados dele
+            // console.log(`✅ Match encontrado: "${matchedUser.name}" <-> "${csvUser.name}". Atualizando...`);
+            try {
                 await prisma.user.update({
-                    where: { id: existingUser.id },
+                    where: { id: matchedUser.id },
                     data: {
-                        // Só atualiza o nome se o banco estiver vazio ou estranho, mas forçamos para garantir o match
-                        // name: u.name, 
-                        jobTitle: u.jobTitle,
-                        department: u.department
+                        jobTitle: csvUser.jobTitle,
+                        department: csvUser.department,
+                        // name: csvUser.name // Opcional: Atualizar para o nome completo da planilha
                     }
                 });
-                // console.log(`✅ Atualizado: ${u.name}`);
-            } else {
-                // CRIA NOVO SE NÃO ACHAR NINGUÉM
-                await prisma.user.create({
-                    data: {
-                        email: generatedEmail,
-                        name: u.name,
-                        jobTitle: u.jobTitle,
-                        department: u.department
+            } catch (e) { console.error("Erro update", e) }
+        } else {
+            // Se não achou ninguém, cria um novo (com o email gerado)
+            // console.log(`✨ Usuário novo: "${csvUser.name}". Criando...`);
+            try {
+                await prisma.user.upsert({
+                    where: { email: generateEmail(csvUser.name) },
+                    update: {
+                        name: csvUser.name,
+                        jobTitle: csvUser.jobTitle,
+                        department: csvUser.department
+                    },
+                    create: {
+                        email: generateEmail(csvUser.name),
+                        name: csvUser.name,
+                        jobTitle: csvUser.jobTitle,
+                        department: csvUser.department
                     }
                 });
-                // console.log(`✨ Criado: ${u.name}`);
-            }
-        } catch (e: any) {
-            console.error(`❌ Erro em ${u.name}:`, e.message);
+            } catch (e) { console.error("Erro create", e) }
         }
     }
 
-    // 2. CONECTAR GESTORES (Segunda passada para garantir que todos existem)
+    // 3. CONECTAR GESTORES (Segunda passada)
     console.log('🔗 Conectando hierarquia...');
     for (const u of usersList) {
         if (u.managerName) {
             try {
-                // Busca o funcionário (alvo)
+                // Busca o funcionário (alvo) - tenta pelo nome completo
                 const employee = await prisma.user.findFirst({
-                    where: { name: { equals: u.name, mode: 'insensitive' } }
+                    where: { name: { contains: u.name, mode: 'insensitive' } }
                 });
 
-                // Busca o gestor
+                // Busca o gestor - tenta pelo nome (match parcial)
                 const manager = await prisma.user.findFirst({
                     where: { name: { contains: u.managerName, mode: 'insensitive' } }
                 });
@@ -213,9 +221,7 @@ async function main() {
                         data: { managerId: manager.id }
                     });
                 }
-            } catch (e) {
-                // Ignora falhas pontuais
-            }
+            } catch (e) { }
         }
     }
 
