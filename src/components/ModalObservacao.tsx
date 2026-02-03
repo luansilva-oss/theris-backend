@@ -5,7 +5,7 @@ interface ModalObservacaoProps {
     onClose: () => void;
     onConfirm: (observacao: string) => void;
     titulo: string;
-    tipo: 'aprovar' | 'reprovar'; // Para mudar a cor do botão
+    tipo: 'aprovar' | 'reprovar';
 }
 
 export const ModalObservacao: React.FC<ModalObservacaoProps> = ({
@@ -17,7 +17,7 @@ export const ModalObservacao: React.FC<ModalObservacaoProps> = ({
 }) => {
     const [observacao, setObservacao] = useState('');
 
-    // Limpa o campo sempre que o modal abre
+    // Limpa o campo sempre que abre
     useEffect(() => {
         if (isOpen) setObservacao('');
     }, [isOpen]);
@@ -25,25 +25,65 @@ export const ModalObservacao: React.FC<ModalObservacaoProps> = ({
     if (!isOpen) return null;
 
     return (
-        // Fundo escuro com transparência (Overlay)
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        // 1. OVERLAY (Fundo Escuro que cobre a tela toda)
+        <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.75)', // Escurece o fundo
+            backdropFilter: 'blur(4px)', // Efeito de vidro (blur)
+            zIndex: 9999, // Garante que fica por cima de TUDO
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+        }}>
 
-            {/* Container do Modal */}
-            <div className="w-full max-w-md bg-[#111827] border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-fade-in">
+            {/* 2. A CAIXA DO MODAL */}
+            <div style={{
+                backgroundColor: '#111827', // Cor de fundo escura (Dark theme)
+                border: '1px solid #374151',
+                borderRadius: '12px',
+                padding: '24px',
+                width: '100%',
+                maxWidth: '450px',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+                animation: 'fadeIn 0.2s ease-out'
+            }}>
 
                 {/* Cabeçalho */}
-                <div className="bg-[#1F2937] px-6 py-4 border-b border-gray-700">
-                    <h3 className="text-lg font-bold text-white">{titulo}</h3>
+                <div style={{ marginBottom: '16px', borderBottom: '1px solid #374151', paddingBottom: '12px' }}>
+                    <h3 style={{
+                        margin: 0,
+                        fontSize: '1.25rem',
+                        fontWeight: 600,
+                        color: 'white'
+                    }}>
+                        {titulo}
+                    </h3>
                 </div>
 
                 {/* Corpo */}
-                <div className="p-6">
-                    <label className="block text-sm font-medium text-gray-400 mb-2">
-                        Observação (Opcional)
+                <div style={{ marginBottom: '24px' }}>
+                    <label style={{ display: 'block', fontSize: '0.875rem', color: '#9CA3AF', marginBottom: '8px' }}>
+                        Observação (Opcional):
                     </label>
                     <textarea
-                        className="w-full h-32 bg-[#374151] text-white border border-gray-600 rounded-lg p-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none resize-none placeholder-gray-500"
-                        placeholder="Digite o motivo ou uma observação..."
+                        style={{
+                            width: '100%',
+                            backgroundColor: '#1F2937',
+                            color: 'white',
+                            border: '1px solid #4B5563',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            minHeight: '100px',
+                            resize: 'none',
+                            outline: 'none',
+                            fontSize: '14px',
+                            fontFamily: 'inherit'
+                        }}
+                        placeholder={tipo === 'reprovar' ? "Digite o motivo da reprovação (Obrigatório)..." : "Alguma observação adicional?..."}
                         value={observacao}
                         onChange={(e) => setObservacao(e.target.value)}
                         autoFocus
@@ -51,22 +91,42 @@ export const ModalObservacao: React.FC<ModalObservacaoProps> = ({
                 </div>
 
                 {/* Rodapé (Botões) */}
-                <div className="bg-[#1F2937] px-6 py-4 flex justify-end gap-3 border-t border-gray-700">
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                        style={{
+                            padding: '8px 16px',
+                            backgroundColor: 'transparent',
+                            color: '#D1D5DB',
+                            border: '1px solid #4B5563',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontWeight: 500,
+                            fontSize: '0.875rem'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#374151'}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
                         Cancelar
                     </button>
 
                     <button
                         onClick={() => onConfirm(observacao)}
-                        className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors shadow-lg ${tipo === 'aprovar'
-                                ? 'bg-green-600 hover:bg-green-700 shadow-green-900/20'
-                                : 'bg-red-600 hover:bg-red-700 shadow-red-900/20'
-                            }`}
+                        style={{
+                            padding: '8px 16px',
+                            backgroundColor: tipo === 'aprovar' ? '#059669' : '#DC2626', // Verde ou Vermelho
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontWeight: 500,
+                            fontSize: '0.875rem',
+                            transition: 'background-color 0.2s'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#047857' : '#B91C1C'}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#059669' : '#DC2626'}
                     >
-                        Confirmar {tipo === 'aprovar' ? 'Aprovação' : 'Reprovação'}
+                        Confirmar
                     </button>
                 </div>
             </div>
