@@ -25,7 +25,7 @@ export default function App() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isMfaRequired, setIsMfaRequired] = useState(false);
-  const [mfaCode, setMfaCode] = useState('');
+  const [mfaCode, setMfaCode] = useState(''); // String única
   const [isLoading, setIsLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('theris_activeTab') || 'DASHBOARD');
@@ -34,6 +34,7 @@ export default function App() {
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
 
+  // Stats
   const stats = {
     pending: requests.filter(r => r.status.includes('PENDENTE')).length,
     approved: requests.filter(r => r.status === 'APROVADO').length,
@@ -47,14 +48,14 @@ export default function App() {
     else if (activeTab === 'TOOLS' && !selectedTool) localStorage.removeItem('theris_selectedToolId');
   }, [selectedTool, activeTab]);
 
-  // Session Check (3 Horas)
+  // Session Check
   useEffect(() => {
     const checkSession = () => {
       const storedUser = localStorage.getItem('theris_user');
       const sessionStart = localStorage.getItem('theris_session_start');
       if (storedUser && sessionStart) {
         if (Date.now() - parseInt(sessionStart) > SESSION_DURATION) {
-          alert("Sessão expirada por segurança."); handleLogout();
+          alert("Sessão expirada."); handleLogout();
         } else setIsLoggedIn(true);
       } else setIsLoggedIn(false);
     };
@@ -83,40 +84,39 @@ export default function App() {
     if (isLoggedIn) { loadData(); const interval = setInterval(loadData, 10000); return () => clearInterval(interval); }
   }, [isLoggedIn]);
 
-  // --- ACTIONS ---
-
+  // Actions
   const handleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
+      setIsLoading(true); // Ativa loading
       try {
         const res = await fetch(`${API_URL}/api/login/google`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken: tokenResponse.access_token }) });
         const data = await res.json();
         if (res.ok) {
-          // NÃO loga ainda. Salva estado temporário e pede MFA.
-          setCurrentUser(data.user); setSystemProfile(data.profile); setIsLoading(true);
-
-          // Manda gerar código para ESTE usuário
+          setCurrentUser(data.user); setSystemProfile(data.profile);
+          // Pede o envio do e-mail
           await fetch(`${API_URL}/api/auth/send-mfa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: data.user.id }) });
 
-          setIsLoading(false); setIsMfaRequired(true);
-        } else alert(data.error);
-      } catch (e) { alert("Erro de conexão."); setIsLoading(false); }
-    }
+          setIsLoading(false); // Desativa loading
+          setIsMfaRequired(true); // Mostra tela de código
+        } else {
+          alert(data.error);
+          setIsLoading(false);
+        }
+      } catch (e) {
+        alert("Erro de conexão.");
+        setIsLoading(false);
+      }
+    },
+    onError: () => setIsLoading(false)
   });
 
   const handleMfaVerify = async () => {
     if (mfaCode.length < 6) return alert("Digite o código de 6 dígitos.");
     setIsLoading(true);
     try {
-      // VERIFICAÇÃO REAL NO SERVIDOR
-      const res = await fetch(`${API_URL}/api/auth/verify-mfa`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser?.id, code: mfaCode }) // Envia ID e Código
-      });
+      const res = await fetch(`${API_URL}/api/auth/verify-mfa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser?.id, code: mfaCode }) });
       const data = await res.json();
-
       if (res.ok && data.valid) {
-        // Se o servidor disse OK:
         localStorage.setItem('theris_user', JSON.stringify(currentUser));
         localStorage.setItem('theris_profile', systemProfile);
         localStorage.setItem('theris_session_start', Date.now().toString());
@@ -129,6 +129,7 @@ export default function App() {
   };
 
   const handleMfaChange = (value: string) => {
+    // Permite apenas números, max 6
     const clean = value.replace(/\D/g, '').slice(0, 6);
     setMfaCode(clean);
   };
@@ -161,8 +162,10 @@ export default function App() {
         <h2 style={{ color: 'white', margin: 0 }}>Código de Segurança</h2>
         <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
           Enviamos um código para <strong>{currentUser?.email}</strong>.
+          <br /><span style={{ fontSize: '0.8rem', opacity: 0.7 }}>(Verifique o Console/Logs se estiver em teste)</span>
         </p>
 
+        {/* INPUT ÚNICO E GRANDE */}
         <input
           className="mfa-input-single"
           type="text"
@@ -186,7 +189,11 @@ export default function App() {
         <Bird size={60} color="#8b5cf6" style={{ marginBottom: 20 }} />
         <h1 style={{ fontSize: '2.5rem', fontWeight: 800, margin: '0 0 10px 0', background: 'linear-gradient(to right, #fff, #a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Theris OS</h1>
         <p style={{ color: '#9ca3af', fontSize: '1.1rem' }}>Governança de Identidade & Acessos</p>
-        {isLoading ? <p>Carregando...</p> : <button onClick={() => handleLogin()} className="btn-google"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" /> Continuar com Workspace</button>}
+        {isLoading ? (
+          <div style={{ marginTop: 20, color: '#8b5cf6' }}>Conectando ao servidor...</div>
+        ) : (
+          <button onClick={() => handleLogin()} className="btn-google"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" /> Continuar com Workspace</button>
+        )}
       </div>
     </div>
   );
