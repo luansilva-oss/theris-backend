@@ -1,25 +1,23 @@
 import { useEffect, useState } from 'react';
 import {
-  LayoutDashboard, Users, FileText, Server, LogOut, Bird,
-  Activity, ArrowLeft, Shield, Mail, ChevronDown, ChevronRight,
-  CheckCircle, XCircle, Clock, Crown, User as UserIcon, Zap,
-  TrendingUp, AlertCircle, Calendar
+  LayoutDashboard, Server, FileText, LogOut, Bird, Activity,
+  ArrowLeft, Shield, Mail, ChevronDown, ChevronRight, CheckCircle,
+  XCircle, Clock, Crown, Zap, User as UserIcon, Bell, Search
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
-// --- INTERFACES ---
-interface User { id: string; name: string; email: string; department?: { name: string }; }
-interface Tool { id: string; name: string; owner?: { name: string; email: string }; subOwner?: { name: string; email: string }; accesses?: { user: User; status: string }[]; }
+// --- TYPES ---
+interface User { id: string; name: string; email: string; }
+interface Tool { id: string; name: string; owner?: User; subOwner?: User; accesses?: { user: User; status: string }[]; }
 interface Request { id: string; details: string; status: string; createdAt: string; requester: User; type: string; }
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('theris_user');
-    return saved ? JSON.parse(saved) : null;
+    const s = localStorage.getItem('theris_user'); return s ? JSON.parse(s) : null;
   });
   const [systemProfile, setSystemProfile] = useState<SystemProfile>(() => (localStorage.getItem('theris_profile') as SystemProfile) || 'VIEWER');
   const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('theris_user'));
@@ -30,12 +28,12 @@ export default function App() {
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
 
-  // Stats para o Dashboard
+  // Stats Dinâmicos
   const stats = {
     pending: requests.filter(r => r.status.includes('PENDENTE')).length,
     approved: requests.filter(r => r.status === 'APROVADO').length,
-    total: requests.length,
-    myRequests: requests.filter(r => r.requester.id === currentUser?.id).length
+    users: 142, // Exemplo, poderia vir do backend
+    myReqs: requests.filter(r => r.requester.id === currentUser?.id).length
   };
 
   useEffect(() => { localStorage.setItem('theris_activeTab', activeTab); }, [activeTab]);
@@ -50,9 +48,9 @@ export default function App() {
       if (resTools.ok) {
         const toolsData = await resTools.json();
         setTools(toolsData);
-        const savedToolId = localStorage.getItem('theris_selectedToolId');
-        if (savedToolId && !selectedTool && activeTab === 'TOOLS') {
-          const found = toolsData.find((t: Tool) => t.id === savedToolId);
+        const savedId = localStorage.getItem('theris_selectedToolId');
+        if (savedId && !selectedTool && activeTab === 'TOOLS') {
+          const found = toolsData.find((t: Tool) => t.id === savedId);
           if (found) setSelectedTool(found);
         }
       }
@@ -63,7 +61,7 @@ export default function App() {
   useEffect(() => {
     if (isLoggedIn) {
       loadData();
-      const interval = setInterval(loadData, 15000);
+      const interval = setInterval(loadData, 10000);
       return () => clearInterval(interval);
     }
   }, [isLoggedIn]);
@@ -81,17 +79,15 @@ export default function App() {
     }
   });
 
-  const handleLogout = () => {
-    localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); setActiveTab('DASHBOARD'); setSelectedTool(null);
-  };
+  const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); setActiveTab('DASHBOARD'); setSelectedTool(null); };
 
   const handleApprove = async (id: string, action: 'APROVAR' | 'REPROVAR') => {
-    const note = window.prompt(action === 'APROVAR' ? "Observação (Opcional):" : "⚠️ Motivo da Reprovação (Obrigatório):");
+    const note = window.prompt(action === 'APROVAR' ? "Observação (Opcional):" : "⚠️ Motivo da Reprovação:");
     if (action === 'REPROVAR' && !note) return alert("Motivo obrigatório.");
     if (note === null) return;
     try {
-      const res = await fetch(`${API_URL}/api/solicitacoes/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: action, approverId: currentUser?.id, adminNote: note }) });
-      if (res.ok) { alert("Processado com sucesso!"); loadData(); }
+      await fetch(`${API_URL}/api/solicitacoes/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: action, approverId: currentUser?.id, adminNote: note }) });
+      loadData();
     } catch (e) { alert("Erro de conexão."); }
   };
 
@@ -102,270 +98,238 @@ export default function App() {
     }, {} as Record<string, User[]>);
   };
 
-  const getLevelIcon = (levelName: string) => {
-    const lower = levelName.toLowerCase();
-    if (lower.includes('admin') || lower.includes('owner')) return <Crown size={20} />;
-    if (lower.includes('gestor')) return <Shield size={20} />;
-    if (lower.includes('extra')) return <Zap size={20} />;
-    return <UserIcon size={20} />;
-  };
-
+  // --- RENDER ---
   if (!isLoggedIn) return (
     <div className="login-wrapper">
-      <div className="login-card">
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}><Bird size={50} color="#7C3AED" /></div>
-        <h1 style={{ fontSize: '2.2rem', fontWeight: 800, color: 'white', marginBottom: 10 }}>Theris OS</h1>
-        <p style={{ color: '#94a3b8', marginBottom: 40 }}>Governança de Identidade e Acessos</p>
-        <button onClick={() => handleLogin()} className="google-btn-custom"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="22" /> Entrar com Google</button>
+      <div className="login-card fade-in">
+        <Bird size={60} color="#8b5cf6" style={{ marginBottom: 20 }} />
+        <h1 style={{ fontSize: '2.5rem', fontWeight: 800, margin: '0 0 10px 0', background: 'linear-gradient(to right, #fff, #a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Theris OS</h1>
+        <p style={{ color: '#9ca3af', fontSize: '1.1rem' }}>Governança de Identidade & Acessos</p>
+        <button onClick={() => handleLogin()} className="google-btn-custom"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" /> Entrar com Workspace</button>
       </div>
     </div>
   );
 
   return (
     <div className="app-layout">
+      {/* SIDEBAR */}
       <aside className="sidebar">
-        <div className="brand-box"><Bird size={28} style={{ marginRight: 12, color: '#7C3AED' }} /> THERIS</div>
-        <div className="user-mini-profile">
-          <div style={{ width: 40, height: 40, background: 'linear-gradient(135deg, #7C3AED, #4c1d95)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '1.1rem' }}>{currentUser?.name.charAt(0)}</div>
-          <div><div style={{ fontSize: '0.95rem', color: 'white', fontWeight: 600 }}>{currentUser?.name.split(' ')[0]}</div><div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{systemProfile}</div></div>
-        </div>
+        <div className="brand-box"><Bird size={28} color="#8b5cf6" /> THERIS</div>
         <nav style={{ flex: 1 }}>
-          <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null); }}><LayoutDashboard size={20} /> Visão Geral</div>
-          <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null); }}><Server size={20} /> Ferramentas</div>
-          {['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(systemProfile) && <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={20} /> Auditoria</div>}
+          <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={20} /> Overview</div>
+          <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Server size={20} /> Ferramentas</div>
+          {['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(systemProfile) && <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={20} /> Logs</div>}
         </nav>
-        <button onClick={handleLogout} className="logout-btn"><LogOut size={20} /> Encerrar Sessão</button>
+        <div className="user-mini-profile">
+          <div style={{ width: 35, height: 35, borderRadius: '10px', background: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>{currentUser?.name.charAt(0)}</div>
+          <div><div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{currentUser?.name.split(' ')[0]}</div><div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{systemProfile}</div></div>
+        </div>
+        <button onClick={handleLogout} className="logout-btn"><LogOut size={16} /> Sair</button>
       </aside>
 
+      {/* MAIN AREA */}
       <main className="main-area">
         <header className="header-bar">
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc', letterSpacing: '-0.5px' }}>
-            Painel <span style={{ color: '#64748b', margin: '0 10px' }}>/</span> <span style={{ color: '#c4b5fd' }}>{activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab}</span>
-          </h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '6px 12px', borderRadius: '20px' }}>
-            <div style={{ width: 8, height: 8, background: '#10b981', borderRadius: '50%', boxShadow: '0 0 10px #10b981' }}></div> Online
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#e5e7eb' }}>{activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab}</h2>
+          <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+            <Search size={20} color="#9ca3af" />
+            <Bell size={20} color="#9ca3af" />
           </div>
         </header>
 
         <div className="content-scroll">
 
-          {/* --- DASHBOARD REMODELADO --- */}
+          {/* --- DASHBOARD BENTO GRID --- */}
           {activeTab === 'DASHBOARD' && (
-            <div style={{ maxWidth: 1100 }}>
-
-              {/* 1. HERO SECTION */}
-              <div className="hero-section">
-                <div>
-                  <h1 style={{ fontSize: '2.5rem', margin: 0, color: 'white', fontWeight: 800 }}>Olá, {currentUser?.name.split(' ')[0]}</h1>
-                  <p style={{ color: '#94a3b8', margin: '10px 0 0 0', fontSize: '1.1rem' }}>Aqui está o resumo da governança hoje.</p>
-                </div>
-                <div style={{ display: 'flex', gap: 10, color: '#cbd5e1', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '10px 15px', borderRadius: '12px' }}>
-                  <Calendar size={18} />
-                  <span>{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+            <div className="bento-grid fade-in">
+              {/* HERO */}
+              <div className="premium-card bento-hero">
+                <div className="hero-content">
+                  <h1>Bem-vindo, {currentUser?.name.split(' ')[0]}</h1>
+                  <p>Aqui está o panorama de governança de hoje.</p>
                 </div>
               </div>
 
-              {/* 2. STATS GRID (KPIs) */}
-              <div className="stats-grid">
-                <div className="stat-card">
-                  <div className="stat-value" style={{ color: '#fbbf24' }}>{stats.pending}</div>
-                  <div className="stat-label">Pendentes</div>
-                  <Clock className="stat-icon-bg" size={60} color="#fbbf24" />
-                </div>
-                <div className="stat-card">
-                  <div className="stat-value" style={{ color: '#34d399' }}>{stats.approved}</div>
-                  <div className="stat-label">Aprovados</div>
-                  <CheckCircle className="stat-icon-bg" size={60} color="#34d399" />
-                </div>
-                <div className="stat-card">
-                  <div className="stat-value" style={{ color: '#c4b5fd' }}>{tools.length}</div>
-                  <div className="stat-label">Ferramentas</div>
-                  <Server className="stat-icon-bg" size={60} color="#c4b5fd" />
-                </div>
-                <div className="stat-card">
-                  <div className="stat-value">{stats.myRequests}</div>
-                  <div className="stat-label">Meus Pedidos</div>
-                  <UserIcon className="stat-icon-bg" size={60} color="white" />
+              {/* DATE */}
+              <div className="premium-card bento-date">
+                <div className="date-display">
+                  <div className="date-big">{new Date().getDate()}</div>
+                  <div className="date-small">{new Date().toLocaleDateString('pt-BR', { month: 'long', weekday: 'short' })}</div>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 30 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 25 }}>
+              {/* STATS */}
+              <div className="premium-card bento-stat">
+                <div className="stat-box">
+                  <div className="stat-label"><Clock size={16} color="#fbbf24" /> PENDENTES</div>
+                  <div className="stat-number">{stats.pending}</div>
+                </div>
+                <Clock className="stat-icon-faded" />
+              </div>
 
-                  {/* 3. LISTA DE TAREFAS (PENDÊNCIAS) */}
-                  {['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(systemProfile) && (
-                    <div className="glass-card">
-                      <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 20px 0' }}>
-                        <AlertCircle size={22} color="#fbbf24" /> Precisa da sua atenção
-                      </h3>
+              <div className="premium-card bento-stat">
+                <div className="stat-box">
+                  <div className="stat-label"><CheckCircle size={16} color="#10b981" /> APROVADOS</div>
+                  <div className="stat-number">{stats.approved}</div>
+                </div>
+                <CheckCircle className="stat-icon-faded" />
+              </div>
 
-                      {requests.filter(r => r.status.includes('PENDENTE')).length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '40px', color: '#64748b', background: 'rgba(255,255,255,0.02)', borderRadius: '16px' }}>
-                          <CheckCircle size={40} style={{ marginBottom: 15, opacity: 0.3 }} />
-                          <p>Parabéns! Nenhuma pendência na fila.</p>
+              <div className="premium-card bento-stat">
+                <div className="stat-box">
+                  <div className="stat-label"><Server size={16} color="#c4b5fd" /> APPS</div>
+                  <div className="stat-number">{tools.length}</div>
+                </div>
+                <Server className="stat-icon-faded" />
+              </div>
+
+              <div className="premium-card bento-stat">
+                <div className="stat-box">
+                  <div className="stat-label"><UserIcon size={16} color="#fff" /> MEUS</div>
+                  <div className="stat-number">{stats.myReqs}</div>
+                </div>
+              </div>
+
+              {/* LISTA DE PENDÊNCIAS */}
+              <div className="premium-card bento-list">
+                <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 10 }}><Zap size={18} color="#fbbf24" /> Ação Necessária</h3>
+                {requests.filter(r => r.status.includes('PENDENTE')).length === 0 ? (
+                  <p style={{ color: '#6b7280', textAlign: 'center', marginTop: 40 }}>Tudo em dia! Nenhuma pendência.</p>
+                ) : (
+                  <div style={{ marginTop: 20 }}>
+                    {requests.filter(r => r.status.includes('PENDENTE')).map(r => (
+                      <div key={r.id} className="action-item">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
+                          <div className="action-avatar">{r.requester?.name.charAt(0)}</div>
+                          <div>
+                            <div style={{ fontWeight: 600 }}>{JSON.parse(r.details).info || r.type}</div>
+                            <div style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Solicitado por {r.requester?.name.split(' ')[0]}</div>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="request-list">
-                          {requests.filter(r => r.status.includes('PENDENTE')).map(r => {
-                            const detail = JSON.parse(r.details);
-                            return (
-                              <div key={r.id} className="request-card">
-                                <div className="req-info">
-                                  <div className="req-avatar">{r.requester?.name.charAt(0)}</div>
-                                  <div>
-                                    <div style={{ fontWeight: 600, color: 'white' }}>{detail.info || detail.tool || 'Solicitação'}</div>
-                                    <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                                      Solicitado por <span style={{ color: '#cbd5e1' }}>{r.requester?.name}</span>
-                                      {detail.target && <span style={{ marginLeft: 8, background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: 4 }}>Nível: {detail.target}</span>}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="req-actions">
-                                  <button onClick={() => handleApprove(r.id, 'APROVAR')} className="btn-accept"><CheckCircle size={16} /> Aprovar</button>
-                                  <button onClick={() => handleApprove(r.id, 'REPROVAR')} className="btn-deny"><XCircle size={16} /> Recusar</button>
-                                </div>
-                              </div>
-                            );
-                          })}
+                        <div className="action-btns">
+                          <button className="btn-ok" onClick={() => handleApprove(r.id, 'APROVAR')}>Aprovar</button>
+                          <button className="btn-no" onClick={() => handleApprove(r.id, 'REPROVAR')}>Recusar</button>
                         </div>
-                      )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* FEED / TIMELINE */}
+              <div className="premium-card bento-feed">
+                <h3 style={{ marginTop: 0, marginBottom: 25 }}>Atividade Recente</h3>
+                <div className="timeline-wrapper">
+                  {requests.slice(0, 5).map(r => (
+                    <div key={r.id} className="timeline-row">
+                      <div className="t-icon">
+                        {r.status === 'APROVADO' ? <CheckCircle size={18} color="#10b981" /> : r.status.includes('PENDENTE') ? <Clock size={18} color="#fbbf24" /> : <XCircle size={18} color="#ef4444" />}
+                      </div>
+                      <div className="t-content">
+                        <h4>{JSON.parse(r.details).info || JSON.parse(r.details).tool || 'Solicitação'}</h4>
+                        <p>{r.status} • {r.requester?.name.split(' ')[0]} • {new Date(r.createdAt).toLocaleDateString()}</p>
+                      </div>
                     </div>
-                  )}
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
-                  {/* MEUS PEDIDOS (CARD VISUAL) */}
-                  <div className="glass-card">
-                    <h3 style={{ margin: '0 0 20px 0' }}>Meus Pedidos Recentes</h3>
-                    {requests.filter(r => r.requester.id === currentUser?.id).length === 0 ? (
-                      <p style={{ color: '#64748b' }}>Nenhum histórico.</p>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {requests.filter(r => r.requester.id === currentUser?.id).slice(0, 5).map(r => (
-                          <div key={r.id} style={{ padding: 15, background: 'rgba(255,255,255,0.03)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 8, height: 8, borderRadius: '50%', background: r.status === 'APROVADO' ? '#10b981' : r.status.includes('PENDENTE') ? '#fbbf24' : '#ef4444' }}></div>
-                              <span>{JSON.parse(r.details).info || r.type}</span>
+          {/* --- TOOLS CATALOG --- */}
+          {activeTab === 'TOOLS' && !selectedTool && (
+            <div className="fade-in">
+              <h2 style={{ fontSize: '1.8rem', fontWeight: 800, marginBottom: 30 }}>Catálogo de Sistemas</h2>
+              <div className="tools-bento">
+                {tools.map(tool => (
+                  <div key={tool.id} className="tool-tile" onClick={() => setSelectedTool(tool)}>
+                    <div className="tile-glow"></div>
+                    <Server size={32} color="#8b5cf6" style={{ marginBottom: 15 }} />
+                    <h3>{tool.name}</h3>
+                    <p>{tool.owner?.name.split(' ')[0] || 'Sem Owner'}</p>
+                    <div style={{ marginTop: 20, fontSize: '0.8rem', color: '#8b5cf6', fontWeight: 600 }}>
+                      {tool.accesses?.length || 0} Membros
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* --- TOOL DETAILS --- */}
+          {activeTab === 'TOOLS' && selectedTool && (
+            <div className="fade-in" style={{ maxWidth: 1000, margin: '0 auto' }}>
+              <button onClick={() => { setSelectedTool(null); setExpandedLevel(null) }} className="btn-back"><ArrowLeft size={18} /> Voltar</button>
+
+              <div className="premium-card" style={{ marginBottom: 30, display: 'flex', alignItems: 'center', gap: 30 }}>
+                <div style={{ width: 80, height: 80, background: 'rgba(139, 92, 246, 0.2)', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Server size={40} color="#8b5cf6" />
+                </div>
+                <div>
+                  <h1 style={{ margin: 0, fontSize: '2rem' }}>{selectedTool.name}</h1>
+                  <p style={{ color: '#9ca3af', margin: '5px 0 0 0' }}>Matriz de Governança de Acessos</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 40 }}>
+                <div className="premium-card">
+                  <small style={{ textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', fontSize: '0.75rem' }}>Owner Responsável</small>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 15, marginTop: 15 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '10px', background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>{selectedTool.owner?.name.charAt(0) || '?'}</div>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{selectedTool.owner?.name || 'Não definido'}</div>
+                      <div style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{selectedTool.owner?.email}</div>
+                    </div>
+                  </div>
+                </div>
+                {selectedTool.subOwner && (
+                  <div className="premium-card">
+                    <small style={{ textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', fontSize: '0.75rem' }}>Sub-Owner (Backup)</small>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 15, marginTop: 15 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: '10px', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>{selectedTool.subOwner.name.charAt(0)}</div>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{selectedTool.subOwner.name}</div>
+                        <div style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{selectedTool.subOwner.email}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <h3 style={{ marginBottom: 20 }}>Níveis de Permissão</h3>
+              <div className="level-container">
+                {Object.keys(getGroupedAccesses(selectedTool)).length === 0 && <p style={{ color: '#6b7280' }}>Nenhum usuário cadastrado.</p>}
+                {Object.entries(getGroupedAccesses(selectedTool)).sort((a, b) => a[0].localeCompare(b[0])).map(([level, users]) => (
+                  <div key={level} className="level-block">
+                    <div className="level-head" onClick={() => setExpandedLevel(expandedLevel === level ? null : level)}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        {level.toLowerCase().includes('admin') ? <Crown size={20} color="#fbbf24" /> : <Shield size={20} color="#9ca3af" />}
+                        <span style={{ fontWeight: 600, fontSize: '1.05rem' }}>{level}</span>
+                        <span style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem' }}>{users.length}</span>
+                      </div>
+                      {expandedLevel === level ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                    </div>
+                    {expandedLevel === level && (
+                      <div className="level-body">
+                        {users.map(u => (
+                          <div key={u.id} className="user-chip">
+                            <div className="chip-avatar">{u.name.charAt(0)}</div>
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <div>{u.name}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{u.email.split('@')[0]}</div>
                             </div>
-                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{new Date(r.createdAt).toLocaleDateString()}</span>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
-                </div>
-
-                {/* 4. TIMELINE FEED */}
-                <div className="glass-card">
-                  <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 25 }}><Activity size={22} color="#7C3AED" /> Feed Global</h3>
-                  <div className="timeline-container">
-                    {requests.slice(0, 6).map(r => (
-                      <div key={r.id} className="timeline-item">
-                        <div className="timeline-dot" style={{ borderColor: r.status === 'APROVADO' ? '#10b981' : r.status === 'REPROVADO' ? '#ef4444' : '#fbbf24' }}></div>
-                        <div className="timeline-content">
-                          <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{JSON.parse(r.details).info || JSON.parse(r.details).tool}</div>
-                          <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 4 }}>
-                            {r.status === 'APROVADO' ? 'Aprovado para' : r.status === 'REPROVADO' ? 'Recusado para' : 'Solicitado por'}
-                            <strong style={{ color: '#cbd5e1', marginLeft: 4 }}>{r.requester?.name.split(' ')[0]}</strong>
-                          </div>
-                          <span className="timeline-time">{new Date(r.createdAt).toLocaleString()}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'TOOLS' && !selectedTool && (
-            <div className="fade-in">
-              <div style={{ marginBottom: 30, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ fontSize: '1.5rem' }}>Catálogo de Ferramentas</h3>
-                <span style={{ background: '#334155', padding: '6px 12px', borderRadius: 8, fontSize: '0.85rem', fontWeight: 600 }}>{tools.length} Sistemas</span>
-              </div>
-              <div className="tools-grid">
-                {tools.map(tool => (
-                  <div key={tool.id} className="tool-card" onClick={() => setSelectedTool(tool)}>
-                    <div className="tool-icon-placeholder"><Server size={28} /></div>
-                    <h4 style={{ fontSize: '1.2rem', margin: '0 0 8px 0', color: 'white', fontWeight: 700 }}>{tool.name}</h4>
-                    <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: 20 }}>Owner: <span style={{ color: '#cbd5e1' }}>{tool.owner?.name.split(' ')[0] || 'N/A'}</span></p>
-                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 15, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', color: '#c4b5fd' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Users size={14} /> {tool.accesses?.length || 0} Usuários</span>
-                      <span style={{ fontWeight: 600 }}>Acessar →</span>
-                    </div>
-                  </div>
                 ))}
               </div>
             </div>
           )}
 
-          {activeTab === 'TOOLS' && selectedTool && (
-            <div className="fade-in">
-              <button onClick={() => { setSelectedTool(null); setExpandedLevel(null); localStorage.removeItem('theris_selectedToolId'); }} className="btn-back"><ArrowLeft size={18} /> Voltar para lista</button>
+          {activeTab === 'HISTORY' && <div className="premium-card"><h3 style={{ margin: 0 }}>Logs de Auditoria</h3><p>Funcionalidade em desenvolvimento.</p></div>}
 
-              <div className="glass-card" style={{ marginBottom: 30, background: 'linear-gradient(120deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9))' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 25, marginBottom: 25 }}>
-                  <div className="tool-icon-placeholder" style={{ width: 64, height: 64, marginBottom: 0, background: 'rgba(124, 58, 237, 0.2)' }}><Server size={32} color="#a78bfa" /></div>
-                  <div><h1 style={{ margin: 0, fontSize: '1.8rem' }}>{selectedTool.name}</h1><p style={{ color: '#94a3b8', margin: '5px 0 0 0' }}>Painel de Governança e Matriz de Acessos</p></div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-                  <div style={{ padding: 20, background: 'rgba(255,255,255,0.03)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10 }}>Owner Responsável</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      {selectedTool.owner ? (
-                        <>
-                          <div style={{ width: 36, height: 36, borderRadius: '10px', background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>{selectedTool.owner.name.charAt(0)}</div>
-                          <div><div style={{ fontWeight: 600, color: 'white' }}>{selectedTool.owner.name}</div><div style={{ fontSize: '0.8rem', color: '#64748b' }}>{selectedTool.owner.email}</div></div>
-                        </>
-                      ) : <span style={{ color: '#ef4444' }}>Não definido</span>}
-                    </div>
-                  </div>
-                  {selectedTool.subOwner && (
-                    <div style={{ padding: 20, background: 'rgba(255,255,255,0.03)', borderRadius: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10 }}>Sub-Owner (Backup)</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: '10px', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>{selectedTool.subOwner.name.charAt(0)}</div>
-                        <div><div style={{ fontWeight: 600, color: 'white' }}>{selectedTool.subOwner.name}</div><div style={{ fontSize: '0.8rem', color: '#64748b' }}>{selectedTool.subOwner.email}</div></div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <h3 style={{ marginBottom: 25, fontSize: '1.3rem' }}>Níveis de Acesso</h3>
-              <div className="level-container">
-                {Object.entries(getGroupedAccesses(selectedTool)).sort((a, b) => a[0].localeCompare(b[0])).map(([levelName, users]) => (
-                  <div key={levelName} className={`level-card ${expandedLevel === levelName ? 'expanded' : ''}`}>
-                    <div className="level-header" onClick={() => setExpandedLevel(expandedLevel === levelName ? null : levelName)}>
-                      <div className="level-info">
-                        <div className="level-icon">{getLevelIcon(levelName)}</div>
-                        <h4 className="level-title">{levelName}</h4>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
-                        <span className="level-count">{users.length} usuários</span>
-                        {expandedLevel === levelName ? <ChevronDown size={20} color="#7C3AED" /> : <ChevronRight size={20} color="#64748b" />}
-                      </div>
-                    </div>
-                    <div className={`user-grid-wrapper ${expandedLevel === levelName ? 'open' : ''}`}>
-                      <div className="user-grid">
-                        {users.map(u => (
-                          <div key={u.id} className="user-card">
-                            <div className="user-avatar">{u.name.charAt(0)}</div>
-                            <div style={{ overflow: 'hidden' }}>
-                              <div style={{ fontWeight: 600, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
-                              <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}><Mail size={12} /> {u.email}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {Object.keys(getGroupedAccesses(selectedTool)).length === 0 && <p style={{ color: '#64748b', textAlign: 'center' }}>Nenhum nível de acesso configurado.</p>}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'HISTORY' && <div className="glass-card"><h3>Auditoria</h3><p style={{ color: '#94a3b8' }}>Em desenvolvimento.</p></div>}
         </div>
       </main>
     </div>
