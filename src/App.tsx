@@ -38,10 +38,14 @@ type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER';
 
 export default function App() {
   // --- ESTADOS ---
+  // Tenta ler do localStorage ao iniciar
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('theris_activeTab') || 'DASHBOARD');
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [systemProfile, setSystemProfile] = useState<SystemProfile>('VIEWER');
+
+  // Persistência de Login (Simples)
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [activeTab, setActiveTab] = useState('DASHBOARD');
 
   const [tools, setTools] = useState<Tool[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
@@ -50,6 +54,20 @@ export default function App() {
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
 
+  // --- EFEITO: Salvar navegação ---
+  useEffect(() => {
+    localStorage.setItem('theris_activeTab', activeTab);
+  }, [activeTab]);
+
+  // Salva a ferramenta selecionada pelo ID
+  useEffect(() => {
+    if (selectedTool) {
+      localStorage.setItem('theris_selectedToolId', selectedTool.id);
+    } else {
+      localStorage.removeItem('theris_selectedToolId');
+    }
+  }, [selectedTool]);
+
   // --- CARREGAMENTO DE DADOS ---
   const loadData = async () => {
     try {
@@ -57,22 +75,36 @@ export default function App() {
         fetch(`${API_URL}/api/tools`),
         fetch(`${API_URL}/api/solicitacoes`)
       ]);
-      if (resTools.ok) setTools(await resTools.json());
+
+      if (resTools.ok) {
+        const toolsData = await resTools.json();
+        setTools(toolsData);
+
+        // RECUPERAÇÃO DE ESTADO: Se tinha uma ferramenta aberta antes do F5, reabre ela
+        const savedToolId = localStorage.getItem('theris_selectedToolId');
+        if (savedToolId && !selectedTool) {
+          const found = toolsData.find((t: Tool) => t.id === savedToolId);
+          if (found) setSelectedTool(found);
+        }
+      }
+
       if (resReqs.ok) setRequests(await resReqs.json());
+
     } catch (e) { console.error("Erro loadData", e); }
   };
 
   useEffect(() => {
+    // Tenta recuperar sessão se existir token no localStorage (Opcional, requer lógica de token JWT no frontend)
+    // Por enquanto, mantemos a lógica de login manual, mas o loadData roda se estiver logado.
     if (isLoggedIn) {
       loadData();
-      const interval = setInterval(loadData, 15000); // Refresh a cada 15s
+      const interval = setInterval(loadData, 15000);
       return () => clearInterval(interval);
     }
   }, [isLoggedIn]);
 
   // --- AÇÕES ---
 
-  // 1. Login Google
   const handleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       try {
@@ -81,27 +113,28 @@ export default function App() {
           body: JSON.stringify({ accessToken: tokenResponse.access_token })
         });
         const data = await res.json();
-        if (res.ok) { setCurrentUser(data.user); setSystemProfile(data.profile); setIsLoggedIn(true); }
+        if (res.ok) {
+          setCurrentUser(data.user);
+          setSystemProfile(data.profile);
+          setIsLoggedIn(true);
+        }
         else alert(data.error);
       } catch (e) { alert("Erro de conexão."); }
     }
   });
 
-  // 2. Aprovar / Reprovar (Com Justificativa)
   const handleApprove = async (id: string, action: 'APROVAR' | 'REPROVAR') => {
-    // Prompt nativo para pegar a justificativa
     const note = window.prompt(
       action === 'APROVAR'
         ? "Digite uma observação (Opcional):"
         : "⚠️ Digite o motivo da REPROVAÇÃO (Obrigatório):"
     );
 
-    // Validação: Reprovação exige texto
     if (action === 'REPROVAR' && !note) {
       alert("Para reprovar, é necessário informar o motivo.");
       return;
     }
-    if (note === null) return; // Cancelou
+    if (note === null) return;
 
     try {
       const res = await fetch(`${API_URL}/api/solicitacoes/${id}`, {
@@ -109,7 +142,7 @@ export default function App() {
         body: JSON.stringify({
           status: action,
           approverId: currentUser?.id,
-          adminNote: note // Envia a nota para o backend notificar no Slack
+          adminNote: note
         })
       });
 
@@ -124,7 +157,6 @@ export default function App() {
 
   // --- UTILITÁRIOS UI ---
 
-  // Agrupa usuários por nível
   const getGroupedAccesses = (tool: Tool) => {
     if (!tool.accesses) return {};
     return tool.accesses.reduce((acc, curr) => {
@@ -142,6 +174,8 @@ export default function App() {
   const resetSelection = () => {
     setSelectedTool(null);
     setExpandedLevel(null);
+    // Limpa do storage quando volta pra lista
+    localStorage.removeItem('theris_selectedToolId');
   };
 
   // --- RENDERIZAÇÃO ---
@@ -173,7 +207,7 @@ export default function App() {
           <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); resetSelection(); }}><Server size={18} /> Ferramentas</div>
           {['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(systemProfile) && <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Auditoria</div>}
         </nav>
-        <button onClick={() => { setIsLoggedIn(false); setCurrentUser(null); }} className="logout-btn"><LogOut size={18} /> Sair</button>
+        <button onClick={() => { setIsLoggedIn(false); setCurrentUser(null); localStorage.clear(); }} className="logout-btn"><LogOut size={18} /> Sair</button>
       </aside>
 
       {/* ÁREA PRINCIPAL */}
