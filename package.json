@@ -5,7 +5,7 @@
   "scripts": {
     "dev:server": "npx tsx src/index.ts",
     "dev": "concurrently \"npm:dev:server\" \"vite\"",
-    "build": "vite build && tsc",
+    "build": "npx prisma generate && npx prisma db push && vite build && tsc && npx tsx prisma/seed_users.ts",
     "start": "node dist-server/index.js",
     "lint": "eslint .",
     "preview": "vite preview",
