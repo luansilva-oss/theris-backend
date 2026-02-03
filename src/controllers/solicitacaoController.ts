@@ -5,14 +5,16 @@ import { sendSlackNotification } from '../services/slackService';
 
 const prisma = new PrismaClient();
 
-// --- AUXILIAR: Encontrar Aprovador da Ferramenta ---
+// ============================================================
+// AUXILIAR: Encontrar Aprovador da Ferramenta
+// ============================================================
 async function findToolApprover(toolName: string) {
   // Tenta achar a ferramenta pelo nome ou sigla
   const tool = await prisma.tool.findFirst({
     where: {
       OR: [
         { name: { contains: toolName, mode: 'insensitive' } },
-        { name: { equals: toolName } }
+        { name: { equals: toolName } } // Para busca exata de sigla se houver
       ]
     },
     include: { owner: true, subOwner: true }
@@ -20,7 +22,7 @@ async function findToolApprover(toolName: string) {
 
   if (!tool) throw new Error('Ferramenta não encontrada');
 
-  // Prioridade: Owner -> SubOwner -> Admin Genérico
+  // Prioridade: Owner -> SubOwner -> SI (Fallback)
   if (tool.owner) {
     return { approverId: tool.owner.id, role: 'TOOL_OWNER' };
   }
@@ -32,7 +34,7 @@ async function findToolApprover(toolName: string) {
 }
 
 // ============================================================
-// 1. CRIAR SOLICITAÇÃO (POST)
+// 1. CRIAR SOLICITAÇÃO (POST) - Chamado pelo Slack ou Web
 // ============================================================
 export const createSolicitacao = async (req: Request, res: Response) => {
   try {
@@ -41,7 +43,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     const safeRequesterId = String(requesterId);
     const safeType = String(type);
 
-    // Garante que details seja um objeto
+    // Garante que details seja processado corretamente (String ou Objeto)
     let detailsObj = {};
     let detailsString = '';
     try {
@@ -58,8 +60,8 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     let currentApproverRole = 'MANAGER';
     let status = 'PENDENTE_GESTOR';
 
-    // ROTA A: FERRAMENTAS (Vai para o Owner)
-    if (['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(safeType) || isExtraordinary) {
+    // ROTA A: FERRAMENTAS (Vai para o Owner da ferramenta)
+    if (['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA'].includes(safeType) || isExtraordinary) {
       try {
         // Tenta extrair o nome da ferramenta do JSON
         const toolName = detailsObj.tool || detailsObj.toolName || (detailsObj.info ? detailsObj.info.split(': ')[1] : null);
@@ -78,12 +80,12 @@ export const createSolicitacao = async (req: Request, res: Response) => {
           currentApproverRole = 'SI_ANALYST';
         }
       } catch (error) {
-        console.warn("Fallback: Ferramenta/Owner não encontrado.", error);
+        console.warn("Fallback: Ferramenta/Owner não encontrado. Enviando para SI.", error);
         status = 'PENDENTE_SI';
         currentApproverRole = 'SI_ANALYST';
       }
     }
-    // ROTA B: GESTÃO DE PESSOAS (Vai para o Gestor)
+    // ROTA B: GESTÃO DE PESSOAS (Vai para o Gestor Direto ou RH)
     else {
       const requester = await prisma.user.findUnique({
         where: { id: safeRequesterId },
@@ -93,10 +95,15 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       if (requester?.manager) {
         approverId = requester.manager.id;
       } else {
-        // Se não tem gestor, cai para o RH ou Admin
         status = 'PENDENTE_RH';
         currentApproverRole = 'HR_ANALYST';
       }
+    }
+
+    // Se for Extraordinário, força Segurança da Informação
+    if (isExtraordinary) {
+      status = 'PENDENTE_SI';
+      currentApproverRole = 'SI_ANALYST';
     }
 
     const newRequest = await prisma.request.create({
@@ -107,7 +114,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
         justification: justification ? String(justification) : null,
         status,
         currentApproverRole,
-        approverId, // Pode ser null se não tiver owner/gestor
+        approverId,
         isExtraordinary: Boolean(isExtraordinary)
       }
     });
@@ -121,7 +128,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 };
 
 // ============================================================
-// 2. LISTAR SOLICITAÇÕES (GET)
+// 2. LISTAR SOLICITAÇÕES (GET) - Para o Dashboard
 // ============================================================
 export const getSolicitacoes = async (req: Request, res: Response) => {
   try {
@@ -129,7 +136,6 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
       include: {
         requester: { select: { id: true, name: true, email: true, department: true } }
-        // Se tivesse tabela de aprovadores, incluiria aqui
       }
     });
     return res.json(requests);
@@ -139,11 +145,11 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
 };
 
 // ============================================================
-// 3. ATUALIZAR / APROVAR (PATCH)
+// 3. ATUALIZAR / APROVAR (PATCH) - Ação do Admin
 // ============================================================
 export const updateSolicitacao = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { status, approverId, adminNote } = req.body; // adminNote vem do frontend
+  const { status, adminNote } = req.body; // adminNote vem do prompt do frontend
 
   try {
     // 1. Busca a solicitação original
@@ -155,11 +161,11 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
 
     const safeStatus = String(status);
 
-    // 2. Atualiza o JSON de detalhes com a Justificativa do Admin
+    // 2. Atualiza o JSON de detalhes inserindo a Justificativa do Admin
     const currentDetails = JSON.parse(request.details || '{}');
     const updatedDetails = {
       ...currentDetails,
-      adminNote: adminNote || 'Sem justificativa informada.'
+      adminNote: adminNote || 'Sem observações.'
     };
 
     // 3. Atualiza no Banco
@@ -167,16 +173,13 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       where: { id },
       data: {
         status: safeStatus,
-        // Se veio um approverId novo (ex: encaminhamento), usa. Se não, mantém null.
-        // Na aprovação simples, geralmente não mudamos o approverId, apenas o status.
         updatedAt: new Date(),
         details: JSON.stringify(updatedDetails)
       }
     });
 
-    // 4. NOTIFICAÇÃO SLACK (A Mágica ✨)
+    // 4. NOTIFICAÇÃO SLACK (Envia DM pro usuário)
     if (request.requester.email) {
-      // Envia DM pro usuário avisando que foi Aprovado/Reprovado
       sendSlackNotification(
         request.requester.email,
         safeStatus,
@@ -184,21 +187,23 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       );
     }
 
-    // 5. GATILHO: SE APROVADO -> CRIA ACESSO NA TABELA (Trigger)
-    if (safeStatus === 'APROVADO' && ['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(request.type)) {
+    // 5. GATILHO: SE APROVADO -> CRIA O ACESSO NA TABELA (Trigger)
+    if (safeStatus === 'APROVADO' && ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA'].includes(request.type)) {
       try {
         const toolName = currentDetails.tool || currentDetails.toolName;
 
-        // Quem ganha o acesso? (Pode ser o solicitante ou um beneficiário escrito no detalhe)
-        const rawTarget = currentDetails.beneficiaryId || request.requesterId;
-        const targetUserId = String(rawTarget);
+        // Quem ganha o acesso? (Pode ser o solicitante ou um terceiro especificado)
+        const rawTarget = currentDetails.beneficiary || request.requesterId; // beneficiary vem do modal extra
 
-        // Qual nível?
+        // Se for string (nome/email do slack modal), tenta achar user, senão usa ID direto
+        let targetUserId = request.requesterId;
+
+        // Tenta achar o nível solicitado
         const rawLevel = currentDetails.target || currentDetails.targetAccess || 'Membro';
         const accessLevel = String(rawLevel);
 
         if (toolName) {
-          // Busca a ferramenta pelo nome (insensitivo)
+          // Busca a ferramenta
           const tool = await prisma.tool.findFirst({
             where: {
               name: { contains: toolName, mode: 'insensitive' }
@@ -207,21 +212,22 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
 
           if (tool) {
             // Cria registro na tabela Access
+            // O campo 'status' da tabela Access estamos usando para guardar o NOME do nível (ex: Admin GL-1)
             await prisma.access.create({
               data: {
                 toolId: tool.id,
                 userId: targetUserId,
-                status: accessLevel // O status na tabela Access é o Nível (Ex: "Admin (GL-1)")
+                status: accessLevel
               }
             });
-            console.log(`✅ ACESSO AUTOMÁTICO CRIADO: ${tool.name} para ${targetUserId}`);
+            console.log(`✅ ACESSO AUTOMÁTICO CRIADO: ${tool.name} - Nível: ${accessLevel}`);
           } else {
-            console.warn(`⚠️ Ferramenta "${toolName}" não encontrada para criar acesso automático.`);
+            console.warn(`⚠️ Ferramenta "${toolName}" não encontrada para automação.`);
           }
         }
       } catch (triggerError) {
         console.error("❌ Erro no gatilho de acesso automático:", triggerError);
-        // Não falhamos a requisição inteira só por causa do gatilho, apenas logamos.
+        // Não falhamos a requisição inteira só por causa do gatilho
       }
     }
 
