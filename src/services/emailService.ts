@@ -1,59 +1,53 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
+
+// Inicializa a API
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const sendMfaEmail = async (to: string, code: string) => {
-    // 1. Configurações
-    const user = process.env.EMAIL_USER;
-    const pass = process.env.EMAIL_PASS;
-    const host = 'smtp.gmail.com';
-    const port = 465;
 
-    if (!user || !pass) {
+    // Verifica a chave
+    if (!process.env.RESEND_API_KEY) {
+        console.error("⚠️ RESEND_API_KEY não configurada.");
         console.log(`🔑 CÓDIGO (FALLBACK): ${code}`);
         return;
     }
 
-    // 2. Transporter com FORÇA BRUTA de IPv4
-    const transporter = nodemailer.createTransport({
-        host: host,
-        port: port,
-        secure: true, // Porta 465 exige true
-        auth: {
-            user: user,
-            pass: pass
-        },
-        // --- AQUI ESTÁ O TRUQUE ---
-        // Força o Node a usar apenas IPv4 (resolve 80% dos timeouts no Render)
-        family: 4,
-        // -------------------------
-        tls: {
-            rejectUnauthorized: false
-        },
-        // Logs detalhados para vermos o que acontece "por baixo do capô"
-        logger: true,
-        debug: true,
-        // Timeouts curtos para não ficar "pendurado" se falhar
-        connectionTimeout: 10000
-    });
-
     const html = `
-    <div style="font-family: sans-serif; padding: 20px;">
-        <h2>Theris OS</h2>
-        <p>Seu código: <strong>${code}</strong></p>
+    <div style="font-family: sans-serif; padding: 20px; background: #f3f4f6;">
+      <div style="max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; border: 1px solid #e5e7eb;">
+        <h2 style="color: #7C3AED; margin: 0; text-align: center;">Theris OS</h2>
+        <p style="text-align: center; color: #4b5563;">Seu código de verificação:</p>
+        <div style="background: #f9fafb; padding: 15px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #111827; border: 1px solid #e5e7eb; border-radius: 8px; margin: 20px 0;">
+          ${code}
+        </div>
+        <p style="text-align: center; font-size: 12px; color: #9ca3af;">Válido por 5 minutos.</p>
+      </div>
     </div>
     `;
 
     try {
-        console.log(`🔌 Tentando conectar ao Gmail via IPv4...`);
-        await transporter.sendMail({
-            from: `"Theris Security" <${user}>`,
-            to,
-            subject: 'Theris - Código de Acesso',
-            html
-        });
-        console.log(`✅ SUCESSO! Email enviado.`);
+        console.log(`📤 Enviando via Resend API para ${to}...`);
 
-    } catch (error: any) {
-        console.error('❌ ERRO FINAL SMTP:', error.message);
+        const data = await resend.emails.send({
+            // ⚠️ IMPORTANTE: 
+            // Se ainda não verificaste o domínio 'grupo-3c.com' no painel do Resend, 
+            // tens de usar 'onboarding@resend.dev' aqui.
+            // Se já verificaste, usa 'si@grupo-3c.com'.
+            from: 'Theris Security <onboarding@resend.dev>',
+            to: [to],
+            subject: '🔐 Código de Acesso - Theris',
+            html: html,
+        });
+
+        if (data.error) {
+            console.error('❌ Erro Resend:', data.error);
+            throw new Error(data.error.message);
+        }
+
+        console.log(`✅ Email enviado com sucesso! ID: ${data.data?.id}`);
+
+    } catch (error) {
+        console.error('❌ Falha no envio (API):', error);
         console.log('------------------------------------------------');
         console.log(`🔑 CÓDIGO DE ACESSO (FALLBACK): ${code}`);
         console.log('------------------------------------------------');
