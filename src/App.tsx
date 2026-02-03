@@ -106,7 +106,7 @@ export default function App() {
 
         <button onClick={() => handleLogin()} className="google-btn-custom">
           <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="G" />
-          Entrar com Google Institucional
+          Entrar com Google
         </button>
 
         <p style={{ marginTop: 20, fontSize: '0.8rem', color: '#475569' }}>
