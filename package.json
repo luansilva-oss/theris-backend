@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "commonjs",
   "scripts": {
-    "dev": "vite",
+    "dev:server": "npx tsx src/index.ts",
+    "dev": "concurrently \"npm:dev:server\" \"vite\"",
     "build": "vite build && tsc",
     "start": "node dist-server/index.js",
     "lint": "eslint .",
@@ -45,6 +46,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "devDependencies": {
-    "@types/nodemailer": "^7.0.9"
+    "@types/nodemailer": "^7.0.9",
+    "concurrently": "^9.2.1"
   }
 }
