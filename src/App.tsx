@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, FileText, Server, LogOut, Bird,
-  Activity, ArrowLeft, Shield, Mail, Lock, ChevronRight
+  Activity, ArrowLeft, Shield, Mail, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
-// Interfaces
+// --- INTERFACES ---
 interface User { id: string; name: string; email: string; department?: { name: string }; }
 interface Tool {
   id: string; name: string;
@@ -20,14 +20,20 @@ interface Request { id: string; details: string; status: string; createdAt: stri
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER';
 
 export default function App() {
+  // --- ESTADOS ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [systemProfile, setSystemProfile] = useState<SystemProfile>('VIEWER');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState('DASHBOARD');
+
   const [tools, setTools] = useState<Tool[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
-  const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
 
+  const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
+  // Novo estado para controlar qual nível está aberto (Accordion)
+  const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
+
+  // --- CARREGAMENTO ---
   const loadData = async () => {
     try {
       const [resTools, resReqs] = await Promise.all([
@@ -47,6 +53,7 @@ export default function App() {
     }
   }, [isLoggedIn]);
 
+  // --- LOGIN ---
   const handleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       try {
@@ -61,15 +68,30 @@ export default function App() {
     }
   });
 
-  // Função para agrupar usuários por Nível (Status)
+  // Agrupar usuários por nível
   const getGroupedAccesses = (tool: Tool) => {
     if (!tool.accesses) return {};
     return tool.accesses.reduce((acc, curr) => {
-      const level = curr.status; // Ex: "Full (FA - 1)"
+      const level = curr.status;
       if (!acc[level]) acc[level] = [];
       acc[level].push(curr.user);
       return acc;
     }, {} as Record<string, User[]>);
+  };
+
+  // Toggle do Acordeão
+  const toggleLevel = (levelName: string) => {
+    if (expandedLevel === levelName) {
+      setExpandedLevel(null); // Fecha se já estiver aberto
+    } else {
+      setExpandedLevel(levelName); // Abre o novo
+    }
+  };
+
+  // Resetar ao mudar de aba ou ferramenta
+  const resetSelection = () => {
+    setSelectedTool(null);
+    setExpandedLevel(null);
   };
 
   if (!isLoggedIn) return (
@@ -93,8 +115,8 @@ export default function App() {
           <div><div style={{ fontSize: '0.9rem', color: 'white', fontWeight: 600 }}>{currentUser?.name.split(' ')[0]}</div><div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{systemProfile}</div></div>
         </div>
         <nav style={{ flex: 1 }}>
-          <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Visão Geral</div>
-          <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null); }}><Server size={18} /> Ferramentas</div>
+          <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); resetSelection(); }}><LayoutDashboard size={18} /> Visão Geral</div>
+          <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); resetSelection(); }}><Server size={18} /> Ferramentas</div>
           {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Auditoria</div>}
         </nav>
         <button onClick={() => { setIsLoggedIn(false); setCurrentUser(null); }} className="logout-btn"><LogOut size={18} /> Sair</button>
@@ -122,6 +144,7 @@ export default function App() {
             </div>
           )}
 
+          {/* LISTA DE FERRAMENTAS */}
           {activeTab === 'TOOLS' && !selectedTool && (
             <div className="fade-in">
               <div style={{ marginBottom: 30 }}><h3>Ferramentas ({tools.length})</h3></div>
@@ -141,17 +164,18 @@ export default function App() {
             </div>
           )}
 
+          {/* DETALHES DA FERRAMENTA */}
           {activeTab === 'TOOLS' && selectedTool && (
             <div className="fade-in">
-              <button onClick={() => setSelectedTool(null)} className="btn-back"><ArrowLeft size={18} /> Voltar</button>
+              <button onClick={() => resetSelection()} className="btn-back"><ArrowLeft size={18} /> Voltar</button>
 
-              {/* CABEÇALHO */}
+              {/* CABEÇALHO DA FERRAMENTA */}
               <div className="glass-card" style={{ marginBottom: 30 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
                   <div className="tool-icon-placeholder" style={{ width: 60, height: 60, marginBottom: 0 }}><Server size={30} /></div>
                   <div><h1 style={{ margin: 0 }}>{selectedTool.name}</h1><p style={{ color: '#94a3b8', margin: 0 }}>Matriz de Acessos</p></div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20 }}>
                   <div style={{ padding: 15, background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
                     <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Owner</div>
                     <div style={{ fontWeight: 600, color: 'white', marginTop: 5 }}>{selectedTool.owner?.name || '--'}</div>
@@ -167,42 +191,70 @@ export default function App() {
                 </div>
               </div>
 
-              {/* LISTAGEM POR NÍVEIS (AQUI ESTÁ A MUDANÇA) */}
-              <h3 style={{ marginBottom: 20 }}>Usuários e Níveis de Acesso</h3>
+              <h3 style={{ marginBottom: 20 }}>Níveis de Acesso (Clique para ver os usuários)</h3>
 
               {Object.keys(getGroupedAccesses(selectedTool)).length === 0 ? (
-                <p style={{ color: '#64748b' }}>Nenhum usuário cadastrado.</p>
+                <p style={{ color: '#64748b' }}>Nenhum usuário cadastrado nesta ferramenta.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 30 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 15 }}>
                   {Object.entries(getGroupedAccesses(selectedTool))
-                    .sort((a, b) => a[0].localeCompare(b[0])) // Ordena alfabeticamente os níveis
+                    .sort((a, b) => a[0].localeCompare(b[0]))
                     .map(([levelName, users]) => (
                       <div key={levelName} className="fade-in">
-                        <div style={{
-                          background: 'linear-gradient(90deg, rgba(124, 58, 237, 0.1) 0%, rgba(15, 23, 42, 0) 100%)',
-                          padding: '10px 15px', borderRadius: '8px', borderLeft: '4px solid #7C3AED', marginBottom: 15,
-                          display: 'flex', alignItems: 'center', gap: 10
-                        }}>
-                          <Shield size={18} color="#7C3AED" />
-                          <h4 style={{ margin: 0, color: '#c4b5fd', fontSize: '1rem' }}>{levelName}</h4>
-                          <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: 'auto' }}>{users.length} usuários</span>
+
+                        {/* BLOCO DE NÍVEL (BOTÃO CLICÁVEL) */}
+                        <div
+                          onClick={() => toggleLevel(levelName)}
+                          style={{
+                            background: 'linear-gradient(145deg, #1e293b, #0f172a)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                            padding: '15px 20px', borderRadius: '12px', marginBottom: 5,
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            cursor: 'pointer', transition: 'all 0.2s',
+                            boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.borderColor = '#7C3AED'}
+                          onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ background: 'rgba(124, 58, 237, 0.2)', padding: 8, borderRadius: 8 }}>
+                              <Shield size={20} color="#7C3AED" />
+                            </div>
+                            <div>
+                              <h4 style={{ margin: 0, color: 'white', fontSize: '1rem' }}>{levelName}</h4>
+                              <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{users.length} usuários vinculados</span>
+                            </div>
+                          </div>
+                          {expandedLevel === levelName ? <ChevronDown color="#7C3AED" /> : <ChevronRight color="#64748b" />}
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 15 }}>
-                          {users.map(u => (
-                            <div key={u.id} className="user-block" style={{ background: '#1e293b' }}>
-                              <div style={{ width: 35, height: 35, borderRadius: '50%', background: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
-                                {u.name.charAt(0)}
-                              </div>
-                              <div style={{ overflow: 'hidden' }}>
-                                <div style={{ fontWeight: 500, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
-                                <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                  <Mail size={12} /> {u.email}
+                        {/* LISTA DE USUÁRIOS (SÓ APARECE SE EXPANDIDO) */}
+                        {expandedLevel === levelName && (
+                          <div className="fade-in" style={{
+                            padding: '20px',
+                            background: 'rgba(0,0,0,0.2)',
+                            borderBottomLeftRadius: 12, borderBottomRightRadius: 12,
+                            marginTop: -5, marginBottom: 15,
+                            border: '1px solid rgba(255,255,255,0.05)', borderTop: 'none'
+                          }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 15 }}>
+                              {users.map(u => (
+                                <div key={u.id} className="user-block" style={{ background: '#1e293b' }}>
+                                  <div style={{ width: 35, height: 35, borderRadius: '50%', background: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
+                                    {u.name.charAt(0)}
+                                  </div>
+                                  <div style={{ overflow: 'hidden' }}>
+                                    <div style={{ fontWeight: 500, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
+                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                      <Mail size={12} /> {u.email}
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          </div>
+                        )}
+
                       </div>
                     ))}
                 </div>
