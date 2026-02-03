@@ -25,9 +25,8 @@ export default function App() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isMfaRequired, setIsMfaRequired] = useState(false);
-  const [mfaCode, setMfaCode] = useState(['', '', '', '', '', '']);
+  const [mfaCode, setMfaCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('theris_activeTab') || 'DASHBOARD');
   const [tools, setTools] = useState<Tool[]>([]);
@@ -35,7 +34,6 @@ export default function App() {
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
 
-  // Stats
   const stats = {
     pending: requests.filter(r => r.status.includes('PENDENTE')).length,
     approved: requests.filter(r => r.status === 'APROVADO').length,
@@ -49,14 +47,14 @@ export default function App() {
     else if (activeTab === 'TOOLS' && !selectedTool) localStorage.removeItem('theris_selectedToolId');
   }, [selectedTool, activeTab]);
 
-  // Session Check
+  // Session Check (3 Horas)
   useEffect(() => {
     const checkSession = () => {
       const storedUser = localStorage.getItem('theris_user');
       const sessionStart = localStorage.getItem('theris_session_start');
       if (storedUser && sessionStart) {
         if (Date.now() - parseInt(sessionStart) > SESSION_DURATION) {
-          alert("Sessão expirada."); handleLogout();
+          alert("Sessão expirada por segurança."); handleLogout();
         } else setIsLoggedIn(true);
       } else setIsLoggedIn(false);
     };
@@ -85,15 +83,20 @@ export default function App() {
     if (isLoggedIn) { loadData(); const interval = setInterval(loadData, 10000); return () => clearInterval(interval); }
   }, [isLoggedIn]);
 
-  // Actions
+  // --- ACTIONS ---
+
   const handleLogin = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       try {
         const res = await fetch(`${API_URL}/api/login/google`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken: tokenResponse.access_token }) });
         const data = await res.json();
         if (res.ok) {
+          // NÃO loga ainda. Salva estado temporário e pede MFA.
           setCurrentUser(data.user); setSystemProfile(data.profile); setIsLoading(true);
+
+          // Manda gerar código para ESTE usuário
           await fetch(`${API_URL}/api/auth/send-mfa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: data.user.id }) });
+
           setIsLoading(false); setIsMfaRequired(true);
         } else alert(data.error);
       } catch (e) { alert("Erro de conexão."); setIsLoading(false); }
@@ -101,33 +104,33 @@ export default function App() {
   });
 
   const handleMfaVerify = async () => {
-    const code = mfaCode.join('');
-    if (code.length < 6) return;
+    if (mfaCode.length < 6) return alert("Digite o código de 6 dígitos.");
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/auth/verify-mfa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser?.id, code }) });
+      // VERIFICAÇÃO REAL NO SERVIDOR
+      const res = await fetch(`${API_URL}/api/auth/verify-mfa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser?.id, code: mfaCode }) // Envia ID e Código
+      });
       const data = await res.json();
+
       if (res.ok && data.valid) {
+        // Se o servidor disse OK:
         localStorage.setItem('theris_user', JSON.stringify(currentUser));
         localStorage.setItem('theris_profile', systemProfile);
         localStorage.setItem('theris_session_start', Date.now().toString());
         setIsLoggedIn(true); setIsMfaRequired(false);
       } else {
-        alert("Código inválido."); setMfaCode(['', '', '', '', '', '']); inputRefs.current[0]?.focus();
+        alert(data.error || "Código inválido."); setMfaCode('');
       }
     } catch (e) { alert("Erro ao verificar."); }
     setIsLoading(false);
   };
 
-  const handleMfaChange = (index: number, value: string) => {
-    if (isNaN(Number(value))) return;
-    const newCode = [...mfaCode]; newCode[index] = value; setMfaCode(newCode);
-    if (value && index < 5) inputRefs.current[index + 1]?.focus();
-  };
-
-  const handleMfaKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !mfaCode[index] && index > 0) inputRefs.current[index - 1]?.focus();
-    if (e.key === 'Enter') handleMfaVerify();
+  const handleMfaChange = (value: string) => {
+    const clean = value.replace(/\D/g, '').slice(0, 6);
+    setMfaCode(clean);
   };
 
   const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); setActiveTab('DASHBOARD'); setSelectedTool(null); setIsMfaRequired(false); };
@@ -153,28 +156,37 @@ export default function App() {
 
   if (isMfaRequired) return (
     <div className="login-wrapper">
-      <div className="login-card">
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}><Lock size={40} color="#7c3aed" /></div>
-        <h1>Verificação de Segurança</h1>
-        <p>Código enviado para <strong>{currentUser?.email}</strong></p>
-        <div className="mfa-group">
-          {mfaCode.map((digit, idx) => (
-            <input key={idx} ref={el => inputRefs.current[idx] = el} className="mfa-input" type="text" maxLength={1} value={digit} onChange={(e) => handleMfaChange(idx, e.target.value)} onKeyDown={(e) => handleMfaKeyDown(idx, e)} autoFocus={idx === 0} />
-          ))}
-        </div>
-        <button onClick={handleMfaVerify} className="btn-primary" disabled={isLoading}>{isLoading ? 'Verificando...' : 'Validar Acesso'}</button>
-        <button onClick={() => { setIsMfaRequired(false); setCurrentUser(null); }} className="logout-btn" style={{ border: 'none', marginTop: 10 }}>Cancelar</button>
+      <div className="login-card mfa-container">
+        <div className="mfa-icon-wrapper"><Lock size={40} color="#8b5cf6" /></div>
+        <h2 style={{ color: 'white', margin: 0 }}>Código de Segurança</h2>
+        <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
+          Enviamos um código para <strong>{currentUser?.email}</strong>.
+        </p>
+
+        <input
+          className="mfa-input-single"
+          type="text"
+          value={mfaCode}
+          onChange={(e) => handleMfaChange(e.target.value)}
+          placeholder="000000"
+          autoFocus
+        />
+
+        <button onClick={handleMfaVerify} className="btn-verify" disabled={isLoading}>
+          {isLoading ? 'Verificando...' : 'Confirmar Acesso'}
+        </button>
+        <button onClick={() => { setIsMfaRequired(false); setCurrentUser(null); setMfaCode(''); }} style={{ background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', marginTop: 10 }}>Voltar</button>
       </div>
     </div>
   );
 
   if (!isLoggedIn) return (
     <div className="login-wrapper">
-      <div className="login-card">
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}><Bird size={50} color="#7c3aed" /></div>
-        <h1>Theris OS</h1>
-        <p>Governança & Identidade</p>
-        {isLoading ? <p>Carregando...</p> : <button onClick={() => handleLogin()} className="btn-google"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" /> Continuar com Google</button>}
+      <div className="login-card fade-in">
+        <Bird size={60} color="#8b5cf6" style={{ marginBottom: 20 }} />
+        <h1 style={{ fontSize: '2.5rem', fontWeight: 800, margin: '0 0 10px 0', background: 'linear-gradient(to right, #fff, #a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Theris OS</h1>
+        <p style={{ color: '#9ca3af', fontSize: '1.1rem' }}>Governança de Identidade & Acessos</p>
+        {isLoading ? <p>Carregando...</p> : <button onClick={() => handleLogin()} className="btn-google"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" /> Continuar com Workspace</button>}
       </div>
     </div>
   );

@@ -50,6 +50,9 @@ model User {
 
   // Solicitações
   requests     Request[]
+  // NOVOS CAMPOS PARA MFA
+  mfaCode       String?    // O código de 6 dígitos
+  mfaExpiresAt  DateTime?  // Validade do código (3 horas)
 }
 
 model Tool {

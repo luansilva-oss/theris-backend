@@ -6,8 +6,9 @@ import path from 'path';
 
 // --- IMPORTAÇÕES DOS CONTROLADORES ---
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
-import { googleLogin } from './controllers/authController';
-import { getAllTools } from './controllers/toolController'; // <--- O NOVO CONTROLADOR
+// ATUALIZADO: Importamos sendMfa e verifyMfa aqui 👇
+import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
+import { getAllTools } from './controllers/toolController';
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -20,18 +21,24 @@ const prisma = new PrismaClient();
 // --- CORS ---
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
 
-// ⚠️ ROTA DO SLACK (Deve vir antes do express.json para o receptor funcionar)
+// ⚠️ ROTA DO SLACK (IMPORTANTE: Deve vir ANTES do express.json)
 app.use('/api/slack', slackReceiver.router);
 
-// --- JSON MIDDLEWARE ---
+// --- JSON MIDDLEWARE (Necessário para ler o body das requisições abaixo) ---
 app.use(express.json());
 
-// --- ROTAS DE AUTENTICAÇÃO ---
+// ============================================================
+// --- ROTAS DE AUTENTICAÇÃO E MFA (AQUI!) ---
+// ============================================================
 app.post('/api/login/google', googleLogin);
+app.post('/api/auth/send-mfa', sendMfa);     // <--- Nova rota
+app.post('/api/auth/verify-mfa', verifyMfa); // <--- Nova rota
 
+// ============================================================
 // --- ROTAS DE DADOS ---
+// ============================================================
 
-// 1. Estrutura
+// 1. Estrutura (Departamentos)
 app.get('/api/structure', async (req, res) => {
   try {
     const data = await prisma.department.findMany({
@@ -43,8 +50,7 @@ app.get('/api/structure', async (req, res) => {
   }
 });
 
-// 2. Ferramentas (CORREÇÃO AQUI 👇)
-// Usamos apenas o controlador importado. Ele já resolve tudo.
+// 2. Ferramentas
 app.get('/api/tools', getAllTools);
 
 // 3. Usuários
@@ -59,12 +65,16 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-// --- WORKFLOW ---
+// ============================================================
+// --- WORKFLOW (SOLICITAÇÕES) ---
+// ============================================================
 app.get('/api/solicitacoes', getSolicitacoes);
 app.post('/api/solicitacoes', createSolicitacao);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);
 
-// --- SERVIR FRONTEND ---
+// ============================================================
+// --- SERVIR FRONTEND (PRODUÇÃO) ---
+// ============================================================
 const frontendPath = path.resolve(__dirname, '../dist');
 app.use(express.static(frontendPath));
 
