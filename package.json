@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "db:push": "npx prisma db push",
-    "db:seed": "npx ts-node prisma/seed_tools.ts"
+    "db:seed": "npx ts-node prisma/seed_full_database.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
