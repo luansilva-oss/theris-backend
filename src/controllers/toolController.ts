@@ -3,30 +3,27 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export const getAllTools = async (req: Request, res: Response) => {
-    try {
-        const tools = await prisma.tool.findMany({
-            orderBy: { name: 'asc' },
-            include: {
-                // Traz apenas nome e email dos donos
-                owner: {
-                    select: { id: true, name: true, email: true }
-                },
-                subOwner: {
-                    select: { id: true, name: true, email: true }
-                },
-                // Traz os acessos (quem usa a ferramenta)
-                accesses: {
-                    include: {
-                        user: { select: { id: true, name: true, email: true } }
-                    }
-                }
-            }
-        });
+export const getTools = async (req: Request, res: Response) => {
+  try {
+    const tools = await prisma.tool.findMany({
+      // AQUI ESTÁ O SEGREDO QUE FALTAVA:
+      include: {
+        owner: true,           // Traz o objeto completo do Dono
+        subOwner: true,        // Traz o objeto completo do Sub-Dono
+        accesses: {            // Traz a lista de acessos
+          include: {
+            user: true         // E para cada acesso, traz o nome/email do Usuário
+          }
+        }
+      },
+      orderBy: {
+        name: 'asc'            // Ordena alfabeticamente para ficar organizado
+      }
+    });
 
-        res.json(tools);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Erro ao buscar ferramentas.' });
-    }
+    return res.json(tools);
+  } catch (error) {
+    console.error("Erro ao buscar ferramentas:", error);
+    return res.status(500).json({ error: 'Erro ao buscar ferramentas' });
+  }
 };

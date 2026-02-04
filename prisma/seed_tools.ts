@@ -77,15 +77,22 @@ async function ensureUser(email: string, name: string) {
     // Se mesmo assim não achar, cria um "placeholder" para não quebrar a ferramenta
     if (!user) {
         console.log(`⚠️ Criando usuário placeholder para ferramenta: ${name} (${email})`);
-        user = await prisma.user.create({
-            data: {
-                email: email,
-                name: name,
-                jobTitle: "Owner de Ferramenta",
-                department: "Tecnologia"
-                // REMOVIDO: systemProfile (Isso causava o erro!)
-            }
-        });
+
+        // Verificação final de duplicidade por email antes de criar
+        const existingEmail = await prisma.user.findUnique({ where: { email } });
+        if (existingEmail) {
+            user = existingEmail;
+        } else {
+            user = await prisma.user.create({
+                data: {
+                    email: email,
+                    name: name,
+                    jobTitle: "Owner de Ferramenta",
+                    department: "Tecnologia"
+                    // REMOVIDO: systemProfile (Isso causava o erro!)
+                }
+            });
+        }
     }
 
     return user;
@@ -111,29 +118,36 @@ async function main() {
             }
 
             // 3. Cria ou Atualiza a Ferramenta
-            await prisma.tool.upsert({
-                where: { id: t.name }, // Usando nome como ID temporário se não tiver ID fixo, ou busca pelo nome
-                // Nota: Como o ID é UUID, o ideal é buscar pelo nome usando findFirst, mas upsert exige @unique.
-                // Vamos usar uma lógica de delete/create para simplificar e garantir atualização
-                update: {}, // Não faz nada se existir (ou poderíamos atualizar owners)
-                create: {
-                    name: t.name,
-                    ownerId: ownerId,
-                    subOwnerId: subOwnerId
+            // CORREÇÃO: Busca pelo NOME antes de criar (Case Insensitive)
+            const existingTool = await prisma.tool.findFirst({
+                where: {
+                    name: {
+                        equals: t.name,
+                        mode: 'insensitive' // Identifica "hubspot" e "HubSpot" como iguais
+                    }
                 }
             });
 
-            // Ajuste para garantir que atualiza os donos se a ferramenta já existir
-            const existingTool = await prisma.tool.findFirst({ where: { name: t.name } });
             if (existingTool) {
+                // Se existe, atualiza os owners
                 await prisma.tool.update({
                     where: { id: existingTool.id },
-                    data: { ownerId, subOwnerId }
+                    data: {
+                        ownerId: ownerId,
+                        subOwnerId: subOwnerId
+                    }
                 });
+                // console.log(`🔄 Ferramenta atualizada: ${t.name}`);
             } else {
+                // Se não existe, cria nova
                 await prisma.tool.create({
-                    data: { name: t.name, ownerId, subOwnerId }
+                    data: {
+                        name: t.name,
+                        ownerId: ownerId,
+                        subOwnerId: subOwnerId
+                    }
                 });
+                console.log(`➕ Ferramenta criada: ${t.name}`);
             }
 
             //   console.log(`✅ Ferramenta verificada: ${t.name}`);
