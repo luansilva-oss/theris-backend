@@ -3,18 +3,18 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// --- TOOLS ---
+
 export const getTools = async (req: Request, res: Response) => {
   try {
-    console.log("🔍 Buscando ferramentas com detalhes completos..."); // Log para debug
-
     const tools = await prisma.tool.findMany({
-      // O SEGREDO ESTÁ AQUI: TEM DE TER ESTE BLOCO INCLUDE
       include: {
-        owner: true,           // Traz os dados do Owner
-        subOwner: true,        // Traz os dados do Sub-Owner
-        accesses: {            // Traz a lista de acessos
+        owner: true,
+        subOwner: true,
+        toolGroup: true, // Inclui o grupo
+        accesses: {
           include: {
-            user: true         // Traz o nome/email do usuário do acesso
+            user: true
           }
         }
       },
@@ -22,11 +22,104 @@ export const getTools = async (req: Request, res: Response) => {
         name: 'asc'
       }
     });
-
-    console.log(`✅ Encontradas ${tools.length} ferramentas.`);
     return res.json(tools);
   } catch (error) {
     console.error("❌ Erro no getTools:", error);
     return res.status(500).json({ error: 'Erro ao buscar ferramentas' });
+  }
+};
+
+export const updateTool = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { name, acronym, ownerId, subOwnerId, toolGroupId, availableAccessLevels } = req.body;
+
+  try {
+    const updatedTool = await prisma.tool.update({
+      where: { id },
+      data: {
+        name,
+        acronym,
+        ownerId: ownerId || null,
+        subOwnerId: subOwnerId || null,
+        toolGroupId: toolGroupId || null,
+        availableAccessLevels: availableAccessLevels // Array de strings
+      }
+    });
+    return res.json(updatedTool);
+  } catch (error) {
+    console.error("❌ Erro ao atualizar ferramenta:", error);
+    return res.status(500).json({ error: 'Erro ao atualizar ferramenta' });
+  }
+};
+
+// --- TOOL GROUPS ---
+
+export const getToolGroups = async (req: Request, res: Response) => {
+  try {
+    const groups = await prisma.toolGroup.findMany({ orderBy: { name: 'asc' } });
+    return res.json(groups);
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao buscar grupos' });
+  }
+};
+
+export const createToolGroup = async (req: Request, res: Response) => {
+  const { name } = req.body;
+  try {
+    const group = await prisma.toolGroup.create({ data: { name } });
+    return res.json(group);
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao criar grupo' });
+  }
+};
+
+export const deleteToolGroup = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    await prisma.toolGroup.delete({ where: { id } });
+    return res.json({ message: 'Grupo removido' });
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao remover grupo' });
+  }
+};
+
+// --- ACCESS MANAGEMENT ---
+
+export const addToolAccess = async (req: Request, res: Response) => {
+  const { id } = req.params; // Tool ID
+  const { userId, level } = req.body;
+
+  try {
+    // Remove access if exists to avoid duplicates/conflicts, then create new
+    await prisma.access.deleteMany({
+      where: { toolId: id, userId }
+    });
+
+    const access = await prisma.access.create({
+      data: {
+        toolId: id,
+        userId,
+        status: level // Usamos o campo status como o nível de acesso (ex: "Admin", "User")
+      }
+    });
+    return res.json(access);
+  } catch (error) {
+    console.error("Erro ao adicionar acesso:", error);
+    return res.status(500).json({ error: 'Erro ao adicionar acesso' });
+  }
+};
+
+export const removeToolAccess = async (req: Request, res: Response) => {
+  const { id, userId } = req.params;
+  try {
+    await prisma.access.deleteMany({
+      where: {
+        toolId: id,
+        userId: userId
+      }
+    });
+    return res.json({ message: 'Acesso removido' });
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao remover acesso' });
   }
 };
