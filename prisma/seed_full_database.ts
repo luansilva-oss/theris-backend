@@ -657,7 +657,7 @@ async function main() {
         const newTool = await prisma.tool.create({
             data: {
                 name: t.name,
-                acronym: t.acronym || undefined, undefined,
+                acronym: t.acronym || undefined,
                 ownerId: owner?.id,
                 subOwnerId: subOwner?.id
             }
