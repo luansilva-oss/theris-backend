@@ -2,7 +2,9 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// DEFINIÇÃO DOS DADOS
+// ==============================================================================
+// 1. DADOS COMPLETOS (Baseados na lista oficial fornecida)
+// ==============================================================================
 const toolsData = [
     // 1. JumpCloud (JC)
     {
@@ -53,7 +55,6 @@ const toolsData = [
             { email: "pedro.nascimento@grupo-3c.com", level: "Membro" },
             { email: "rafael.schimanski@grupo-3c.com", level: "Membro" },
             { email: "wagnerwolffp@gmail.com", level: "Membro" }
-            // Nota: wagner email pessoal no clickup? mantive conforme lista
         ]
     },
     // 3. HubSpot (HS)
@@ -221,7 +222,7 @@ const toolsData = [
         name: "Evolux",
         acronym: "EX",
         ownerEmail: "carlos.marques@grupo-3c.com", ownerName: "Carlos Marques",
-        subOwnerEmail: "bruno.levi@grupo-3c.com", subOwnerName: "Bruno Levi", // Levi
+        subOwnerEmail: "bruno.levi@grupo-3c.com", subOwnerName: "Bruno Levi",
         accesses: []
     },
     // 6. Dizify (DZ)
@@ -229,7 +230,7 @@ const toolsData = [
         name: "Dizify",
         acronym: "DZ",
         ownerEmail: "marieli.ferreira@grupo-3c.com", ownerName: "Marieli Ferreira",
-        subOwnerEmail: "jeferson.cruz@grupo-3c.com", subOwnerName: "Jeferson Da Cruz", // Jefferson
+        subOwnerEmail: "jeferson.cruz@grupo-3c.com", subOwnerName: "Jeferson Da Cruz",
         accesses: [
             { email: "marieli.ferreira@grupo-3c.com", level: "Administrador" },
             { email: "pietro.limberger@grupo-3c.com", level: "Administrador" },
@@ -243,9 +244,9 @@ const toolsData = [
             { email: "eduardo.nascimento@grupo-3c.com", level: "Administrador" }
         ]
     },
-    // 7. Netsuit (NS)
+    // 7. Next Suit (NS)
     {
-        name: "Next Suit", // Ou Netsuit
+        name: "Next Suit",
         acronym: "NS",
         ownerEmail: "aline.fonseca@grupo-3c.com", ownerName: "Aline Fonseca",
         subOwnerEmail: "fernando.takakusa@grupo-3c.com", subOwnerName: "Fernando Takakusa",
@@ -656,7 +657,7 @@ async function main() {
         const newTool = await prisma.tool.create({
             data: {
                 name: t.name,
-                acronym: t.acronym || undefined,
+                // acronym: t.acronym || undefined, // undefined, // PODE FICAR ATIVO SE TIVER O CAMPO NO SCHEMA.PRISMA
                 ownerId: owner?.id,
                 subOwnerId: subOwner?.id
             }
