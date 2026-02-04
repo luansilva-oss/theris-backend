@@ -19,7 +19,7 @@ async function findToolApprover(toolName: string) {
     include: { owner: true, subOwner: true }
   });
 
-  if (!tool) throw new Error('Ferramenta não encontrada');
+  if (!tool) return { approverId: null, role: 'SI_ANALYST' }; // Se não achar, vai para SI
 
   if (tool.owner) return { approverId: tool.owner.id, role: 'TOOL_OWNER' };
   if (tool.subOwner) return { approverId: tool.subOwner.id, role: 'TOOL_SUB_OWNER' };
@@ -52,8 +52,8 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     let currentApproverRole = 'MANAGER';
     let status = 'PENDENTE_GESTOR';
 
-    // ROTA A: FERRAMENTAS
-    if (['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA'].includes(safeType) || isExtraordinary) {
+    // ROTA A: FERRAMENTAS / ACESSOS
+    if (['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType) || isExtraordinary) {
       try {
         const toolName = detailsObj.tool || detailsObj.toolName || (detailsObj.info ? detailsObj.info.split(': ')[1] : null);
         if (toolName) {
@@ -72,7 +72,13 @@ export const createSolicitacao = async (req: Request, res: Response) => {
         currentApproverRole = 'SI_ANALYST';
       }
     }
-    // ROTA B: GESTÃO DE PESSOAS
+    // ROTA B: GESTÃO DE PESSOAS (RH - Admissão, Promoção, Demissão)
+    else if (['ADMISSAO', 'DEMISSAO', 'PROMOCAO', 'MUDANCA_AREA'].includes(safeType)) {
+      // Fluxo de RH: Geralmente vai para SI ou Gestor de RH, vamos padronizar para SI aprovar a parte técnica
+      status = 'PENDENTE_SI';
+      currentApproverRole = 'SI_ANALYST';
+    }
+    // ROTA C: GENÉRICA
     else {
       const requester = await prisma.user.findUnique({
         where: { id: safeRequesterId },
@@ -99,7 +105,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
         justification: justification ? String(justification) : null,
         status,
         currentApproverRole,
-        approverId, // Define quem DEVE aprovar (pendente)
+        approverId, // Quem deve aprovar
         isExtraordinary: Boolean(isExtraordinary)
       }
     });
@@ -112,7 +118,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 };
 
 // ============================================================
-// 2. LISTAR SOLICITAÇÕES (GET) - AJUSTADO PARA AUDITORIA
+// 2. LISTAR SOLICITAÇÕES (GET)
 // ============================================================
 export const getSolicitacoes = async (req: Request, res: Response) => {
   try {
@@ -120,7 +126,6 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
       include: {
         requester: { select: { id: true, name: true, email: true, department: true } },
-        // AQUI ESTÁ O SEGREDO: Incluir dados de quem aprovou/reprovou
         approver: { select: { id: true, name: true, email: true } }
       }
     });
@@ -131,11 +136,10 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
 };
 
 // ============================================================
-// 3. ATUALIZAR / APROVAR (PATCH) - AJUSTADO PARA SALVAR RESPONSÁVEL
+// 3. ATUALIZAR / APROVAR (PATCH) - CÉREBRO DA GOVERNANÇA
 // ============================================================
 export const updateSolicitacao = async (req: Request, res: Response) => {
   const { id } = req.params;
-  // Agora recebemos também o 'approverId' que vem do frontend (quem clicou no botão)
   const { status, adminNote, approverId } = req.body;
 
   try {
@@ -146,6 +150,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
     const safeStatus = String(status);
+    const newApiStatus = safeStatus === 'APROVAR' ? 'APROVADO' : 'REPROVADO'; // Normaliza
 
     // Atualiza JSON de detalhes
     const currentDetails = JSON.parse(request.details || '{}');
@@ -154,17 +159,15 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       adminNote: adminNote || 'Sem observações.'
     };
 
-    // Dados a atualizar no banco
+    // Dados a atualizar no banco (Auditoria)
     const updateData: any = {
-      status: safeStatus,
+      status: newApiStatus,
       updatedAt: new Date(),
       details: JSON.stringify(updatedDetails),
-      // Se o schema tiver coluna adminNote, salva nela também
       adminNote: adminNote
     };
 
-    // Se quem está aprovando agora é diferente de quem estava "pendente", 
-    // atualizamos o campo approverId para refletir QUEM FEZ a ação.
+    // Salva QUEM clicou no botão (Auditável)
     if (approverId) {
       updateData.approverId = approverId;
     }
@@ -178,37 +181,63 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     if (request.requester.email) {
       sendSlackNotification(
         request.requester.email,
-        safeStatus,
+        newApiStatus,
         adminNote || 'Processado pelo administrador.'
       );
     }
 
-    // GATILHO: Acesso Automático
-    if (safeStatus === 'APROVADO' && ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA'].includes(request.type)) {
-      try {
-        const toolName = currentDetails.tool || currentDetails.toolName;
-        const targetUserId = request.requesterId;
-        const rawLevel = currentDetails.target || currentDetails.targetAccess || 'Membro';
-        const accessLevel = String(rawLevel);
+    // =========================================================
+    // 🚀 LÓGICA DE EXECUÇÃO AUTOMÁTICA
+    // =========================================================
+    if (newApiStatus === 'APROVADO') {
 
-        if (toolName) {
-          const tool = await prisma.tool.findFirst({
-            where: { name: { contains: toolName, mode: 'insensitive' } }
-          });
+      // CENÁRIO 1: RH (Admissão, Promoção, Demissão)
+      // AQUI NÃO FAZEMOS NADA NO BANCO.
+      // O SI aprovou -> O RH recebe o ok -> Faz no Convenia -> Webhook do Convenia atualiza o Theris.
+      if (['ADMISSAO', 'DEMISSAO', 'PROMOCAO', 'MUDANCA_AREA'].includes(request.type)) {
+        console.log(`✅ RH: Solicitação ${request.type} aprovada. Aguardando sincronização do Convenia.`);
+      }
 
-          if (tool) {
-            await prisma.access.create({
-              data: {
-                toolId: tool.id,
-                userId: targetUserId,
-                status: accessLevel
-              }
+      // CENÁRIO 2: ACESSO EXTRAORDINÁRIO / FERRAMENTA PONTUAL
+      // Isso NÃO passa pelo Convenia, então o Theris executa.
+      else if (['ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'].includes(request.type) || request.isExtraordinary) {
+        try {
+          const toolName = currentDetails.tool || currentDetails.toolName;
+          const targetUserId = request.requesterId;
+          // Se for extraordinário, geralmente é acesso "Membro" ou o que foi pedido
+          const accessStatus = 'ACTIVE';
+
+          if (toolName) {
+            const tool = await prisma.tool.findFirst({
+              where: { name: { contains: toolName, mode: 'insensitive' } }
             });
-            console.log(`✅ ACESSO CRIADO: ${tool.name} - ${accessLevel}`);
+
+            if (tool) {
+              // Verifica se já existe para não duplicar
+              const existing = await prisma.access.findFirst({
+                where: { userId: targetUserId, toolId: tool.id }
+              });
+
+              if (existing) {
+                await prisma.access.update({
+                  where: { id: existing.id },
+                  data: { status: 'ACTIVE' }
+                });
+              } else {
+                await prisma.access.create({
+                  data: {
+                    toolId: tool.id,
+                    userId: targetUserId,
+                    status: 'ACTIVE'
+                  }
+                });
+              }
+              console.log(`✅ Acesso Extraordinário Concedido: ${tool.name}`);
+            }
           }
+        } catch (triggerError) {
+          console.error("❌ Erro gatilho automático:", triggerError);
         }
-      } catch (triggerError) {
-        console.error("❌ Erro gatilho automático:", triggerError);
       }
     }
 
