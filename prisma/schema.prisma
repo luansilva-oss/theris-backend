@@ -63,19 +63,31 @@ model User {
 }
 
 model Tool {
-  id            String   @id @default(uuid())
-  name          String
-  acronym       String?  // Nomenclatura (ex: "JC", "AWS")
+  id                  String   @id @default(uuid())
+  name                String
+  acronym             String?  // Nomenclatura (ex: "JC", "AWS")
   
-  ownerId       String?
-  owner         User?    @relation("ToolOwner", fields: [ownerId], references: [id])
+  ownerId             String?
+  owner               User?    @relation("ToolOwner", fields: [ownerId], references: [id])
   
-  subOwnerId    String?
-  subOwner      User?    @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
+  subOwnerId          String?
+  subOwner            User?    @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
 
-  accesses      Access[]
+  accesses            Access[]
 
-  createdAt     DateTime @default(now())
+  // Novos campos para edição
+  toolGroupId         String?
+  toolGroup           ToolGroup? @relation(fields: [toolGroupId], references: [id])
+  
+  availableAccessLevels String[] @default(["Admin", "User", "Viewer"]) // Níveis disponíveis para esta ferramenta
+
+  createdAt           DateTime @default(now())
+}
+
+model ToolGroup {
+  id    String @id @default(uuid())
+  name  String @unique
+  tools Tool[]
 }
 
 model Access {

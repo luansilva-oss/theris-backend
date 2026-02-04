@@ -9,6 +9,8 @@ import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
 
 import { ModalObservacao } from './components/ModalObservacao';
+import { EditToolModal } from './components/EditToolModal';
+import { Pen } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -25,8 +27,12 @@ interface User {
 interface Tool {
   id: string;
   name: string;
+  acronym?: string;
   owner?: User;
   subOwner?: User;
+  toolGroupId?: string;
+  toolGroup?: { id: string; name: string };
+  availableAccessLevels?: string[]; // Opcional pois pode vir vazio do backend antigo ou cache
   accesses?: { user: User; status: string }[];
 }
 
@@ -71,6 +77,9 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar'>('aprovar');
   const [modalTargetId, setModalTargetId] = useState<string | null>(null);
+
+  // EDIT MODAL
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   // Stats
   const stats = {
@@ -431,9 +440,16 @@ export default function App() {
           {/* TOOL DETAILS (VISUAL ATUALIZADO COM OWNER E NÍVEIS) */}
           {activeTab === 'TOOLS' && selectedTool && (
             <div className="fade-in">
-              <button onClick={() => { setSelectedTool(null); setExpandedLevel(null) }} className="btn-text" style={{ marginBottom: 20 }}>
-                <ArrowLeft size={16} /> Voltar para o Catálogo
-              </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <button onClick={() => { setSelectedTool(null); setExpandedLevel(null) }} className="btn-text">
+                  <ArrowLeft size={16} /> Voltar para o Catálogo
+                </button>
+                {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                  <button onClick={() => setIsEditModalOpen(true)} className="btn-mini" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <Pen size={14} /> Editar Sistema
+                  </button>
+                )}
+              </div>
 
               {/* CABEÇALHO DA FERRAMENTA + OWNERS */}
               <div className="card-base" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(to right, #18181b, #09090b)' }}>
@@ -630,6 +646,15 @@ export default function App() {
       </main>
 
       <ModalObservacao isOpen={modalOpen} onClose={() => setModalOpen(false)} onConfirm={handleConfirmApprove} titulo={modalAction === 'aprovar' ? 'Confirmar Aprovação' : 'Confirmar Reprovação'} tipo={modalAction} />
+
+      {selectedTool && (
+        <EditToolModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          tool={selectedTool}
+          onUpdate={loadData}
+        />
+      )}
     </div>
   );
 }
