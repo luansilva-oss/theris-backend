@@ -29,6 +29,24 @@ export const getTools = async (req: Request, res: Response) => {
   }
 };
 
+export const createTool = async (req: Request, res: Response) => {
+  const { name, acronym, toolGroupId } = req.body;
+  try {
+    const tool = await prisma.tool.create({
+      data: {
+        name,
+        acronym,
+        toolGroupId: toolGroupId || null,
+        availableAccessLevels: []
+      }
+    });
+    return res.json(tool);
+  } catch (error) {
+    console.error("❌ Erro ao criar ferramenta:", error);
+    return res.status(500).json({ error: 'Erro ao criar ferramenta' });
+  }
+};
+
 export const updateTool = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { name, acronym, ownerId, subOwnerId, toolGroupId, availableAccessLevels } = req.body;

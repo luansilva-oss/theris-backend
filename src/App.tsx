@@ -10,7 +10,8 @@ import './App.css';
 
 import { ModalObservacao } from './components/ModalObservacao';
 import { EditToolModal } from './components/EditToolModal';
-import { Pen } from 'lucide-react';
+import { CreateToolModal } from './components/CreateToolModal';
+import { Pen, PlusCircle } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -82,6 +83,7 @@ export default function App() {
 
   // EDIT MODAL
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   // Stats
   const stats = {
@@ -459,6 +461,15 @@ export default function App() {
             <div className="fade-in">
               <h2 style={{ color: 'white', fontSize: 20, marginBottom: 20 }}>Sistemas Conectados</h2>
               <div className="tools-wrapper">
+                {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                  <div className="tool-tile add-new" onClick={() => setIsCreateModalOpen(true)} style={{ border: '2px dashed #3f3f46', background: 'transparent' }}>
+                    <div className="tile-icon" style={{ background: 'transparent' }}><PlusCircle size={24} color="#a78bfa" /></div>
+                    <div className="tile-info">
+                      <h3 style={{ color: '#a78bfa' }}>Adicionar Ferramenta</h3>
+                      <p>Cadastrar novo sistema</p>
+                    </div>
+                  </div>
+                )}
                 {tools.map(tool => (
                   <div key={tool.id} className="tool-tile" onClick={() => setSelectedTool(tool)}>
                     <div className="tile-icon"><Server size={24} /></div>
@@ -690,6 +701,12 @@ export default function App() {
           onUpdate={loadData}
         />
       )}
+
+      <CreateToolModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreated={loadData}
+      />
     </div>
   );
 }
