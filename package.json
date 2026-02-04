@@ -5,7 +5,7 @@
   "scripts": {
     "dev:server": "npx tsx src/index.ts",
     "dev": "concurrently \"npm:dev:server\" \"vite\"",
-    "build": "tsc && npx prisma generate && echo 'RODANDO SEED' && npx tsx prisma/seed_final.ts",
+    "build": "tsc && npx prisma generate && echo 'RODANDO O FINAL' && npx tsx prisma/seed_final.ts"",
     "start": "node dist-server/index.js",
     "lint": "eslint .",
     "preview": "vite preview",
