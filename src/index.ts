@@ -9,6 +9,8 @@ import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './control
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools } from './controllers/toolController';
 import { getAllUsers } from './controllers/userController';
+// NOVO: Importar o controlador de reset
+import { resetCatalog } from './controllers/adminController';
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -35,16 +37,20 @@ app.post('/api/auth/send-mfa', sendMfa);
 app.post('/api/auth/verify-mfa', verifyMfa);
 
 // ============================================================
+// --- ROTAS ADMINISTRATIVAS (EMERGÊNCIA) ---
+// ============================================================
+// Roda este link no navegador para resetar o catálogo de ferramentas
+app.get('/api/admin/reset-tools', resetCatalog);
+
+// ============================================================
 // --- ROTAS DE DADOS ---
 // ============================================================
 
-// 1. Estrutura (CORRIGIDO: Removemos o include users que dava erro)
+// 1. Estrutura
 app.get('/api/structure', async (req, res) => {
   try {
     const data = await prisma.department.findMany({
-      include: {
-        roles: true // <--- MUDANÇA AQUI: Removemos { include: { users: true } }
-      }
+      include: { roles: true }
     });
     res.json(data);
   } catch (error) {
@@ -55,7 +61,7 @@ app.get('/api/structure', async (req, res) => {
 // 2. Ferramentas
 app.get('/api/tools', getTools);
 
-// 3. Usuários (Usa o controller novo que criamos)
+// 3. Usuários
 app.get('/api/users', getAllUsers);
 
 // ============================================================
