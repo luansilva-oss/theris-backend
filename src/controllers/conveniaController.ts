@@ -1,24 +1,40 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-// Importa o serviço que criamos com a Matriz de Acesso
 import { syncToolsForUser, revokeAllAccess } from '../services/accessControlService';
 
 const prisma = new PrismaClient();
 
-// Função auxiliar para gerar e-mail se não vier da Convenia
 function generateEmail(name: string): string {
     return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().replace(/\s+/g, '.') + '@grupo-3c.com';
 }
 
 export const handleConveniaWebhook = async (req: Request, res: Response) => {
     try {
+        // ==================================================================
+        // 🛡️ SEGURANÇA: VALIDAÇÃO DO SECRET
+        // ==================================================================
+        // A Convenia envia o secret no Header (geralmente 'secret' ou 'x-convenia-secret')
+        // Verifique na doc da Convenia o nome exato do header. O padrão costuma ser 'secret'.
+        const incomingSecret = req.headers['secret'] || req.headers['x-convenia-secret'];
+        const mySecret = process.env.CONVENIA_SECRET;
+
+        // Se o segredo não estiver configurado no servidor, loga um aviso crítico
+        if (!mySecret) {
+            console.error("⚠️ CRÍTICO: CONVENIA_SECRET não configurado no .env do servidor!");
+            return res.status(500).json({ error: 'Server misconfiguration' });
+        }
+
+        // Se a senha não bater, bloqueia imediatamente
+        if (incomingSecret !== mySecret) {
+            console.warn(`⛔ Tentativa de acesso não autorizado no Webhook. IP: ${req.ip}`);
+            return res.status(401).json({ error: 'Unauthorized: Invalid Secret' });
+        }
+        // ==================================================================
+
         const { event, data } = req.body;
 
-        console.log(`🔔 Webhook Convenia recebido: ${event}`);
-        // console.log(JSON.stringify(data, null, 2)); // Descomente para debug se necessário
+        console.log(`🔔 Webhook Convenia recebido (Autenticado): ${event}`);
 
-        // Mapeamento dos campos da Convenia para o Theris
-        // (Ajuste conforme o payload real da Convenia se necessário)
         const employeeData = {
             name: data.name || data.nome_completo,
             email: data.email || generateEmail(data.name || data.nome_completo),
@@ -27,14 +43,10 @@ export const handleConveniaWebhook = async (req: Request, res: Response) => {
             managerName: data.manager_name || null
         };
 
-        // ==================================================================
-        // CENÁRIO 1: ADMISSÃO ou MUDANÇA (Promoção/Transferência)
-        // ==================================================================
+        // --- CENÁRIO 1: ADMISSÃO ou MUDANÇA ---
         if (event === 'employee.created' || event === 'employee.updated') {
-
             console.log(`🔄 Processando ${event} para: ${employeeData.name}`);
 
-            // 1. Atualiza ou Cria o Usuário no Banco
             const user = await prisma.user.upsert({
                 where: { email: employeeData.email },
                 update: {
@@ -50,7 +62,6 @@ export const handleConveniaWebhook = async (req: Request, res: Response) => {
                 }
             });
 
-            // 2. Tenta conectar o Gestor (se a info veio)
             if (employeeData.managerName) {
                 const manager = await prisma.user.findFirst({
                     where: { name: { contains: employeeData.managerName, mode: 'insensitive' } }
@@ -60,30 +71,17 @@ export const handleConveniaWebhook = async (req: Request, res: Response) => {
                 }
             }
 
-            // 3. 🚀 A GRANDE MÁGICA: SINCRONIZA AS FERRAMENTAS COM O NOVO CARGO
-            // O 'syncToolsForUser' vai ler a matriz KBS e dar os acessos certos
             await syncToolsForUser(user.id, user.jobTitle);
         }
 
-        // ==================================================================
-        // CENÁRIO 2: DEMISSÃO
-        // ==================================================================
+        // --- CENÁRIO 2: DEMISSÃO ---
         if (event === 'employee.dismissed' || event === 'employee.deleted') {
             console.log(`🚫 Processando desligamento para: ${employeeData.email}`);
-
             const user = await prisma.user.findUnique({ where: { email: employeeData.email } });
 
             if (user) {
-                // 1. Revoga TODOS os acessos imediatamente
                 await revokeAllAccess(user.id);
-
-                // 2. (Opcional) Podemos apagar o usuário ou marcar como inativo
-                // Por enquanto, apenas removemos os acessos para manter histórico de auditoria se necessário
-                // Se preferir apagar: await prisma.user.delete({ where: { id: user.id } });
-
                 console.log(`✅ Acessos revogados para o usuário desligado.`);
-            } else {
-                console.warn(`⚠️ Usuário não encontrado para desligamento: ${employeeData.email}`);
             }
         }
 
