@@ -73,6 +73,12 @@ app.delete('/api/tools/:id/access/:userId', removeToolAccess); // Remover acesso
 app.get('/api/users', getAllUsers);
 
 // ============================================================
+// --- INTEGRAÇÃO CONVENIA ---
+// ============================================================
+import { handleConveniaWebhook } from './controllers/conveniaController';
+app.post('/api/webhooks/convenia', handleConveniaWebhook);
+
+// ============================================================
 // --- WORKFLOW (SOLICITAÇÕES) ---
 // ============================================================
 app.get('/api/solicitacoes', getSolicitacoes);
