@@ -113,10 +113,17 @@ export default function App() {
       if (resTools.ok) {
         const toolsData = await resTools.json();
         setTools(toolsData);
-        const savedId = localStorage.getItem('theris_selectedToolId');
-        if (savedId && !selectedTool && activeTab === 'TOOLS') {
-          const found = toolsData.find((t: Tool) => t.id === savedId);
-          if (found) setSelectedTool(found);
+        // Mantém ferramenta selecionada atualizada
+        if (selectedTool) {
+          const updatedSelected = toolsData.find((t: Tool) => t.id === selectedTool.id);
+          if (updatedSelected) setSelectedTool(updatedSelected);
+        } else {
+          // Recupera seleção do localStorage se existir
+          const savedId = localStorage.getItem('theris_selectedToolId');
+          if (savedId && activeTab === 'TOOLS') {
+            const found = toolsData.find((t: Tool) => t.id === savedId);
+            if (found) setSelectedTool(found);
+          }
         }
       }
       if (resReqs.ok) setRequests(await resReqs.json());
@@ -252,7 +259,7 @@ export default function App() {
         {isLoading ? (
           <div style={{ marginTop: 20, color: '#8b5cf6' }}>Conectando ao servidor...</div>
         ) : (
-          <button onClick={() => handleLogin()} className="btn-google"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" /> Continuar com Workspace</button>
+          <button onClick={() => handleLogin()} className="btn-google"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" alt="Google" /> Continuar com Workspace</button>
         )}
       </div>
     </div>
@@ -403,7 +410,7 @@ export default function App() {
             </div>
           )}
 
-          {/* CATÁLOGO DE TOOLS */}
+          {/* CATÁLOGO DE TOOLS (LISTA) */}
           {activeTab === 'TOOLS' && !selectedTool && (
             <div className="fade-in">
               <h2 style={{ color: 'white', fontSize: 20, marginBottom: 20 }}>Sistemas Conectados</h2>
@@ -421,52 +428,130 @@ export default function App() {
             </div>
           )}
 
-          {/* TOOL DETAILS */}
+          {/* TOOL DETAILS (VISUAL ATUALIZADO COM OWNER E NÍVEIS) */}
           {activeTab === 'TOOLS' && selectedTool && (
             <div className="fade-in">
-              <button onClick={() => { setSelectedTool(null); setExpandedLevel(null) }} className="btn-text" style={{ marginBottom: 20 }}><ArrowLeft size={16} /> Voltar</button>
+              <button onClick={() => { setSelectedTool(null); setExpandedLevel(null) }} className="btn-text" style={{ marginBottom: 20 }}>
+                <ArrowLeft size={16} /> Voltar para o Catálogo
+              </button>
 
-              <div className="detail-header">
-                <div className="detail-title">
-                  <h1>{selectedTool.name}</h1>
-                  <div className="detail-meta">
-                    <span>OWNER: {selectedTool.owner?.name || '--'}</span>
-                    <span>SUB: {selectedTool.subOwner?.name || '--'}</span>
-                    <span>USUÁRIOS: {selectedTool.accesses?.length}</span>
+              {/* CABEÇALHO DA FERRAMENTA + OWNERS */}
+              <div className="card-base" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(to right, #18181b, #09090b)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                  <div className="tile-icon" style={{ width: 64, height: 64, fontSize: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#27272a', borderRadius: 12, color: '#a78bfa' }}>
+                    <Server size={32} />
+                  </div>
+                  <div>
+                    <h1 style={{ margin: 0, fontSize: 24, color: 'white' }}>{selectedTool.name}</h1>
+                    <p style={{ color: '#a1a1aa', margin: '4px 0 0 0', fontSize: 13 }}>Gestão de Acessos e Permissões</p>
                   </div>
                 </div>
-                <div className="tile-icon" style={{ width: 60, height: 60 }}><Server size={30} /></div>
+
+                {/* ÁREA DE DONOS (OWNERS) */}
+                <div style={{ display: 'flex', gap: 40, paddingRight: 20 }}>
+                  {/* OWNER PRINCIPAL */}
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>Owner (Dono)</div>
+                    <div style={{ color: '#a78bfa', fontWeight: 600, fontSize: 16, marginTop: 4 }}>
+                      {selectedTool.owner?.name || 'Não definido'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#52525b' }}>{selectedTool.owner?.email}</div>
+                  </div>
+
+                  {/* SUB-OWNER (Só mostra se existir) */}
+                  {selectedTool.subOwner && (
+                    <div style={{ textAlign: 'right', borderLeft: '1px solid #3f3f46', paddingLeft: 30 }}>
+                      <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>Sub-Owner</div>
+                      <div style={{ color: '#e4e4e7', fontWeight: 600, fontSize: 16, marginTop: 4 }}>
+                        {selectedTool.subOwner.name}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#52525b' }}>{selectedTool.subOwner.email}</div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {Object.keys(getGroupedAccesses(selectedTool)).length === 0 && <p style={{ color: '#52525b' }}>Sem dados.</p>}
-                {Object.entries(getGroupedAccesses(selectedTool)).sort((a, b) => a[0].localeCompare(b[0])).map(([level, users]) => (
-                  <div key={level} className="level-group">
-                    <div className="level-trigger" onClick={() => setExpandedLevel(expandedLevel === level ? null : level)}>
-                      <div className="level-name">
-                        {level.toLowerCase().includes('admin') ? <Crown size={16} color="#fbbf24" /> : <Shield size={16} color="#71717a" />}
-                        {level}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
-                        <span className="level-meta">{users.length} users</span>
-                        {expandedLevel === level ? <ChevronDown size={16} color="#a1a1aa" /> : <ChevronRight size={16} color="#52525b" />}
-                      </div>
-                    </div>
-                    {expandedLevel === level && (
-                      <div className="level-content">
-                        {users.map(u => (
-                          <div key={u.id} className="user-pill">
-                            <div className="pill-avatar">{u.name.charAt(0)}</div>
-                            <div className="pill-info">
-                              <div className="pill-name">{u.name}</div>
-                              <div className="pill-email">{u.email}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+              {/* LISTA DE USUÁRIOS AGRUPADOS POR NÍVEL */}
+              <h3 style={{ color: '#d4d4d8', marginBottom: 15, fontSize: 18 }}>Níveis de Acesso Vigentes</h3>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {Object.keys(getGroupedAccesses(selectedTool)).length === 0 && (
+                  <div className="card-base" style={{ textAlign: 'center', color: '#52525b', padding: 40 }}>
+                    <Bird size={40} style={{ marginBottom: 10, opacity: 0.5 }} />
+                    <br />
+                    Nenhum usuário vinculado a esta ferramenta ainda.
                   </div>
-                ))}
+                )}
+
+                {Object.entries(getGroupedAccesses(selectedTool))
+                  .sort((a, b) => a[0].localeCompare(b[0])) // Ordena alfabeticamente os níveis
+                  .map(([level, users]) => (
+                    <div key={level} className="card-base" style={{ padding: 0, overflow: 'hidden', border: '1px solid #27272a', transition: 'all 0.2s' }}>
+
+                      {/* BARRA DO NÍVEL (Clicável) */}
+                      <div
+                        onClick={() => setExpandedLevel(expandedLevel === level ? null : level)}
+                        style={{
+                          padding: '16px 24px',
+                          background: '#18181b',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          borderBottom: expandedLevel === level ? '1px solid #27272a' : 'none'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          {/* Ícone dinâmico: Coroa para admins, Escudo para outros */}
+                          {level.toLowerCase().match(/admin|owner|proprietário|full/)
+                            ? <Crown size={20} color="#fbbf24" fill="rgba(251, 191, 36, 0.2)" />
+                            : <Shield size={20} color="#a1a1aa" />}
+
+                          <span style={{ fontWeight: 600, color: '#f4f4f5', fontSize: 15 }}>{level}</span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
+                          <span style={{ fontSize: 11, color: '#a1a1aa', background: '#27272a', padding: '4px 8px', borderRadius: 6, fontWeight: 500 }}>
+                            {users.length} Colaboradores
+                          </span>
+                          {expandedLevel === level ? <ChevronDown size={18} color="#a1a1aa" /> : <ChevronRight size={18} color="#52525b" />}
+                        </div>
+                      </div>
+
+                      {/* LISTA DE PESSOAS NAQUELE NÍVEL */}
+                      {expandedLevel === level && (
+                        <div style={{ background: '#09090b', animation: 'fadeIn 0.3s ease' }}>
+                          {users.map((u, idx) => (
+                            <div key={u.id} style={{
+                              padding: '14px 24px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 16,
+                              borderBottom: idx === users.length - 1 ? 'none' : '1px solid #1f1f22'
+                            }}>
+                              {/* Avatar */}
+                              <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#27272a', color: '#e4e4e7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, border: '1px solid #3f3f46' }}>
+                                {u.name.charAt(0)}
+                              </div>
+
+                              {/* Info */}
+                              <div style={{ flex: 1 }}>
+                                <div style={{ color: '#e4e4e7', fontSize: 14, fontWeight: 500 }}>{u.name}</div>
+                                <div style={{ color: '#71717a', fontSize: 12 }}>{u.email}</div>
+                              </div>
+
+                              {/* Departamento (Badge) */}
+                              {u.department && (
+                                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#18181b', color: '#52525b', border: '1px solid #27272a' }}>
+                                  {u.department}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
               </div>
             </div>
           )}
