@@ -586,18 +586,17 @@ const toolsData = [
 async function ensureUser(email: string, name: string) {
     if (!email) return null;
 
-    // 1. Tenta achar normal
+    const emailPrefix = email.split('@')[0].toLowerCase();
+    const domain = email.split('@')[1];
+
+    // 1. Tenta achar pelo email exato (case insensitive)
     let user = await prisma.user.findFirst({
-        where: {
-            OR: [
-                { email: { equals: email, mode: 'insensitive' } }
-            ]
-        }
+        where: { email: { equals: email, mode: 'insensitive' } }
     });
 
-    // 2. Tenta achar substituindo domínio (caso usem @3cplusnow e @grupo-3c de forma intercambiável)
+    // 2. Tenta achar trocando o domínio (@3cplusnow.com <-> @grupo-3c.com)
     if (!user) {
-        const altEmail = email.includes('3cplusnow')
+        const altEmail = domain.includes('3cplusnow')
             ? email.replace('3cplusnow.com', 'grupo-3c.com')
             : email.replace('grupo-3c.com', '3cplusnow.com');
 
@@ -606,21 +605,38 @@ async function ensureUser(email: string, name: string) {
         });
     }
 
-    // 3. Cria placeholder se não existir
+    // 3. Tenta achar pelo prefixo do email (ex: alana.gaspar vs alana.maiumy.gaspar)
     if (!user) {
-        // console.log(`Creating placeholder user: ${name} (${email})`);
+        const allUsers = await prisma.user.findMany();
+        user = allUsers.find(u => {
+            const uPrefix = u.email.split('@')[0].toLowerCase();
+            const pParts = emailPrefix.split('.');
+            const uParts = uPrefix.split('.');
+
+            // Match se primeiro e último nome batem no prefixo
+            return pParts[0] === uParts[0] && pParts[pParts.length - 1] === uParts[uParts.length - 1];
+        }) || null;
+    }
+
+    // 4. Tenta achar pelo Nome se fornecido
+    if (!user && name) {
+        user = await prisma.user.findFirst({
+            where: { name: { equals: name, mode: 'insensitive' } }
+        });
+    }
+
+    // 5. Cria placeholder apenas se realmente não existir nada similar
+    if (!user) {
         try {
             user = await prisma.user.create({
                 data: {
                     name: name || email.split('@')[0],
                     email: email,
-                    // Dados dummy
                     jobTitle: "Não mapeado",
                     department: "Geral"
                 }
             });
         } catch (e) {
-            // Se der erro de Unique constraint (raro com findFirst antes), tenta buscar de novo
             user = await prisma.user.findUnique({ where: { email } });
         }
     }

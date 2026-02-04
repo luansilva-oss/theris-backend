@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Server, FileText, LogOut, Bird,
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
   Search, Bell, Lock, Layers, ChevronDown, ChevronRight,
-  Users // Ícone para Gestão de Pessoas
+  Users, Building, Briefcase // Ícone para Gestão de Pessoas
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
@@ -72,6 +72,8 @@ export default function App() {
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
+  const [expandedDept, setExpandedDept] = useState<string | null>(null);
+  const [expandedRole, setExpandedRole] = useState<string | null>(null);
 
   // MODAL
   const [modalOpen, setModalOpen] = useState(false);
@@ -244,6 +246,18 @@ export default function App() {
     }, {} as Record<string, User[]>);
   };
 
+  const getGroupedPeople = () => {
+    const grouped: Record<string, Record<string, User[]>> = {};
+    allUsers.forEach(u => {
+      const dept = u.department || 'Geral';
+      const role = u.jobTitle || 'Sem Cargo';
+      if (!grouped[dept]) grouped[dept] = {};
+      if (!grouped[dept][role]) grouped[dept][role] = [];
+      grouped[dept][role].push(u);
+    });
+    return grouped;
+  };
+
   // --- RENDER ---
 
   if (isMfaRequired) return (
@@ -366,55 +380,76 @@ export default function App() {
             </div>
           )}
 
-          {/* GESTÃO DE PESSOAS */}
+          {/* GESTÃO DE PESSOAS MODERNA (AGRUPADA POR DEPARTAMENTO) */}
           {activeTab === 'PEOPLE' && (
             <div className="fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Colaboradores</h2>
-                <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Usuários Cadastrados</div>
+                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
+                <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Colaboradores Ativos</div>
               </div>
 
-              <div className="card-base" style={{ padding: 0, overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #27272a', color: '#a1a1aa', textAlign: 'left' }}>
-                      <th style={{ padding: '16px', fontWeight: 600, width: '30%' }}>NOME</th>
-                      <th style={{ padding: '16px', fontWeight: 600, width: '25%' }}>CARGO</th>
-                      <th style={{ padding: '16px', fontWeight: 600, width: '20%' }}>DEPARTAMENTO</th>
-                      <th style={{ padding: '16px', fontWeight: 600, width: '25%' }}>GESTOR DIRETO</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allUsers.map(u => (
-                      <tr key={u.id} style={{ borderBottom: '1px solid #1f1f22', color: '#e4e4e7' }}>
-                        <td style={{ padding: '16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#4c1d95', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 'bold' }}>
-                              {u.name.charAt(0)}
-                            </div>
-                            <span style={{ fontWeight: 500 }}>{u.name}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '16px', color: '#d4d4d8' }}>{u.jobTitle || '-'}</td>
-                        <td style={{ padding: '16px' }}>
-                          {u.department ? (
-                            <span style={{ padding: '2px 8px', borderRadius: 4, background: '#27272a', color: '#a1a1aa', fontSize: 12 }}>
-                              {u.department}
-                            </span>
-                          ) : '-'}
-                        </td>
-                        <td style={{ padding: '16px', color: '#a78bfa' }}>
-                          {u.manager ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#a78bfa' }}></div>
-                              {u.manager.name}
-                            </div>
-                          ) : <span style={{ color: '#52525b', fontStyle: 'italic' }}>-</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {Object.entries(getGroupedPeople())
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([dept, roles]) => (
+                    <div key={dept} className="card-base" style={{ padding: 0, overflow: 'hidden', border: '1px solid #27272a' }}>
+                      {/* HEADER DEPARTAMENTO */}
+                      <div
+                        onClick={() => setExpandedDept(expandedDept === dept ? null : dept)}
+                        style={{
+                          padding: '16px 24px',
+                          background: '#18181b',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <Building size={20} color="#a78bfa" />
+                          <span style={{ fontWeight: 700, color: 'white', fontSize: 16 }}>{dept}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{ fontSize: 11, color: '#a1a1aa', background: '#27272a', padding: '2px 8px', borderRadius: 4 }}>
+                            {Object.values(roles).flat().length} Pessoas
+                          </span>
+                          {expandedDept === dept ? <ChevronDown size={18} color="#a1a1aa" /> : <ChevronRight size={18} color="#52525b" />}
+                        </div>
+                      </div>
+
+                      {/* LISTA DE CARGOS NO DEPARTAMENTO */}
+                      {expandedDept === dept && (
+                        <div style={{ background: '#09090b', padding: '8px 24px 24px 24px' }}>
+                          {Object.entries(roles)
+                            .sort(([a], [b]) => a.localeCompare(b))
+                            .map(([role, users]) => (
+                              <div key={role} style={{ marginTop: 16 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, borderLeft: '2px solid #3f3f46', paddingLeft: 12 }}>
+                                  <Briefcase size={14} color="#71717a" />
+                                  <span style={{ fontSize: 13, fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5 }}>{role}</span>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                                  {users.map(u => (
+                                    <div key={u.id} style={{ background: '#18181b', padding: 12, borderRadius: 8, border: '1px solid #27272a', display: 'flex', alignItems: 'center', gap: 12 }}>
+                                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                                        {u.name.charAt(0)}
+                                      </div>
+                                      <div style={{ flex: 1, overflow: 'hidden' }}>
+                                        <div style={{ color: 'white', fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
+                                        <div style={{ color: '#52525b', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</div>
+                                      </div>
+                                      {u.manager && (
+                                        <div title={`Gestor: ${u.manager.name}`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#a78bfa' }}></div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
               </div>
             </div>
           )}
