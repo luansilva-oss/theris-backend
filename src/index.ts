@@ -7,7 +7,7 @@ import path from 'path';
 // --- IMPORTAÇÕES DOS CONTROLADORES ---
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
-import { getAllTools } from './controllers/toolController';
+import { getTools } from './controllers/toolController';
 import { getAllUsers } from './controllers/userController';
 
 // Slack
@@ -53,7 +53,7 @@ app.get('/api/structure', async (req, res) => {
 });
 
 // 2. Ferramentas
-app.get('/api/tools', getAllTools);
+app.get('/api/tools', getTools);
 
 // 3. Usuários (Usa o controller novo que criamos)
 app.get('/api/users', getAllUsers);
