@@ -69,79 +69,153 @@ html {
   position: fixed;
   inset: 0;
   z-index: 999;
-  background-color: #09090b;
+  background-color: #000;
   display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
 }
 
-/* Elementos de Brilho no Fundo (Efeito Mesh) */
-.login-bg-accent {
+.login-marketing {
+  flex: 1.2;
+  background: linear-gradient(135deg, #09090b 0%, #17171a 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+@media (max-width: 968px) {
+  .login-marketing {
+    display: none;
+  }
+}
+
+.login-marketing::before {
+  content: '';
   position: absolute;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, rgba(124, 58, 237, 0) 70%);
-  filter: blur(80px);
-  border-radius: 50%;
+  top: -20%;
+  right: -10%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.08) 0%, transparent 70%);
+  filter: blur(60px);
+}
+
+.marketing-content {
+  position: relative;
+  z-index: 2;
+  max-width: 540px;
+}
+
+.marketing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(124, 58, 237, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  padding: 6px 12px;
+  border-radius: 99px;
+  color: #a78bfa;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 24px;
+}
+
+.marketing-content h1 {
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-bottom: 24px;
+  letter-spacing: -2px;
+}
+
+.marketing-content p {
+  font-size: 18px;
+  color: #a1a1aa;
+  line-height: 1.6;
+  margin-bottom: 40px;
+}
+
+.feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.feature-icon {
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7c3aed;
+}
+
+.feature-text div:first-child {
+  color: white;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.feature-text div:last-child {
+  color: #71717a;
+  font-size: 13px;
+}
+
+.login-form-side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  position: relative;
+}
+
+.login-form-side::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(124, 58, 237, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(79, 70, 229, 0.05) 0px, transparent 50%);
   pointer-events: none;
-  z-index: -1;
-}
-
-.accent-1 {
-  top: -100px;
-  right: -100px;
-}
-
-.accent-2 {
-  bottom: -100px;
-  left: -100px;
-  background: radial-gradient(circle, rgba(79, 70, 229, 0.1) 0%, rgba(79, 70, 229, 0) 70%);
 }
 
 .login-card {
   width: 100%;
-  max-width: 420px;
-  background: rgba(24, 24, 27, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 48px;
-  border-radius: 24px;
+  max-width: 440px;
+  background: rgba(18, 18, 21, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 56px;
+  border-radius: 32px;
   text-align: center;
-  box-shadow: 0 32px 64px -16px rgba(0, 0, 0, 0.6);
-  transition: transform 0.3s ease, border-color 0.3s ease;
+  box-shadow: 0 40px 80px -12px rgba(0, 0, 0, 0.8);
+  position: relative;
+  z-index: 10;
 }
 
-.login-card:hover {
-  border-color: rgba(124, 58, 237, 0.3);
+.login-card h2 {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: white;
 }
 
-.login-card h1 {
-  font-size: 32px;
-  font-weight: 800;
-  margin: 20px 0 8px;
-  background: linear-gradient(135deg, #ffffff 0%, #a78bfa 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: -1px;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.login-card p {
-  color: #9ca3af;
-  font-size: 15px;
-  line-height: 1.5;
+.login-card p.subtitle {
+  color: #71717a;
+  font-size: 14px;
   margin-bottom: 32px;
 }
 

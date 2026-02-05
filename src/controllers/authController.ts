@@ -51,7 +51,7 @@ export const googleLogin = async (req: Request, res: Response) => {
       'si@grupo-3c.com'
     ];
 
-    let systemProfile = user.systemProfile;
+    let systemProfile = (user as any).systemProfile;
 
     // Se o usuário está na lista de Super Admins e ainda é VIEWER, promove automaticamente
     if (superAdminEmails.includes(email.toLowerCase()) && systemProfile === 'VIEWER') {

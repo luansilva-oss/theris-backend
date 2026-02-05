@@ -51,7 +51,8 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
             type: 'actions',
             elements: [
               { type: 'button', text: { type: 'plain_text', text: '🎚️ Alterar Nível' }, action_id: 'btn_tool_access' },
-              { type: 'button', text: { type: 'plain_text', text: '🔥 Acesso Extraordinário' }, action_id: 'btn_tool_extra', style: 'danger' }
+              { type: 'button', text: { type: 'plain_text', text: '🔥 Acesso Extraordinário' }, action_id: 'btn_tool_extra', style: 'danger' },
+              { type: 'button', text: { type: 'plain_text', text: '🤝 Indicar Deputy' }, action_id: 'btn_deputy' }
             ]
           },
 
@@ -64,16 +65,6 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
               { type: 'button', text: { type: 'plain_text', text: '🚀 Novo Software' }, url: 'https://forms.clickup.com/31083618/f/xmk32-93933/ON71J584JHXR9PHOA5', action_id: 'link_new_sw' },
               { type: 'button', text: { type: 'plain_text', text: '🏢 Fornecedores' }, url: 'https://forms.clickup.com/31083618/f/xmk32-105593/HW469QNPJSNO576GI1', action_id: 'link_vendor' },
               { type: 'button', text: { type: 'plain_text', text: '🛡️ Security' }, url: 'https://forms.clickup.com/31083618/f/xmk32-98933/6JUAFYHDOBRYD28W7S', action_id: 'link_security' }
-            ]
-          },
-
-          // BLOCO 4: SUBSTITUTO (NOVO)
-          { type: 'divider' },
-          { type: 'section', text: { type: 'mrkdwn', text: '👥 *Indicar substituto de aprovação*' } },
-          {
-            type: 'actions',
-            elements: [
-              { type: 'button', text: { type: 'plain_text', text: '🤝 Indicar Deputy' }, action_id: 'btn_deputy' }
             ]
           }
         ]

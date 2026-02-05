@@ -8,18 +8,8 @@ export const getAllUsers = async (req: Request, res: Response) => {
     const users = await prisma.user.findMany({
       orderBy: { name: 'asc' },
       select: {
-        id: true,
-        name: true,
-        email: true,
-        jobTitle: true,
-        department: true,
         systemProfile: true,
-        manager: {
-          select: {
-            name: true
-          }
-        }
-      }
+      } as any
     });
 
     return res.json(users);
@@ -40,8 +30,8 @@ export const updateUser = async (req: Request, res: Response) => {
     const requester = await prisma.user.findUnique({ where: { id: requesterId } });
     if (!requester) return res.status(403).json({ error: "Solicitante não encontrado." });
 
-    const isSuperAdmin = requester.systemProfile === 'SUPER_ADMIN';
-    const isGestor = ['GESTOR', 'ADMIN'].includes(requester.systemProfile);
+    const isSuperAdmin = (requester as any).systemProfile === 'SUPER_ADMIN';
+    const isGestor = ['GESTOR', 'ADMIN'].includes((requester as any).systemProfile);
 
     if (!isSuperAdmin && !isGestor) {
       return res.status(403).json({ error: "Sem permissão para editar usuários." });
