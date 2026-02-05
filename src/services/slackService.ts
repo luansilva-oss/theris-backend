@@ -65,6 +65,16 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
               { type: 'button', text: { type: 'plain_text', text: '🏢 Fornecedores' }, url: 'https://forms.clickup.com/31083618/f/xmk32-105593/HW469QNPJSNO576GI1', action_id: 'link_vendor' },
               { type: 'button', text: { type: 'plain_text', text: '🛡️ Security' }, url: 'https://forms.clickup.com/31083618/f/xmk32-98933/6JUAFYHDOBRYD28W7S', action_id: 'link_security' }
             ]
+          },
+
+          // BLOCO 4: SUBSTITUTO (NOVO)
+          { type: 'divider' },
+          { type: 'section', text: { type: 'mrkdwn', text: '👥 *Indicar substituto de aprovação*' } },
+          {
+            type: 'actions',
+            elements: [
+              { type: 'button', text: { type: 'plain_text', text: '🤝 Indicar Deputy' }, action_id: 'btn_deputy' }
+            ]
           }
         ]
       }
@@ -172,7 +182,49 @@ slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
           { type: 'input', block_id: 'blk_collab', label: { type: 'plain_text', text: 'Quem receberá o acesso?' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Permissão Necessária (nível de acesso)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+
+          // Campos de Duração
+          {
+            type: 'section',
+            block_id: 'blk_duration_wrap',
+            text: { type: 'mrkdwn', text: '*Estimativa de Tempo*' },
+            accessory: {
+              type: 'static_select',
+              action_id: 'unit_select',
+              placeholder: { type: 'plain_text', text: 'Unidade' },
+              options: [
+                { text: { type: 'plain_text', text: 'Horas' }, value: 'horas' },
+                { text: { type: 'plain_text', text: 'Dias' }, value: 'dias' },
+                { text: { type: 'plain_text', text: 'Meses' }, value: 'meses' }
+              ]
+            }
+          },
+          { type: 'input', block_id: 'blk_duration_val', label: { type: 'plain_text', text: 'Quantidade' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: 48' } } },
+
           { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa (Compliance)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
+        ]
+      }
+    });
+  } catch (e) { console.error(e); }
+});
+
+// INDICAR DEPUTY (NOVO)
+slackApp.action('btn_deputy', async ({ ack, body, client }) => {
+  await ack();
+  try {
+    await client.views.push({
+      trigger_id: (body as any).trigger_id,
+      view: {
+        type: 'modal',
+        callback_id: 'submit_deputy',
+        title: { type: 'plain_text', text: 'Indicar Substituto' },
+        submit: { type: 'plain_text', text: 'Indicar' },
+        blocks: [
+          { type: 'section', text: { type: 'mrkdwn', text: '_O "Deputy" é um gestor reserva que pode aprovar acessos em seu nome._' } },
+          { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Substituto' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
         ]
       }
     });
@@ -291,13 +343,37 @@ slackApp.view('submit_tool_extra', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
   const tool = v.blk_tool.inp.value;
+  const duration = v.blk_duration_val.inp.value;
+  const unit = v.blk_duration_wrap.unit_select.selected_option?.value;
+
   const details = {
     info: `Extraordinário: ${tool}`,
     beneficiary: v.blk_collab.inp.value,
     tool,
-    target: v.blk_target.inp.value
+    target: v.blk_target.inp.value,
+    duration,
+    unit
   };
-  await saveRequest(body, client, 'ACCESS_TOOL_EXTRA', details, v.blk_reason.inp.value!, `🔥 Acesso extraordinário para *${tool}* enviado ao time de Segurança.`, true);
+
+  let reason = v.blk_reason.inp.value!;
+  if (duration && unit) {
+    reason += ` (Duração pedida: ${duration} ${unit})`;
+  }
+
+  await saveRequest(body, client, 'ACCESS_TOOL_EXTRA', details, reason, `🔥 Acesso extraordinário para *${tool}* enviado ao time de Segurança.`, true);
+});
+
+slackApp.view('submit_deputy', async ({ ack, body, view, client }) => {
+  await ack();
+  const v = view.state.values;
+  const name = v.blk_name.inp.value;
+  const details = {
+    info: `Indicação de Deputy: ${name}`,
+    substitute: name,
+    role: v.blk_role.inp.value,
+    dept: v.blk_dept.inp.value
+  };
+  await saveRequest(body, client, 'DEPUTY_DESIGNATION', details, v.blk_reason.inp.value!, `✅ Indicação de *${name}* como seu Substituto (Deputy) enviada para aprovação do time de S.I.`);
 });
 
 // ============================================================

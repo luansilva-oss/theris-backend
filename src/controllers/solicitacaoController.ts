@@ -6,9 +6,9 @@ import { sendSlackNotification } from '../services/slackService';
 const prisma = new PrismaClient();
 
 // ============================================================
-// AUXILIAR: Encontrar Aprovador da Ferramenta
+// AUXILIAR: Encontrar Aprovador da Ferramenta (Lógica Avançada)
 // ============================================================
-async function findToolApprover(toolName: string) {
+async function findToolApprover(toolName: string, requesterId: string) {
   const tool = await prisma.tool.findFirst({
     where: {
       OR: [
@@ -19,12 +19,30 @@ async function findToolApprover(toolName: string) {
     include: { owner: true, subOwner: true }
   });
 
-  if (!tool) return { approverId: null, role: 'SI_ANALYST' }; // Se não achar, vai para SI
+  if (!tool) return { approverId: null, role: 'SI_ANALYST', status: 'PENDENTE_SI' };
 
-  if (tool.owner) return { approverId: tool.owner.id, role: 'TOOL_OWNER' };
-  if (tool.subOwner) return { approverId: tool.subOwner.id, role: 'TOOL_SUB_OWNER' };
+  const requester = await prisma.user.findUnique({
+    where: { id: requesterId },
+    include: { manager: true }
+  });
 
-  return { approverId: null, role: 'SI_ANALYST' };
+  const managerId = requester?.managerId;
+
+  // REGRA 1: Gestor Imediato aprova primeiro
+  if (managerId) {
+    // SE o Gestor Imediato NÃO for o Owner, ele aprova
+    if (tool.ownerId !== managerId) {
+      return { approverId: managerId, role: 'MANAGER', status: 'PENDENTE_GESTOR' };
+    }
+
+    // REGRA 2: Se Gestor == Owner, tenta Sub-owner
+    if (tool.subOwnerId && tool.subOwnerId !== managerId) {
+      return { approverId: tool.subOwnerId, role: 'TOOL_SUB_OWNER', status: 'PENDENTE_SUB_OWNER' };
+    }
+  }
+
+  // REGRA 3: Se não tem gestor, ou gestor é owner e não tem sub-owner (ou sub-owner também é gestor), vai para SI
+  return { approverId: null, role: 'SI_ANALYST', status: 'PENDENTE_SI' };
 }
 
 // ============================================================
@@ -53,16 +71,14 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     let status = 'PENDENTE_GESTOR';
 
     // ROTA A: FERRAMENTAS / ACESSOS
-    if (['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType) || isExtraordinary) {
+    if (['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'].includes(safeType) || isExtraordinary) {
       try {
         const toolName = detailsObj.tool || detailsObj.toolName || (detailsObj.info ? detailsObj.info.split(': ')[1] : null);
         if (toolName) {
-          const route = await findToolApprover(toolName);
+          const route = await findToolApprover(toolName, safeRequesterId);
           approverId = route.approverId;
           currentApproverRole = route.role;
-          if (route.role === 'TOOL_OWNER') status = 'PENDENTE_OWNER';
-          else if (route.role === 'TOOL_SUB_OWNER') status = 'PENDENTE_SUB_OWNER';
-          else status = 'PENDENTE_SI';
+          status = route.status;
         } else {
           status = 'PENDENTE_SI';
           currentApproverRole = 'SI_ANALYST';
@@ -72,13 +88,17 @@ export const createSolicitacao = async (req: Request, res: Response) => {
         currentApproverRole = 'SI_ANALYST';
       }
     }
-    // ROTA B: GESTÃO DE PESSOAS (RH - Admissão, Promoção, Demissão)
-    else if (['ADMISSAO', 'DEMISSAO', 'PROMOCAO', 'MUDANCA_AREA'].includes(safeType)) {
-      // Fluxo de RH: Geralmente vai para SI ou Gestor de RH, vamos padronizar para SI aprovar a parte técnica
+    // ROTA B: GESTÃO DE PESSOAS / DEPUTY
+    else if (['DEPUTY_DESIGNATION'].includes(safeType)) {
       status = 'PENDENTE_SI';
       currentApproverRole = 'SI_ANALYST';
     }
-    // ROTA C: GENÉRICA
+    // ROTA C: RH (Admissão, Promoção, Demissão)
+    else if (['ADMISSAO', 'DEMISSAO', 'PROMOCAO', 'MUDANCA_AREA', 'HIRING', 'FIRING', 'CHANGE_ROLE'].includes(safeType)) {
+      status = 'PENDENTE_SI';
+      currentApproverRole = 'SI_ANALYST';
+    }
+    // ROTA D: GENÉRICA
     else {
       const requester = await prisma.user.findUnique({
         where: { id: safeRequesterId },
@@ -105,8 +125,10 @@ export const createSolicitacao = async (req: Request, res: Response) => {
         justification: justification ? String(justification) : null,
         status,
         currentApproverRole,
-        approverId, // Quem deve aprovar
-        isExtraordinary: Boolean(isExtraordinary)
+        approverId,
+        isExtraordinary: Boolean(isExtraordinary),
+        extraordinaryDuration: detailsObj.duration ? parseInt(detailsObj.duration) : null,
+        extraordinaryUnit: detailsObj.unit || null
       }
     });
 
@@ -199,12 +221,10 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       }
 
       // CENÁRIO 2: ACESSO EXTRAORDINÁRIO / FERRAMENTA PONTUAL
-      // Isso NÃO passa pelo Convenia, então o Theris executa.
       else if (['ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'].includes(request.type) || request.isExtraordinary) {
         try {
           const toolName = currentDetails.tool || currentDetails.toolName;
           const targetUserId = request.requesterId;
-          // Se for extraordinário, geralmente é acesso "Membro" ou o que foi pedido
           const accessStatus = 'ACTIVE';
 
           if (toolName) {
@@ -213,7 +233,6 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
             });
 
             if (tool) {
-              // Verifica se já existe para não duplicar
               const existing = await prisma.access.findFirst({
                 where: { userId: targetUserId, toolId: tool.id }
               });
@@ -221,14 +240,22 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               if (existing) {
                 await prisma.access.update({
                   where: { id: existing.id },
-                  data: { status: 'ACTIVE' }
+                  data: {
+                    status: 'ACTIVE',
+                    isExtraordinary: request.isExtraordinary,
+                    duration: request.extraordinaryDuration,
+                    unit: request.extraordinaryUnit
+                  }
                 });
               } else {
                 await prisma.access.create({
                   data: {
                     toolId: tool.id,
                     userId: targetUserId,
-                    status: 'ACTIVE'
+                    status: 'ACTIVE',
+                    isExtraordinary: request.isExtraordinary,
+                    duration: request.extraordinaryDuration,
+                    unit: request.extraordinaryUnit
                   }
                 });
               }
@@ -237,6 +264,27 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           }
         } catch (triggerError) {
           console.error("❌ Erro gatilho automático:", triggerError);
+        }
+      }
+
+      // CENÁRIO 3: DESIGNAÇÃO DE DEPUTY (SUBSTITUTO)
+      else if (request.type === 'DEPUTY_DESIGNATION') {
+        try {
+          const substituteName = currentDetails.substitute;
+          // Tenta achar o usuário substituto pelo nome no banco
+          const substituteUser = await prisma.user.findFirst({
+            where: { name: { contains: substituteName, mode: 'insensitive' } }
+          });
+
+          if (substituteUser) {
+            await prisma.user.update({
+              where: { id: request.requesterId },
+              data: { myDeputyId: substituteUser.id }
+            });
+            console.log(`✅ Deputy Designado: ${substituteUser.name} para o gestor ${request.requester.name}`);
+          }
+        } catch (deputyError) {
+          console.error("❌ Erro ao designar deputy:", deputyError);
         }
       }
     }
