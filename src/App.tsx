@@ -11,7 +11,8 @@ import './App.css';
 import { ModalObservacao } from './components/ModalObservacao';
 import { EditToolModal } from './components/EditToolModal';
 import { CreateToolModal } from './components/CreateToolModal';
-import { Pen, PlusCircle } from 'lucide-react';
+import { EditUserModal } from './components/EditUserModal';
+import { Pen, PlusCircle, Edit2 } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -22,6 +23,7 @@ interface User {
   email: string;
   jobTitle?: string;
   department?: string;
+  systemProfile: string; // Adicionado para RBAC
   manager?: { name: string };
 }
 
@@ -49,7 +51,7 @@ interface Request {
   adminNote?: string;
 }
 
-type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER';
+type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER' | 'GESTOR';
 
 const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 Horas
 
@@ -84,6 +86,8 @@ export default function App() {
   // EDIT MODAL
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
 
   // Stats
   const stats = {
@@ -296,12 +300,21 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand-box"><Bird size={24} color="#7c3aed" /> THERIS OS</div>
         <div className="nav-section">
-          <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Visão Geral</div>
-
-          <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => setActiveTab('PEOPLE')}><Users size={18} /> Gestão de Pessoas</div>
-
-          <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Layers size={18} /> Catálogo</div>
-          {['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(systemProfile) && <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Auditoria</div>}
+          {['SUPER_ADMIN', 'GESTOR', 'ADMIN'].includes(systemProfile) ? (
+            <>
+              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Visão Geral</div>
+              <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => setActiveTab('PEOPLE')}><Users size={18} /> Gestão de Pessoas</div>
+              <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Layers size={18} /> Catálogo</div>
+              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
+            </>
+          ) : systemProfile === 'APPROVER' ? (
+            <>
+              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Visão Geral</div>
+              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
+            </>
+          ) : (
+            <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Meu Painel</div>
+          )}
         </div>
         <div className="user-mini-profile">
           <div className="avatar-small">{currentUser?.name.charAt(0)}</div>
@@ -335,37 +348,43 @@ export default function App() {
                 <div style={{ fontSize: '12px', textTransform: 'uppercase', color: '#a1a1aa' }}>{new Date().toLocaleDateString('pt-BR', { month: 'short' })}</div>
               </div>
 
-              <div className="card-base cell-stat">
-                <div className="card-header"><span className="card-title">Pendentes</span><Clock size={16} color="#fbbf24" /></div>
-                <div className="metric-value">{stats.pending}</div>
-              </div>
+              {(systemProfile === 'SUPER_ADMIN' || systemProfile === 'GESTOR' || systemProfile === 'ADMIN' || systemProfile === 'APPROVER') && (
+                <>
+                  <div className="card-base cell-stat">
+                    <div className="card-header"><span className="card-title">Pendentes</span><Clock size={16} color="#fbbf24" /></div>
+                    <div className="metric-value">{stats.pending}</div>
+                  </div>
 
-              <div className="card-base cell-stat">
-                <div className="card-header"><span className="card-title">Aprovados</span><CheckCircle size={16} color="#10b981" /></div>
-                <div className="metric-value">{stats.approved}</div>
-              </div>
+                  <div className="card-base cell-stat">
+                    <div className="card-header"><span className="card-title">Aprovados</span><CheckCircle size={16} color="#10b981" /></div>
+                    <div className="metric-value">{stats.approved}</div>
+                  </div>
+                </>
+              )}
 
-              <div className="card-base cell-tasks">
-                <div className="card-header"><span className="card-title">Ação Necessária</span></div>
-                <div style={{ flex: 1, overflowY: 'auto' }}>
-                  {requests.filter(r => r.status.includes('PENDENTE')).length === 0 ? (
-                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: 14 }}>Nenhuma pendência.</div>
-                  ) : (
-                    requests.filter(r => r.status.includes('PENDENTE')).map(r => (
-                      <div key={r.id} className="action-row">
-                        <div className="action-info">
-                          <h4>{JSON.parse(r.details).info || JSON.parse(r.details).tool}</h4>
-                          <p>Solicitante: {r.requester?.name}</p>
+              {(systemProfile === 'SUPER_ADMIN' || systemProfile === 'GESTOR' || systemProfile === 'ADMIN' || systemProfile === 'APPROVER') && (
+                <div className="card-base cell-tasks">
+                  <div className="card-header"><span className="card-title">Ação Necessária</span></div>
+                  <div style={{ flex: 1, overflowY: 'auto' }}>
+                    {requests.filter(r => r.status.includes('PENDENTE')).length === 0 ? (
+                      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: 14 }}>Nenhuma pendência.</div>
+                    ) : (
+                      requests.filter(r => r.status.includes('PENDENTE')).map(r => (
+                        <div key={r.id} className="action-row">
+                          <div className="action-info">
+                            <h4>{JSON.parse(r.details).info || JSON.parse(r.details).tool}</h4>
+                            <p>Solicitante: {r.requester?.name}</p>
+                          </div>
+                          <div className="action-buttons">
+                            <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Aprovar</button>
+                            <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusar</button>
+                          </div>
                         </div>
-                        <div className="action-buttons">
-                          <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Aprovar</button>
-                          <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusar</button>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="card-base cell-feed">
                 <div className="card-header"><span className="card-title">Feed Recente</span></div>
@@ -440,6 +459,19 @@ export default function App() {
                                         <div style={{ color: 'white', fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
                                         <div style={{ color: '#52525b', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</div>
                                       </div>
+                                      {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                                        <button
+                                          className="btn-icon"
+                                          style={{ padding: '6px' }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedUser(u);
+                                            setIsEditUserModalOpen(true);
+                                          }}
+                                        >
+                                          <Edit2 size={14} color="#a1a1aa" />
+                                        </button>
+                                      )}
                                       {u.manager && (
                                         <div title={`Gestor: ${u.manager.name}`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#a78bfa' }}></div>
                                       )}
@@ -699,6 +731,19 @@ export default function App() {
           onClose={() => setIsEditModalOpen(false)}
           tool={selectedTool}
           onUpdate={loadData}
+        />
+      )}
+
+      {selectedUser && (
+        <EditUserModal
+          isOpen={isEditUserModalOpen}
+          onClose={() => {
+            setIsEditUserModalOpen(false);
+            setSelectedUser(null);
+          }}
+          user={selectedUser}
+          onUpdate={loadData}
+          currentUser={{ id: currentUser?.id || '', systemProfile }}
         />
       )}
 

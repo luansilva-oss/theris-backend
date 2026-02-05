@@ -42,17 +42,33 @@ export const googleLogin = async (req: Request, res: Response) => {
       });
     }
 
-    // 4. Definir Perfil de Sistema (Mockado por enquanto, já que removemos Role)
-    // Se o email for o teu ou de admins conhecidos, dá permissão total
-    let systemProfile = 'VIEWER';
-    const adminEmails = ['luan.silva@grupo-3c.com', 'si@grupo-3c.com']; // Adicione outros admins aqui
+    // 4. Definir Perfil de Sistema Persistente
+    // Super Admins definidos pelo usuário
+    const superAdminEmails = [
+      'luan.silva@grupo-3c.com',
+      'vladimir.sesar@grupo-3c.com',
+      'allan.vonstein@grupo-3c.com',
+      'si@grupo-3c.com'
+    ];
 
-    if (adminEmails.includes(email)) {
+    let systemProfile = user.systemProfile;
+
+    // Se o usuário está na lista de Super Admins e ainda é VIEWER, promove automaticamente
+    if (superAdminEmails.includes(email.toLowerCase()) && systemProfile === 'VIEWER') {
       systemProfile = 'SUPER_ADMIN';
-    } else {
-      // Se tiver um cargo de gestão no cadastro, vira APPROVER
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { systemProfile: 'SUPER_ADMIN' }
+      });
+    }
+    // Se for um gestor e ainda for VIEWER, vira APPROVER por padrão
+    else if (systemProfile === 'VIEWER') {
       if (user.jobTitle && (user.jobTitle.includes('Coord') || user.jobTitle.includes('Gerente') || user.jobTitle.includes('Head'))) {
         systemProfile = 'APPROVER';
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { systemProfile: 'APPROVER' }
+        });
       }
     }
 
