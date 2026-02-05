@@ -31,12 +31,23 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
 
     useEffect(() => {
         if (levelName) {
-            setName(levelName);
-            const descMap = tool.accessLevelDescriptions || {};
-            setDescription(descMap[levelName] || '');
+            // Only update name if it matches the *initial* level name prop, to avoid overwriting user edits on background refresh
+            // Ideally, we only set it once on mount or if levelName *actually* changes (e.g. switching levels)
+            // But since this modal usually unmounts on close, we can just set it if we haven't touched accessLevelDescriptions 
+            // Better: just check if description is empty to init, but name should track levelName if it CHANGES.
+            // Problem: tool refresh triggers re-render. 
+            // FIX: Don't rely on 'tool' for name resetting.
         }
-        loadUsers();
-    }, [levelName, tool]);
+    }, [levelName]); // Remove 'tool' from dependency for name/desc init
+
+    // Separate effect for description if needed, or just combine but be careful.
+    // Actually, simpler: Use a ref or just rely on levelName change.
+    useEffect(() => {
+        // Init state when levelName changes (e.g. opening modal)
+        setName(levelName);
+        const descMap = tool.accessLevelDescriptions || {};
+        setDescription(descMap[levelName] || '');
+    }, [levelName]);
 
     const loadUsers = async () => {
         try {
@@ -46,6 +57,11 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
             console.error(e);
         }
     };
+
+    // Load users once or when tool id changes
+    useEffect(() => {
+        loadUsers();
+    }, [tool.id]);
 
     const handleSaveInfo = async () => {
         setIsSaving(true);
@@ -61,7 +77,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
 
             if (res.ok) {
                 onUpdate();
-                if (name !== levelName) onClose(); // Close if renamed to avoid confusion, or could just update state
+                if (name !== levelName) onClose(); // Close if renamed to avoid confusion
             } else {
                 const data = await res.json();
                 alert(data.error || "Erro ao salvar.");
@@ -77,7 +93,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
             await fetch(`${API_URL}/api/tools/${tool.id}/access`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, level: levelName }) // Use current levelName (if renamed, ensure save first)
+                body: JSON.stringify({ userId, level: levelName }) // Use current levelName
             });
             onUpdate();
             setSearchTerm('');
@@ -133,11 +149,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
                                 placeholder="O que este nível pode fazer?"
                             />
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                            <button onClick={handleSaveInfo} disabled={isSaving} className="btn-verify" style={{ width: 'auto', padding: '8px 16px', fontSize: 12 }}>
-                                {isSaving ? 'Salvando...' : 'Salvar Detalhes'}
-                            </button>
-                        </div>
+                        {/* Removido botão daqui */}
                     </div>
 
                     {/* USERS SECTION */}
@@ -190,6 +202,13 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
                         </div>
                     </div>
 
+                </div>
+
+                <div className="modal-footer" style={{ borderTop: '1px solid #27272a', padding: '16px 0 0 0', marginTop: 0, display: 'flex', justifySelf: 'flex-end', justifyContent: 'flex-end' }}>
+                    <button onClick={handleSaveInfo} disabled={isSaving} className="btn-verify" style={{ width: 'auto', padding: '10px 24px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Save size={16} />
+                        {isSaving ? 'Salvando...' : 'Salvar Alterações'}
+                    </button>
                 </div>
             </div>
         </div>
