@@ -7,7 +7,7 @@ import path from 'path';
 // --- IMPORTAÇÕES DOS CONTROLADORES ---
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
-import { getTools, createTool, updateTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess } from './controllers/toolController';
+import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess } from './controllers/toolController';
 import { getAllUsers, updateUser } from './controllers/userController';
 // NOVO: Importar o controlador de reset
 import { resetCatalog } from './controllers/adminController';
@@ -62,6 +62,7 @@ app.get('/api/structure', async (req, res) => {
 app.get('/api/tools', getTools);
 app.post('/api/tools', createTool);
 app.put('/api/tools/:id', updateTool); // Atualizar ferramenta (Grupo, Owner, Níveis)
+app.delete('/api/tools/:id', deleteTool); // EXCLUIR FERRAMENTA
 
 app.get('/api/tool-groups', getToolGroups);
 app.post('/api/tool-groups', createToolGroup);

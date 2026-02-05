@@ -34,7 +34,7 @@ export const getTools = async (req: Request, res: Response) => {
 };
 
 export const createTool = async (req: Request, res: Response) => {
-  const { name, acronym, description, toolGroupId } = req.body;
+  const { name, acronym, description, toolGroupId, ownerId, subOwnerId, availableAccessLevels } = req.body;
   try {
     const tool = await prisma.tool.create({
       data: {
@@ -42,13 +42,28 @@ export const createTool = async (req: Request, res: Response) => {
         acronym,
         description,
         toolGroupId: toolGroupId || null,
-        availableAccessLevels: []
+        ownerId: ownerId || null,
+        subOwnerId: subOwnerId || null,
+        availableAccessLevels: availableAccessLevels || []
       }
     });
     return res.json(tool);
   } catch (error) {
     console.error("❌ Erro ao criar ferramenta:", error);
     return res.status(500).json({ error: 'Erro ao criar ferramenta' });
+  }
+};
+
+export const deleteTool = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    // Delete related accesses first
+    await prisma.access.deleteMany({ where: { toolId: id } });
+    await prisma.tool.delete({ where: { id } });
+    return res.json({ message: 'Ferramenta removida com sucesso' });
+  } catch (error) {
+    console.error("❌ Erro ao remover ferramenta:", error);
+    return res.status(500).json({ error: 'Erro ao remover ferramenta' });
   }
 };
 

@@ -13,7 +13,7 @@ import { EditToolModal } from './components/EditToolModal';
 import { CreateToolModal } from './components/CreateToolModal';
 import { EditUserModal } from './components/EditUserModal';
 import { EditAccessModal } from './components/EditAccessModal';
-import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity } from 'lucide-react';
+import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2 } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -227,6 +227,21 @@ export default function App() {
   };
 
   const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); setActiveTab('DASHBOARD'); setSelectedTool(null); setIsMfaRequired(false); };
+
+  const handleDeleteTool = async (id: string) => {
+    if (!window.confirm('🚨 TEM CERTEZA? Isso excluirá permanentemente esta ferramenta e todos os seus históricos de acesso!')) return;
+    try {
+      const res = await fetch(`${API_URL}/api/tools/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setSelectedTool(null);
+        loadData();
+      } else {
+        alert("Erro ao excluir ferramenta.");
+      }
+    } catch (e) {
+      alert("Erro de rede.");
+    }
+  };
 
   const handleOpenApprove = (id: string, action: 'APROVAR' | 'REPROVAR') => {
     setModalTargetId(id);
@@ -616,9 +631,14 @@ export default function App() {
                   <ArrowLeft size={16} /> Voltar para o Catálogo
                 </button>
                 {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
-                  <button onClick={() => setIsEditModalOpen(true)} className="btn-mini" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <Pen size={14} /> Editar Sistema
-                  </button>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => setIsEditModalOpen(true)} className="btn-mini" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <Pen size={14} /> Editar Sistema
+                    </button>
+                    <button onClick={() => handleDeleteTool(selectedTool.id)} className="btn-mini" style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                      <Trash2 size={14} /> Excluir
+                    </button>
+                  </div>
                 )}
               </div>
 
