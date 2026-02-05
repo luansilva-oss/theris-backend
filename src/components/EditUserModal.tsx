@@ -1,0 +1,164 @@
+import React, { useState, useEffect } from 'react';
+import { X, Save } from 'lucide-react';
+
+const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+
+interface User {
+    id: string;
+    name: string;
+    email: string;
+    jobTitle: string;
+    department: string;
+    systemProfile: string;
+}
+
+interface Props {
+    isOpen: boolean;
+    onClose: () => void;
+    user: User;
+    onUpdate: () => void;
+    currentUser: { id: string, systemProfile: string }; // Para validação e headers
+}
+
+export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate, currentUser }) => {
+    if (!isOpen) return null;
+
+    const [name, setName] = useState(user.name);
+    const [email, setEmail] = useState(user.email);
+    const [jobTitle, setJobTitle] = useState(user.jobTitle);
+    const [department, setDepartment] = useState(user.department);
+    const [systemProfile, setSystemProfile] = useState(user.systemProfile || 'VIEWER');
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        setName(user.name);
+        setEmail(user.email);
+        setJobTitle(user.jobTitle);
+        setDepartment(user.department);
+        setSystemProfile(user.systemProfile || 'VIEWER');
+    }, [user]);
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            const res = await fetch(`${API_URL}/api/users/${user.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-requester-id': currentUser.id
+                },
+                body: JSON.stringify({ name, email, jobTitle, department, systemProfile })
+            });
+
+            if (res.ok) {
+                onUpdate();
+                onClose();
+            } else {
+                const err = await res.json();
+                alert(err.error || "Erro ao salvar alterações.");
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Erro de rede ao salvar.");
+        }
+        setIsSaving(false);
+    };
+
+    const isSuperAdmin = currentUser.systemProfile === 'SUPER_ADMIN';
+    const isGestor = currentUser.systemProfile === 'GESTOR' || currentUser.systemProfile === 'ADMIN';
+
+    // Opções de Perfil baseadas em quem está editando
+    const profileOptions = [
+        { value: 'VIEWER', label: 'Viewer (Apenas Visualização)' },
+        { value: 'APPROVER', label: 'Aprovador (Aprova Tarefas/Ferramentas)' },
+    ];
+
+    if (isSuperAdmin) {
+        profileOptions.push({ value: 'GESTOR', label: 'Gestor (Gerencia Pessoas)' });
+        profileOptions.push({ value: 'SUPER_ADMIN', label: 'Super Admin (Acesso Total)' });
+    }
+
+    return (
+        <div className="modal-overlay">
+            <div className="modal-content" style={{ maxWidth: '500px' }}>
+                <div className="modal-header">
+                    <h2>Editar Colaborador</h2>
+                    <button onClick={onClose} className="btn-icon"><X size={20} /></button>
+                </div>
+
+                <div className="form-group">
+                    <label>Nome Completo</label>
+                    <input
+                        className="mfa-input-single"
+                        style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px' }}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                    />
+                </div>
+
+                <div className="form-group">
+                    <label>E-mail</label>
+                    <input
+                        className="mfa-input-single"
+                        style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px' }}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                    />
+                </div>
+
+                <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                    <div>
+                        <label>Cargo</label>
+                        <input
+                            className="mfa-input-single"
+                            style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px' }}
+                            value={jobTitle}
+                            onChange={(e) => setJobTitle(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label>Departamento</label>
+                        <input
+                            className="mfa-input-single"
+                            style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px' }}
+                            value={department}
+                            onChange={(e) => setDepartment(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                <div className="form-group">
+                    <label>Perfil de Sistema (Acesso)</label>
+                    <select
+                        className="mfa-input-single"
+                        style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px', background: '#1f2937' }}
+                        value={systemProfile}
+                        onChange={(e) => setSystemProfile(e.target.value)}
+                    >
+                        {profileOptions.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+                    <button
+                        className="btn-verify"
+                        style={{ margin: 0, flex: 1 }}
+                        disabled={isSaving}
+                        onClick={handleSave}
+                    >
+                        {isSaving ? 'Salvando...' : 'Salvar Alterações'}
+                    </button>
+                    <button
+                        className="btn-verify"
+                        style={{ margin: 0, background: 'transparent', border: '1px solid #374151', color: '#9CA3AF' }}
+                        onClick={onClose}
+                    >
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};

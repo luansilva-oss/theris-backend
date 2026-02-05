@@ -57,6 +57,9 @@ model User {
   requests      Request[] @relation("Requester") // Quem pediu
   approvals     Request[] @relation("Approver")  // Quem aprovou (NOVO PARA AUDITORIA)
 
+  // Perfil de Sistema (RBAC)
+  systemProfile String    @default("VIEWER")
+
   // MFA
   mfaCode       String?   
   mfaExpiresAt  DateTime? 
