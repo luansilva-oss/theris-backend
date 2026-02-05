@@ -13,7 +13,8 @@ import { EditToolModal } from './components/EditToolModal';
 import { CreateToolModal } from './components/CreateToolModal';
 import { EditUserModal } from './components/EditUserModal';
 import { EditAccessModal } from './components/EditAccessModal';
-import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2 } from 'lucide-react';
+import { ManageStructureModal } from './components/ManageStructureModal';
+import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -101,6 +102,7 @@ export default function App() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [selectedAccess, setSelectedAccess] = useState<any>(null);
   const [isEditAccessModalOpen, setIsEditAccessModalOpen] = useState(false);
+  const [isManageStructureOpen, setIsManageStructureOpen] = useState(false);
 
   // Stats
   const stats = {
@@ -523,7 +525,18 @@ export default function App() {
           {activeTab === 'PEOPLE' && (
             <div className="fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
+                  <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
+                  {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                    <button
+                      onClick={() => setIsManageStructureOpen(true)}
+                      className="btn-mini"
+                      style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'rgba(167, 139, 250, 0.1)', color: '#a78bfa', border: '1px solid rgba(167, 139, 250, 0.2)' }}
+                    >
+                      <Settings size={14} /> Gerenciar Estrutura
+                    </button>
+                  )}
+                </div>
                 <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Colaboradores Ativos</div>
               </div>
 
