@@ -104,6 +104,8 @@ export default function App() {
   const [selectedAccess, setSelectedAccess] = useState<any>(null);
   const [isEditAccessModalOpen, setIsEditAccessModalOpen] = useState(false);
   const [isManageStructureOpen, setIsManageStructureOpen] = useState(false);
+  const [isManageLevelModalOpen, setIsManageLevelModalOpen] = useState(false);
+  const [selectedLevelName, setSelectedLevelName] = useState<string | null>(null);
 
   // Stats
   const stats = {
