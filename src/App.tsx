@@ -14,7 +14,7 @@ import { CreateToolModal } from './components/CreateToolModal';
 import { EditUserModal } from './components/EditUserModal';
 import { EditAccessModal } from './components/EditAccessModal';
 import { ManageStructureModal } from './components/ManageStructureModal';
-import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings } from 'lucide-react';
+import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
