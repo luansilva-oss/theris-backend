@@ -181,3 +181,61 @@ export const updateToolAccess = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Erro ao atualizar acesso' });
   }
 };
+
+// --- LEVEL MANAGEMENT ---
+
+export const updateToolLevel = async (req: Request, res: Response) => {
+  const { toolId, oldLevelName } = req.params;
+  const { newLevelName, description } = req.body;
+
+  try {
+    const tool = await prisma.tool.findUnique({ where: { id: toolId } });
+    if (!tool) return res.status(404).json({ error: 'Ferramenta não encontrada' });
+
+    let updatedLevels = [...(tool.availableAccessLevels || [])];
+    let updatedDescriptions = (tool.accessLevelDescriptions as Record<string, string>) || {};
+
+    // 1. Rename Level (if name changed)
+    if (newLevelName && newLevelName !== oldLevelName) {
+      // Check if new name already exists
+      if (updatedLevels.includes(newLevelName)) {
+        return res.status(400).json({ error: 'Este nome de nível já existe.' });
+      }
+
+      // Update array
+      updatedLevels = updatedLevels.map(l => l === oldLevelName ? newLevelName : l);
+
+      // Update descriptions map key
+      if (updatedDescriptions[oldLevelName]) {
+        updatedDescriptions[newLevelName] = updatedDescriptions[oldLevelName];
+        delete updatedDescriptions[oldLevelName];
+      }
+
+      // Update all Access records
+      await prisma.access.updateMany({
+        where: { toolId, status: oldLevelName },
+        data: { status: newLevelName }
+      });
+    }
+
+    // 2. Update Description
+    if (description !== undefined) {
+      const targetName = newLevelName || oldLevelName;
+      updatedDescriptions[targetName] = description;
+    }
+
+    // Save Tool
+    const updatedTool = await prisma.tool.update({
+      where: { id: toolId },
+      data: {
+        availableAccessLevels: updatedLevels,
+        accessLevelDescriptions: updatedDescriptions
+      }
+    });
+
+    return res.json(updatedTool);
+  } catch (error) {
+    console.error("Erro ao atualizar nível:", error);
+    return res.status(500).json({ error: 'Erro ao atualizar nível' });
+  }
+};
