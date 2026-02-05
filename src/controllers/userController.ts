@@ -8,7 +8,17 @@ export const getAllUsers = async (req: Request, res: Response) => {
     const users = await prisma.user.findMany({
       orderBy: { name: 'asc' },
       select: {
+        id: true,
+        name: true,
+        email: true,
+        jobTitle: true,
+        department: true,
         systemProfile: true,
+        manager: {
+          select: {
+            name: true
+          }
+        }
       } as any
     });
 
@@ -58,5 +68,17 @@ export const updateUser = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Erro ao atualizar usuário:", error);
     return res.status(500).json({ error: "Erro interno ao atualizar colaborador." });
+  }
+};
+
+export const getDepartments = async (req: Request, res: Response) => {
+  try {
+    const departments = await prisma.department.findMany({
+      orderBy: { name: 'asc' }
+    });
+    return res.json(departments);
+  } catch (error) {
+    console.error("Erro ao listar departamentos:", error);
+    return res.status(500).json({ error: "Erro interno ao buscar departamentos." });
   }
 };
