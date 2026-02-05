@@ -14,6 +14,7 @@ import { CreateToolModal } from './components/CreateToolModal';
 import { EditUserModal } from './components/EditUserModal';
 import { EditAccessModal } from './components/EditAccessModal';
 import { ManageStructureModal } from './components/ManageStructureModal';
+import { ManageLevelModal } from './components/ManageLevelModal';
 import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
@@ -752,7 +753,10 @@ export default function App() {
                     <div key={level} className="card-base" style={{ padding: 0, overflow: 'hidden', border: '1px solid #27272a', transition: 'all 0.2s' }}>
 
                       <div
-                        onClick={() => setExpandedLevel(expandedLevel === level ? null : level)}
+                        onClick={() => {
+                          setSelectedLevelName(level);
+                          setIsManageLevelModalOpen(true);
+                        }}
                         style={{
                           padding: '16px 24px',
                           background: '#18181b',
@@ -768,6 +772,11 @@ export default function App() {
                             ? <Crown size={20} color="#fbbf24" fill="rgba(251, 191, 36, 0.2)" />
                             : <Shield size={20} color="#a1a1aa" />}
                           <span style={{ fontWeight: 600, color: '#f4f4f5', fontSize: 15 }}>{level}</span>
+                          <span style={{ fontSize: 10, color: '#71717a', marginLeft: 8 }}>
+                            {(selectedTool.accessLevelDescriptions as any)?.[level] &&
+                              ` - ${(selectedTool.accessLevelDescriptions as any)[level].substring(0, 30)}${((selectedTool.accessLevelDescriptions as any)[level].length > 30 ? '...' : '')}`
+                            }
+                          </span>
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
@@ -777,16 +786,15 @@ export default function App() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setIsEditModalOpen(true);
-                              // Ideally we would pass a state to switch tab to ACCESS, but state is internal to EditToolModal
-                              // For now, just opening the modal is a good shortcut.
+                              setSelectedLevelName(level);
+                              setIsManageLevelModalOpen(true);
                             }}
                             className="btn-mini"
                             style={{ padding: '4px 8px', fontSize: 11, background: '#27272a', border: '1px solid #3f3f46', height: 'auto', display: 'flex', gap: 4 }}
                           >
                             <Plus size={12} /> Add
                           </button>
-                          {expandedLevel === level ? <ChevronDown size={18} color="#a1a1aa" /> : <ChevronRight size={18} color="#52525b" />}
+                          <Edit2 size={16} color="#52525b" />
                         </div>
                       </div>
 
@@ -998,6 +1006,19 @@ export default function App() {
         onClose={() => setIsManageStructureOpen(false)}
         onUpdate={loadData}
       />
+
+      {selectedTool && selectedLevelName && (
+        <ManageLevelModal
+          isOpen={isManageLevelModalOpen}
+          onClose={() => {
+            setIsManageLevelModalOpen(false);
+            setSelectedLevelName(null);
+          }}
+          tool={selectedTool}
+          levelName={selectedLevelName}
+          onUpdate={loadData}
+        />
+      )}
     </div>
   );
 }
