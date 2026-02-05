@@ -10,6 +10,7 @@ const toolsData = [
     {
         name: "JumpCloud",
         acronym: "JC",
+        description: "Plataforma de diretório em nuvem para gerenciamento de identidades, acesso e dispositivos Enterprise.",
         ownerEmail: "vladimir.sesar@grupo-3c.com", ownerName: "Vladimir Sesar",
         subOwnerEmail: "luan.silva@grupo-3c.com", subOwnerName: "Luan Matheus",
         accesses: [
@@ -24,6 +25,7 @@ const toolsData = [
     {
         name: "ClickUp",
         acronym: "CK",
+        description: "Hub de produtividade tudo-em-um para gerenciamento de tarefas, projetos e colaboração de times.",
         ownerEmail: "isabely.wendler@grupo-3c.com", ownerName: "Isabely Wendler",
         subOwnerEmail: "renata.czapiewski@grupo-3c.com", subOwnerName: "Renata Czapiewski",
         accesses: [
@@ -61,6 +63,7 @@ const toolsData = [
     {
         name: "HubSpot",
         acronym: "HS",
+        description: "Plataforma líder de CRM e automação de marketing para aceleração de vendas e suporte.",
         ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
         subOwnerEmail: "deborah.peres@grupo-3c.com", subOwnerName: "Deborah Peres",
         accesses: [
@@ -147,6 +150,7 @@ const toolsData = [
     {
         name: "3C Plus",
         acronym: "CP",
+        description: "Solução completa de discador inteligente e gestão de contact center para alta performance em voz.",
         ownerEmail: "allan.vonstein@grupo-3c.com", ownerName: "Allan Von Stein",
         subOwnerEmail: "fernando.mosquer@grupo-3c.com", subOwnerName: "Fernando Mosquer",
         accesses: [
@@ -221,6 +225,7 @@ const toolsData = [
     {
         name: "Evolux",
         acronym: "EX",
+        description: "Sistema corporativo de telefonia IP e comunicação para gestão avançada de filas e chamadas.",
         ownerEmail: "carlos.marques@grupo-3c.com", ownerName: "Carlos Marques",
         subOwnerEmail: "bruno.levi@grupo-3c.com", subOwnerName: "Bruno Levi",
         accesses: []
@@ -229,6 +234,7 @@ const toolsData = [
     {
         name: "Dizify",
         acronym: "DZ",
+        description: "Plataforma de automação e integração de processos para otimização de fluxos de trabalho digitais.",
         ownerEmail: "marieli.ferreira@grupo-3c.com", ownerName: "Marieli Ferreira",
         subOwnerEmail: "jeferson.cruz@grupo-3c.com", subOwnerName: "Jeferson Da Cruz",
         accesses: [
@@ -248,6 +254,7 @@ const toolsData = [
     {
         name: "Next Suit",
         acronym: "NS",
+        description: "Sistema ERP (NetSuite) para gestão integrada de finanças, estoque e processos operacionais.",
         ownerEmail: "aline.fonseca@grupo-3c.com", ownerName: "Aline Fonseca",
         subOwnerEmail: "fernando.takakusa@grupo-3c.com", subOwnerName: "Fernando Takakusa",
         accesses: [
@@ -266,6 +273,7 @@ const toolsData = [
     {
         name: "GitLab",
         acronym: "GL",
+        description: "Plataforma DevOps completa para controle de versão, CI/CD e segurança de código-fonte.",
         ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
         subOwnerEmail: "joao.vasconcelos@grupo-3c.com", subOwnerName: "Joao Paulo",
         accesses: [
@@ -310,6 +318,7 @@ const toolsData = [
     {
         name: "AWS",
         acronym: "AS",
+        description: "Infraestrutura em nuvem escalável com serviços de computação, banco de dados e armazenamento.",
         ownerEmail: "carlos.marques@grupo-3c.com", ownerName: "Carlos Marques",
         subOwnerEmail: "joao.vasconcelos@grupo-3c.com", subOwnerName: "Joao Paulo",
         accesses: [
@@ -331,6 +340,7 @@ const toolsData = [
     {
         name: "GCP",
         acronym: "GC",
+        description: "Google Cloud Platform, conjunto de serviços de nuvem de alta escala para dados e computação.",
         ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
         subOwnerEmail: "joao.vasconcelos@grupo-3c.com", subOwnerName: "Joao Paulo",
         accesses: [
@@ -357,6 +367,7 @@ const toolsData = [
     {
         name: "Convenia",
         acronym: "CV",
+        description: "Software de gestão de RH para automação de departamento pessoal, holerites e benefícios.",
         ownerEmail: "raphael.pires@grupo-3c.com", ownerName: "Raphael Pires",
         subOwnerEmail: "renata.czapiewski@grupo-3c.com", subOwnerName: "Renata Czapiewski",
         accesses: [
@@ -371,6 +382,7 @@ const toolsData = [
     {
         name: "Clicsign",
         acronym: "CS",
+        description: "Plataforma de assinaturas eletrônicas com validade jurídica para agilizar formalizações.",
         ownerEmail: "fernando.takakusa@grupo-3c.com", ownerName: "Fernando Takakusa",
         subOwnerEmail: "aline.fonseca@grupo-3c.com", subOwnerName: "Aline Fonseca",
         accesses: [
@@ -387,6 +399,7 @@ const toolsData = [
     {
         name: "Meta",
         acronym: "MT",
+        description: "Ecossistema de ferramentas de negócios para gestão de anúncios e presença no FB/IG/WhatsApp.",
         ownerEmail: "rafael.schimanski@grupo-3c.com", ownerName: "Rafael Blaka",
         subOwnerEmail: "junior.andrade@grupo-3c.com", subOwnerName: "Junior Andrade",
         accesses: [
@@ -418,6 +431,7 @@ const toolsData = [
     {
         name: "Fiqon",
         acronym: "FO",
+        description: "Middleware de integração para automação entre sistemas financeiros e plataformas de gestão.",
         ownerEmail: "guilherme.pinheiro@grupo-3c.com", ownerName: "Guilherme Pinheiro",
         subOwnerEmail: "lucas.matheus@grupo-3c.com", subOwnerName: "Lucas Matheus",
         accesses: [
@@ -435,6 +449,7 @@ const toolsData = [
     {
         name: "N8N",
         acronym: "NA",
+        description: "Ferramenta low-code para automação de fluxos de trabalho e integrações via nós extensíveis.",
         ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
         subOwnerEmail: null, subOwnerName: null,
         accesses: [
@@ -454,6 +469,7 @@ const toolsData = [
     {
         name: "Hik Connect",
         acronym: "HC",
+        description: "Plataforma de videomonitoramento para controle e visualização remota de câmeras de segurança.",
         ownerEmail: "vladimir.sesar@grupo-3c.com", ownerName: "Vladimir Sesar",
         subOwnerEmail: "allan.vonstein@grupo-3c.com", subOwnerName: "Allan Von Stein",
         accesses: [
@@ -476,6 +492,7 @@ const toolsData = [
     {
         name: "Chat GPT",
         acronym: "CG",
+        description: "Assistente avançado de IA da OpenAI para processamento de linguagem e automação criativa.",
         ownerEmail: "pablo.emanuel@3cplusnow.com", ownerName: "Pablo Emanuel",
         subOwnerEmail: "wagner@3cplusnow.com", subOwnerName: "Wagner Wolff",
         accesses: [
@@ -495,6 +512,7 @@ const toolsData = [
     {
         name: "Focus",
         acronym: "FU",
+        description: "Sistema interno de monitoramento e gestão de indicadores de desempenho operacional.",
         ownerEmail: "aline.fonseca@3cplusnow.com", ownerName: "Aline Fonseca",
         subOwnerEmail: "thiago.marcondes@grupo-3c.com", subOwnerName: "Thiago Marcondes",
         accesses: [
@@ -508,6 +526,7 @@ const toolsData = [
     {
         name: "Vindi",
         acronym: "VI",
+        description: "Solução especializada em pagamentos recorrentes e gestão de assinaturas para escala.",
         ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
         subOwnerEmail: "ian.ronska@grupo-3c.com", subOwnerName: "Ian Ronska",
         accesses: [
@@ -541,6 +560,7 @@ const toolsData = [
     {
         name: "NextRouter",
         acronym: "NR",
+        description: "Solução de roteamento e gestão inteligente de tráfego para redes de alta disponibilidade.",
         ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
         subOwnerEmail: "ian.ronska@grupo-3c.com", subOwnerName: "Ian Ronska",
         accesses: [
@@ -555,6 +575,7 @@ const toolsData = [
     {
         name: "Figma",
         acronym: "FA",
+        description: "Ferramenta de design colaborativo para criação de interfaces, protótipos e sistemas de design.",
         ownerEmail: "gabriel.ida@grupo-3c.com", ownerName: "Gabriel Pires Ida",
         subOwnerEmail: null, subOwnerName: null,
         accesses: [
@@ -574,6 +595,7 @@ const toolsData = [
     {
         name: "Slack",
         acronym: null,
+        description: "Plataforma de comunicação empresarial em tempo real focada em canais e produtividade.",
         ownerEmail: "vladimir.sesar@grupo-3c.com", ownerName: "Vladimir Sesar",
         subOwnerEmail: null, subOwnerName: null,
         accesses: []
@@ -674,6 +696,7 @@ async function main() {
             data: {
                 name: t.name,
                 acronym: t.acronym || undefined,
+                description: t.description || null,
                 ownerId: owner?.id,
                 subOwnerId: subOwner?.id
             }
