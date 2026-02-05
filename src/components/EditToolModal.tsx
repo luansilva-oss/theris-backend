@@ -191,19 +191,19 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                             <div className="form-group">
                                 <label>Nome do Sistema</label>
-                                <input value={name} onChange={e => setName(e.target.value)} className="mfa-input-single" style={{ width: '100%', textAlign: 'left', fontSize: 14 }} />
+                                <input value={name} onChange={e => setName(e.target.value)} className="form-input" style={{ width: '100%', textAlign: 'left', fontSize: 14 }} />
                             </div>
 
                             <div className="form-group">
                                 <label>Sigla / Acrônimo</label>
-                                <input value={acronym} onChange={e => setAcronym(e.target.value)} className="mfa-input-single" style={{ width: '100%', textAlign: 'left', fontSize: 14 }} placeholder="Ex: AWS" />
+                                <input value={acronym} onChange={e => setAcronym(e.target.value)} className="form-input" style={{ width: '100%', textAlign: 'left', fontSize: 14 }} placeholder="Ex: AWS" />
                             </div>
 
                             <div className="form-group">
                                 <label>Grupo / Categoria</label>
                                 {!newGroupMode ? (
                                     <div style={{ display: 'flex', gap: 10 }}>
-                                        <select value={groupId} onChange={e => setGroupId(e.target.value)} className="mfa-input-single" style={{ width: '100%', fontSize: 14 }}>
+                                        <select value={groupId} onChange={e => setGroupId(e.target.value)} className="form-input" style={{ width: '100%', fontSize: 14 }}>
                                             <option value="">Sem Grupo</option>
                                             {availableGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                                         </select>
@@ -211,7 +211,7 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', gap: 10 }}>
-                                        <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="Nome do novo grupo" className="mfa-input-single" style={{ width: '100%', fontSize: 14 }} />
+                                        <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="Nome do novo grupo" className="form-input" style={{ width: '100%', fontSize: 14 }} />
                                         <button onClick={createGroup} className="btn-mini approve">Criar</button>
                                         <button onClick={() => setNewGroupMode(false)} className="btn-mini reject">Cancelar</button>
                                     </div>
@@ -220,7 +220,7 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
 
                             <div className="form-group">
                                 <label>Owner (Dono do Produto)</label>
-                                <select value={ownerId} onChange={e => setOwnerId(e.target.value)} className="mfa-input-single" style={{ width: '100%', fontSize: 14 }}>
+                                <select value={ownerId} onChange={e => setOwnerId(e.target.value)} className="form-input" style={{ width: '100%', fontSize: 14 }}>
                                     <option value="">Selecione...</option>
                                     {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                 </select>
@@ -228,7 +228,7 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
 
                             <div className="form-group">
                                 <label>Sub-Owner (Técnico / Backup)</label>
-                                <select value={subOwnerId} onChange={e => setSubOwnerId(e.target.value)} className="mfa-input-single" style={{ width: '100%', fontSize: 14 }}>
+                                <select value={subOwnerId} onChange={e => setSubOwnerId(e.target.value)} className="form-input" style={{ width: '100%', fontSize: 14 }}>
                                     <option value="">Selecione...</option>
                                     {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                 </select>
@@ -259,7 +259,7 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                                     <input
                                         id="newLevelInput"
                                         placeholder="Novo nível (ex: Auditor)"
-                                        className="mfa-input-single"
+                                        className="form-input"
                                         style={{ flex: 1, fontSize: 13, height: 36 }}
                                     />
                                     <button
@@ -287,7 +287,7 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                                             value={searchTerm}
                                             onChange={e => setSearchTerm(e.target.value)}
                                             placeholder="Buscar pessoa..."
-                                            className="mfa-input-single"
+                                            className="form-input"
                                             style={{ width: '100%', paddingLeft: 30, fontSize: 14 }}
                                         />
                                         {searchTerm && (

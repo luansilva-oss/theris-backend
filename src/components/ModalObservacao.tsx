@@ -81,7 +81,7 @@ export const ModalObservacao: React.FC<ModalObservacaoProps> = ({
                             resize: 'none',
                             outline: 'none',
                             fontSize: '14px',
-                            fontFamily: 'inherit'
+                            fontFamily: "'Inter', sans-serif"
                         }}
                         placeholder={tipo === 'reprovar' ? "Digite o motivo da reprovação (Obrigatório)..." : "Alguma observação adicional?..."}
                         value={observacao}

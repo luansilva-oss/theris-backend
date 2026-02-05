@@ -89,8 +89,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                 <div className="form-group">
                     <label>Nome Completo</label>
                     <input
-                        className="mfa-input-single"
-                        style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px' }}
+                        className="form-input"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                     />
@@ -99,8 +98,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                 <div className="form-group">
                     <label>E-mail</label>
                     <input
-                        className="mfa-input-single"
-                        style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px' }}
+                        className="form-input"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                     />
@@ -110,8 +108,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                     <div>
                         <label>Cargo</label>
                         <input
-                            className="mfa-input-single"
-                            style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px' }}
+                            className="form-input"
                             value={jobTitle}
                             onChange={(e) => setJobTitle(e.target.value)}
                         />
@@ -119,8 +116,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                     <div>
                         <label>Departamento</label>
                         <input
-                            className="mfa-input-single"
-                            style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px' }}
+                            className="form-input"
                             value={department}
                             onChange={(e) => setDepartment(e.target.value)}
                         />
@@ -130,13 +126,12 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                 <div className="form-group">
                     <label>Perfil de Sistema (Acesso)</label>
                     <select
-                        className="mfa-input-single"
-                        style={{ width: '100%', textAlign: 'left', fontSize: '14px', letterSpacing: 'normal', height: '40px', padding: '0 12px', background: '#1f2937' }}
+                        className="form-input"
                         value={systemProfile}
                         onChange={(e) => setSystemProfile(e.target.value)}
                     >
                         {profileOptions.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            <option key={opt.value} value={opt.value} style={{ background: '#18181b' }}>{opt.label}</option>
                         ))}
                     </select>
                 </div>

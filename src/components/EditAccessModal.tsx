@@ -78,8 +78,8 @@ export const EditAccessModal = ({ isOpen, onClose, access, toolId, onUpdate }: E
                                     <label style={{ color: '#a1a1aa', fontSize: 12, marginBottom: 8, display: 'block' }}>Duração</label>
                                     <input
                                         type="number"
-                                        className="mfa-input-single"
-                                        style={{ height: '40px', fontSize: '14px', textAlign: 'left', paddingLeft: '12px' }}
+                                        className="form-input"
+                                        style={{ height: '40px' }}
                                         value={duration}
                                         onChange={(e) => setDuration(e.target.value)}
                                         placeholder="Ex: 48"
@@ -88,14 +88,14 @@ export const EditAccessModal = ({ isOpen, onClose, access, toolId, onUpdate }: E
                                 <div className="form-group" style={{ flex: 1 }}>
                                     <label style={{ color: '#a1a1aa', fontSize: 12, marginBottom: 8, display: 'block' }}>Unidade</label>
                                     <select
-                                        className="mfa-input-single"
-                                        style={{ height: '40px', fontSize: '14px', background: '#27272a', border: '1px solid #3f3f46', color: 'white', padding: '0 8px' }}
+                                        className="form-input"
+                                        style={{ height: '40px' }}
                                         value={unit}
                                         onChange={(e) => setUnit(e.target.value)}
                                     >
-                                        <option value="horas">Horas</option>
-                                        <option value="dias">Dias</option>
-                                        <option value="meses">Meses</option>
+                                        <option value="horas" style={{ background: '#18181b' }}>Horas</option>
+                                        <option value="dias" style={{ background: '#18181b' }}>Dias</option>
+                                        <option value="meses" style={{ background: '#18181b' }}>Meses</option>
                                     </select>
                                 </div>
                             </div>

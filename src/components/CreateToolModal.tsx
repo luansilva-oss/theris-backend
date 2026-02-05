@@ -111,7 +111,7 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
                             value={name}
                             onChange={e => setName(e.target.value)}
                             placeholder="Ex: ClickUp, AWS, Figma"
-                            className="mfa-input-single"
+                            className="form-input"
                             style={{ width: '100%', textAlign: 'left', fontSize: 14 }}
                         />
                     </div>
@@ -122,7 +122,7 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
                             value={acronym}
                             onChange={e => setAcronym(e.target.value)}
                             placeholder="Ex: CU, AWS, FG"
-                            className="mfa-input-single"
+                            className="form-input"
                             style={{ width: '100%', textAlign: 'left', fontSize: 14 }}
                         />
                     </div>
@@ -133,7 +133,7 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
                             value={description}
                             onChange={e => setDescription(e.target.value)}
                             placeholder="O que esta ferramenta faz?"
-                            className="mfa-input-single"
+                            className="form-input"
                             style={{ width: '100%', textAlign: 'left', fontSize: 14, minHeight: 80, padding: 12 }}
                         />
                     </div>
@@ -144,7 +144,7 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
                             <select
                                 value={ownerId}
                                 onChange={e => setOwnerId(e.target.value)}
-                                className="mfa-input-single"
+                                className="form-input"
                                 style={{ width: '100%', fontSize: 13 }}
                             >
                                 <option value="">Selecionar...</option>
@@ -156,7 +156,7 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
                             <select
                                 value={subOwnerId}
                                 onChange={e => setSubOwnerId(e.target.value)}
-                                className="mfa-input-single"
+                                className="form-input"
                                 style={{ width: '100%', fontSize: 13 }}
                             >
                                 <option value="">Selecionar...</option>
@@ -172,7 +172,7 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
                                 value={newLevel}
                                 onChange={e => setNewLevel(e.target.value)}
                                 placeholder="Novo nível (ex: Admin)"
-                                className="mfa-input-single"
+                                className="form-input"
                                 style={{ flex: 1, fontSize: 13 }}
                                 onKeyPress={e => e.key === 'Enter' && addAccessLevel()}
                             />
@@ -195,7 +195,7 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
                                 <select
                                     value={groupId}
                                     onChange={e => setGroupId(e.target.value)}
-                                    className="mfa-input-single"
+                                    className="form-input"
                                     style={{ width: '100%', fontSize: 14 }}
                                 >
                                     <option value="">Sem Grupo</option>
@@ -211,7 +211,7 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
                                     value={newGroupName}
                                     onChange={e => setNewGroupName(e.target.value)}
                                     placeholder="Nome do grupo"
-                                    className="mfa-input-single"
+                                    className="form-input"
                                     style={{ width: '100%', fontSize: 14 }}
                                 />
                                 <button onClick={handleCreateGroup} className="btn-mini approve">Criar</button>
