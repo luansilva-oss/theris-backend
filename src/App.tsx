@@ -268,6 +268,8 @@ export default function App() {
 
   if (isMfaRequired) return (
     <div className="login-wrapper">
+      <div className="login-bg-accent accent-1"></div>
+      <div className="login-bg-accent accent-2"></div>
       <div className="login-card mfa-container">
         <div className="mfa-icon-wrapper"><Lock size={40} color="#8b5cf6" /></div>
         <h2 style={{ color: 'white', margin: 0 }}>Código de Segurança</h2>
@@ -281,14 +283,24 @@ export default function App() {
 
   if (!isLoggedIn) return (
     <div className="login-wrapper">
-      <div className="login-card fade-in">
-        <Bird size={60} color="#8b5cf6" style={{ marginBottom: 20 }} />
-        <h1 style={{ fontSize: '2.5rem', fontWeight: 800, margin: '0 0 10px 0', background: 'linear-gradient(to right, #fff, #a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Theris OS</h1>
-        <p style={{ color: '#9ca3af', fontSize: '1.1rem' }}>Governança de Identidade & Acessos</p>
+      <div className="login-bg-accent accent-1"></div>
+      <div className="login-bg-accent accent-2"></div>
+      <div className="login-card fade-in" style={{ animationDuration: '0.8s' }}>
+        <div style={{ background: 'rgba(124, 58, 237, 0.1)', width: '80px', height: '80px', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid rgba(124, 58, 237, 0.2)' }}>
+          <Bird size={48} color="#a78bfa" />
+        </div>
+        <h1>Theris OS</h1>
+        <p>Governança de Identidade & Acessos com inteligência e segurança.</p>
         {isLoading ? (
-          <div style={{ marginTop: 20, color: '#8b5cf6' }}>Conectando ao servidor...</div>
+          <div style={{ marginTop: 20, color: '#8b5cf6', fontSize: '14px', fontWeight: 500 }}>
+            <div className="spinner" style={{ border: '3px solid rgba(139, 92, 246, 0.1)', borderTop: '3px solid #8b5cf6', borderRadius: '50%', width: '24px', height: '24px', animation: 'spin 1s linear infinite', margin: '0 auto 10px' }}></div>
+            Conectando ao servidor...
+          </div>
         ) : (
-          <button onClick={() => handleLogin()} className="btn-google"><img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" alt="Google" /> Continuar com Workspace</button>
+          <button onClick={() => handleLogin()} className="btn-google">
+            <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="Google" />
+            Continuar com Workspace
+          </button>
         )}
       </div>
     </div>

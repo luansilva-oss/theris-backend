@@ -64,40 +64,85 @@ html {
   background: #52525b;
 }
 
-/* --- LOGIN & MFA --- */
+/* --- LOGIN & MFA (Premium Redesign) --- */
 .login-wrapper {
   position: fixed;
   inset: 0;
   z-index: 999;
-  background: var(--bg-app);
+  background-color: #09090b;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, var(--bg-app) 60%);
+  overflow: hidden;
+}
+
+/* Elementos de Brilho no Fundo (Efeito Mesh) */
+.login-bg-accent {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, rgba(124, 58, 237, 0) 70%);
+  filter: blur(80px);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.accent-1 {
+  top: -100px;
+  right: -100px;
+}
+
+.accent-2 {
+  bottom: -100px;
+  left: -100px;
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.1) 0%, rgba(79, 70, 229, 0) 70%);
 }
 
 .login-card {
   width: 100%;
-  max-width: 400px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  padding: 40px;
-  border-radius: 12px;
+  max-width: 420px;
+  background: rgba(24, 24, 27, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 48px;
+  border-radius: 24px;
   text-align: center;
-  box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 32px 64px -16px rgba(0, 0, 0, 0.6);
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.login-card:hover {
+  border-color: rgba(124, 58, 237, 0.3);
 }
 
 .login-card h1 {
-  font-size: 24px;
-  font-weight: 700;
-  color: white;
-  margin: 15px 0 5px;
+  font-size: 32px;
+  font-weight: 800;
+  margin: 20px 0 8px;
+  background: linear-gradient(135deg, #ffffff 0%, #a78bfa 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -1px;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .login-card p {
-  color: var(--text-muted);
-  font-size: 14px;
-  margin-bottom: 30px;
+  color: #9ca3af;
+  font-size: 15px;
+  line-height: 1.5;
+  margin-bottom: 32px;
 }
 
 /* MFA: Estilos Atualizados para Input Único */
@@ -629,19 +674,34 @@ html {
 /* Buttons & Utils */
 .btn-google {
   width: 100%;
-  padding: 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: white;
-  color: black;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
   font-weight: 600;
   font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   cursor: pointer;
-  margin-top: 20px;
+  margin-top: 24px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-google:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.btn-google:active {
+  transform: translateY(0);
+}
+
+.btn-google img {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 }
 
 .btn-primary {
