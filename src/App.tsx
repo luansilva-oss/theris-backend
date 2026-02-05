@@ -167,7 +167,10 @@ export default function App() {
           fetch(`${API_URL}/api/structure`)
         ]);
         if (resUsers.ok) setAllUsers(await resUsers.json());
-        if (resDepts.ok) setDepartments(await resDepts.json());
+        if (resDepts.ok) {
+          const structData = await resDepts.json();
+          setDepartments(structData.departments || []);
+        }
       }
 
     } catch (e) { console.error(e); }
@@ -969,6 +972,12 @@ export default function App() {
         }}
         access={selectedAccess}
         toolId={selectedTool?.id || ''}
+        onUpdate={loadData}
+      />
+
+      <ManageStructureModal
+        isOpen={isManageStructureOpen}
+        onClose={() => setIsManageStructureOpen(false)}
         onUpdate={loadData}
       />
     </div>
