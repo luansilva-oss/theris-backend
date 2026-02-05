@@ -12,6 +12,17 @@ interface User {
     systemProfile: string;
 }
 
+interface Department {
+    id: string;
+    name: string;
+}
+
+interface Role {
+    id: string;
+    name: string;
+    departmentId: string;
+}
+
 interface Props {
     isOpen: boolean;
     onClose: () => void;
@@ -30,13 +41,28 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
     const [systemProfile, setSystemProfile] = useState(user.systemProfile || 'VIEWER');
     const [isSaving, setIsSaving] = useState(false);
 
+    const [availableDepts, setAvailableDepts] = useState<Department[]>([]);
+    const [availableRoles, setAvailableRoles] = useState<Role[]>([]);
+
     useEffect(() => {
         setName(user.name);
         setEmail(user.email);
         setJobTitle(user.jobTitle);
         setDepartment(user.department);
         setSystemProfile(user.systemProfile || 'VIEWER');
+        loadStructure();
     }, [user]);
+
+    const loadStructure = async () => {
+        try {
+            const res = await fetch(`${API_URL}/api/structure`);
+            if (res.ok) {
+                const data = await res.json();
+                setAvailableDepts(data.departments);
+                setAvailableRoles(data.roles);
+            }
+        } catch (e) { console.error(e); }
+    };
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -106,20 +132,31 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
 
                 <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                     <div>
-                        <label>Cargo</label>
-                        <input
-                            className="form-input"
-                            value={jobTitle}
-                            onChange={(e) => setJobTitle(e.target.value)}
-                        />
-                    </div>
-                    <div>
                         <label>Departamento</label>
-                        <input
+                        <select
                             className="form-input"
                             value={department}
                             onChange={(e) => setDepartment(e.target.value)}
-                        />
+                            style={{ width: '100%', fontSize: 13 }}
+                        >
+                            <option value="">Selecione...</option>
+                            {availableDepts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label>Cargo</label>
+                        <select
+                            className="form-input"
+                            value={jobTitle}
+                            onChange={(e) => setJobTitle(e.target.value)}
+                            style={{ width: '100%', fontSize: 13 }}
+                        >
+                            <option value="">Selecione...</option>
+                            {availableRoles
+                                .filter(r => !department || r.departmentId === availableDepts.find(d => d.name === department)?.id)
+                                .map(r => <option key={r.id} value={r.name}>{r.name}</option>)
+                            }
+                        </select>
                     </div>
                 </div>
 

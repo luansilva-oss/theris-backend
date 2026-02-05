@@ -11,6 +11,7 @@ import { getTools, createTool, updateTool, deleteTool, getToolGroups, createTool
 import { getAllUsers, updateUser } from './controllers/userController';
 // NOVO: Importar o controlador de reset
 import { resetCatalog } from './controllers/adminController';
+import * as structureController from './controllers/structureController';
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -47,16 +48,14 @@ app.get('/api/admin/reset-tools', resetCatalog);
 // ============================================================
 
 // 1. Estrutura
-app.get('/api/structure', async (req, res) => {
-  try {
-    const data = await prisma.department.findMany({
-      include: { roles: true }
-    });
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao buscar estrutura.' });
-  }
-});
+app.get('/api/structure', structureController.getStructure);
+app.post('/api/structure/departments', structureController.createDepartment);
+app.put('/api/structure/departments/:id', structureController.updateDepartment);
+app.delete('/api/structure/departments/:id', structureController.deleteDepartment);
+
+app.post('/api/structure/roles', structureController.createRole);
+app.put('/api/structure/roles/:id', structureController.updateRole);
+app.delete('/api/structure/roles/:id', structureController.deleteRole);
 
 // 2. Ferramentas
 app.get('/api/tools', getTools);
