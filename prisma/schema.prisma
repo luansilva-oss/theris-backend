@@ -69,6 +69,7 @@ model Tool {
   id                  String   @id @default(uuid())
   name                String
   acronym             String?  // Nomenclatura (ex: "JC", "AWS")
+  description         String?  // Breve descrição da ferramenta
   
   ownerId             String?
   owner               User?    @relation("ToolOwner", fields: [ownerId], references: [id])

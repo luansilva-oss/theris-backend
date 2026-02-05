@@ -3,6 +3,15 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// FUNÇÃO DE NORMALIZAÇÃO DE E-MAIL (nome.sobrenome@grupo-3c.com)
+const normalizeEmail = (email: string): string => {
+  const parts = email.toLowerCase().split('@')[0].split('.');
+  const normalizedLocal = parts.length > 2
+    ? `${parts[0]}.${parts[parts.length - 1]}`
+    : parts.join('.');
+  return `${normalizedLocal}@grupo-3c.com`;
+};
+
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
@@ -31,7 +40,9 @@ export const getAllUsers = async (req: Request, res: Response) => {
 
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, email, jobTitle, department, systemProfile } = req.body;
+  const { name, jobTitle, department, systemProfile } = req.body;
+  const rawEmail = req.body.email;
+  const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
   const requesterId = req.headers['x-requester-id'] as string;
 
   try {

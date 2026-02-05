@@ -26,11 +26,13 @@ interface User {
   department?: string;
   systemProfile: string; // Adicionado para RBAC
   manager?: { name: string };
+  myDeputy?: User;
 }
 
 interface Tool {
   id: string;
   name: string;
+  description?: string;
   acronym?: string;
   owner?: User;
   subOwner?: User;
@@ -620,39 +622,65 @@ export default function App() {
                 )}
               </div>
 
-              {/* CABEÇALHO DA FERRAMENTA + OWNERS */}
-              <div className="card-base" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(to right, #18181b, #09090b)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-                  <div className="tile-icon" style={{ width: 64, height: 64, fontSize: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#27272a', borderRadius: 12, color: '#a78bfa' }}>
-                    <Server size={32} />
-                  </div>
-                  <div>
-                    <h1 style={{ margin: 0, fontSize: 24, color: 'white' }}>{selectedTool.name}</h1>
-                    <p style={{ color: '#a1a1aa', margin: '4px 0 0 0', fontSize: 13 }}>Gestão de Acessos e Permissões</p>
+              {/* CABEÇALHO DA FERRAMENTA + OWNERS (4 BLOCKS) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+
+                {/* BLOCK 1: OWNER */}
+                <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)', position: 'relative', overflow: 'hidden' }}>
+                  <div style={{ fontSize: 10, color: '#a78bfa', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Owner (Dono)</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#2e1065', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 }}>
+                      {selectedTool.owner?.name.charAt(0) || '?'}
+                    </div>
+                    <div>
+                      <div style={{ color: 'white', fontWeight: 600, fontSize: 16 }}>{selectedTool.owner?.name || 'Não definido'}</div>
+                      <div style={{ fontSize: 12, color: '#52525b' }}>{selectedTool.owner?.email}</div>
+                    </div>
                   </div>
                 </div>
 
-                {/* ÁREA DE DONOS (OWNERS) */}
-                <div style={{ display: 'flex', gap: 40, paddingRight: 20 }}>
-                  {/* OWNER PRINCIPAL */}
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>Owner (Dono)</div>
-                    <div style={{ color: '#a78bfa', fontWeight: 600, fontSize: 16, marginTop: 4 }}>
-                      {selectedTool.owner?.name || 'Não definido'}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#52525b' }}>{selectedTool.owner?.email}</div>
-                  </div>
-
-                  {/* SUB-OWNER (Só mostra se existir) */}
-                  {selectedTool.subOwner && (
-                    <div style={{ textAlign: 'right', borderLeft: '1px solid #3f3f46', paddingLeft: 30 }}>
-                      <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1 }}>Sub-Owner</div>
-                      <div style={{ color: '#e4e4e7', fontWeight: 600, fontSize: 16, marginTop: 4 }}>
-                        {selectedTool.subOwner.name}
+                {/* BLOCK 2: SUB-OWNER */}
+                <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)' }}>
+                  <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Sub-Owner</div>
+                  {selectedTool.subOwner ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1c1917', border: '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontWeight: 700, fontSize: 14 }}>
+                        {selectedTool.subOwner.name.charAt(0)}
                       </div>
-                      <div style={{ fontSize: 12, color: '#52525b' }}>{selectedTool.subOwner.email}</div>
+                      <div>
+                        <div style={{ color: '#e4e4e7', fontWeight: 600, fontSize: 16 }}>{selectedTool.subOwner.name}</div>
+                        <div style={{ fontSize: 12, color: '#52525b' }}>{selectedTool.subOwner.email}</div>
+                      </div>
                     </div>
+                  ) : (
+                    <div style={{ color: '#3f3f46', fontSize: 14, fontStyle: 'italic', marginTop: 10 }}>Pendente de definição</div>
                   )}
+                </div>
+
+                {/* BLOCK 3: DEPUTY (Só mostra se aprovado) */}
+                <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)' }}>
+                  <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Deputy (Substituto)</div>
+                  {selectedTool.owner?.myDeputy ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#064e3b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#34d399', fontWeight: 700, fontSize: 14 }}>
+                        {selectedTool.owner.myDeputy.name.charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ color: '#34d399', fontWeight: 600, fontSize: 16 }}>{selectedTool.owner.myDeputy.name}</div>
+                        <div style={{ fontSize: 12, color: '#52525b' }}>{selectedTool.owner.myDeputy.email}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ color: '#3f3f46', fontSize: 14, fontStyle: 'italic', marginTop: 10 }}>Nenhum indicado</div>
+                  )}
+                </div>
+
+                {/* BLOCK 4: DESCRIÇÃO */}
+                <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)', borderLeft: '3px solid #a78bfa' }}>
+                  <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Descrição</div>
+                  <div style={{ color: '#a1a1aa', fontSize: 14, lineHeight: '1.5', maxHeight: '60px', overflowY: 'auto' }}>
+                    {selectedTool.description || "Gestão e automação de acessos via Theris OS."}
+                  </div>
                 </div>
               </div>
 
