@@ -13,7 +13,7 @@ import { EditToolModal } from './components/EditToolModal';
 import { CreateToolModal } from './components/CreateToolModal';
 import { EditUserModal } from './components/EditUserModal';
 import { EditAccessModal } from './components/EditAccessModal';
-import { Pen, PlusCircle, Edit2, Timer } from 'lucide-react';
+import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -286,40 +286,90 @@ export default function App() {
 
   if (isMfaRequired) return (
     <div className="login-wrapper">
-      <div className="login-bg-accent accent-1"></div>
-      <div className="login-bg-accent accent-2"></div>
-      <div className="login-card mfa-container">
-        <div className="mfa-icon-wrapper"><Lock size={40} color="#8b5cf6" /></div>
-        <h2 style={{ color: 'white', margin: 0 }}>Código de Segurança</h2>
-        <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>Enviamos um código para <strong>{currentUser?.email}</strong>.</p>
-        <input className="mfa-input-single" type="text" value={mfaCode} onChange={(e) => handleMfaChange(e.target.value)} placeholder="000000" autoFocus />
-        <button onClick={handleMfaVerify} className="btn-verify" disabled={isLoading}>{isLoading ? 'Verificando...' : 'Confirmar Acesso'}</button>
-        <button onClick={() => { setIsMfaRequired(false); setCurrentUser(null); setMfaCode(''); }} style={{ background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', marginTop: 10 }}>Voltar</button>
+      <div className="login-form-side">
+        <div className="login-card mfa-container">
+          <div className="mfa-icon-wrapper"><Lock size={40} color="#8b5cf6" /></div>
+          <h2 style={{ color: 'white', margin: 0 }}>Código de Segurança</h2>
+          <p className="subtitle">Enviamos um código para <strong>{currentUser?.email}</strong>.</p>
+          <input className="mfa-input-single" type="text" value={mfaCode} onChange={(e) => handleMfaChange(e.target.value)} placeholder="000000" autoFocus />
+          <button onClick={handleMfaVerify} className="btn-verify" disabled={isLoading}>{isLoading ? 'Verificando...' : 'Confirmar Acesso'}</button>
+          <button onClick={() => { setIsMfaRequired(false); setCurrentUser(null); setMfaCode(''); }} style={{ background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', marginTop: 10 }}>Voltar ao login</button>
+        </div>
       </div>
     </div>
   );
 
   if (!isLoggedIn) return (
     <div className="login-wrapper">
-      <div className="login-bg-accent accent-1"></div>
-      <div className="login-bg-accent accent-2"></div>
-      <div className="login-card fade-in" style={{ animationDuration: '0.8s' }}>
-        <div style={{ background: 'rgba(124, 58, 237, 0.1)', width: '80px', height: '80px', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid rgba(124, 58, 237, 0.2)' }}>
-          <Bird size={48} color="#a78bfa" />
-        </div>
-        <h1>Theris OS</h1>
-        <p>Governança de Identidade & Acessos com inteligência e segurança.</p>
-        {isLoading ? (
-          <div style={{ marginTop: 20, color: '#8b5cf6', fontSize: '14px', fontWeight: 500 }}>
-            <div className="spinner" style={{ border: '3px solid rgba(139, 92, 246, 0.1)', borderTop: '3px solid #8b5cf6', borderRadius: '50%', width: '24px', height: '24px', animation: 'spin 1s linear infinite', margin: '0 auto 10px' }}></div>
-            Conectando ao servidor...
+      <div className="login-marketing">
+        <div className="marketing-content fade-in">
+          <div className="marketing-badge">
+            <Zap size={14} fill="#a78bfa" /> Disponível para todo o ecossistema
           </div>
-        ) : (
-          <button onClick={() => handleLogin()} className="btn-google">
-            <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="Google" />
-            Continuar com Workspace
-          </button>
-        )}
+          <h1 style={{ color: 'white' }}>
+            Domine a <span style={{ color: '#7c3aed' }}>Governança</span> de Acessos da sua empresa.
+          </h1>
+          <p>
+            O Theris OS centraliza identidades, automatiza solicitações e garante compliance em tempo real para times de alta performance.
+          </p>
+
+          <div className="feature-list">
+            <div className="feature-item">
+              <div className="feature-icon"><ShieldCheck size={24} /></div>
+              <div className="feature-text">
+                <div>Segurança Nível Enterprise</div>
+                <div>SSO nativo e MFA obrigatório em todas as camadas.</div>
+              </div>
+            </div>
+            <div className="feature-item">
+              <div className="feature-icon"><Clock size={24} /></div>
+              <div className="feature-text">
+                <div>Acessos Extraordinários</div>
+                <div>Gestão granular de permissões temporárias com expiração.</div>
+              </div>
+            </div>
+            <div className="feature-item">
+              <div className="feature-icon"><RefreshCw size={24} /></div>
+              <div className="feature-text">
+                <div>Sincronização Ativa</div>
+                <div>Integração contínua com Convenia e sistemas legados.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="login-form-side">
+        <div className="login-card fade-in">
+          <div style={{ background: 'rgba(124, 58, 237, 0.1)', width: '64px', height: '64px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid rgba(124, 58, 237, 0.2)' }}>
+            <Bird size={36} color="#a78bfa" />
+          </div>
+          <h2>Boas-vindas ao Theris</h2>
+          <p className="subtitle">Acesse sua conta corporativa para continuar.</p>
+
+          {isLoading ? (
+            <div style={{ marginTop: 20, color: '#8b5cf6', fontSize: '14px', fontWeight: 500 }}>
+              <div className="spinner" style={{ border: '3px solid rgba(139, 92, 246, 0.1)', borderTop: '3px solid #8b5cf6', borderRadius: '50%', width: '24px', height: '24px', animation: 'spin 1s linear infinite', margin: '0 auto 10px' }}></div>
+              Configurando ambiente...
+            </div>
+          ) : (
+            <>
+              <button onClick={() => handleLogin()} className="btn-google">
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="Google" />
+                Entrar com Google Workspace
+              </button>
+
+              <div style={{ marginTop: 40, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: 20, justifyContent: 'center' }}>
+                <div style={{ color: '#52525b', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Shield size={12} /> Compliance 100%
+                </div>
+                <div style={{ color: '#52525b', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Activity size={12} /> Status: Online
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

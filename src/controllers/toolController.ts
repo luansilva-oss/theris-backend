@@ -152,7 +152,7 @@ export const updateToolAccess = async (req: Request, res: Response) => {
         isExtraordinary: isExtraordinary ?? undefined,
         duration: duration !== undefined ? (duration ? parseInt(duration) : null) : undefined,
         unit: unit ?? undefined
-      }
+      } as any
     });
     return res.json({ message: 'Acesso atualizado' });
   } catch (error) {
