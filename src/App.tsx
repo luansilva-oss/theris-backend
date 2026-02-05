@@ -312,21 +312,6 @@ export default function App() {
 
   // --- RENDER ---
 
-  if (isMfaRequired) return (
-    <div className="login-wrapper">
-      <div className="login-form-side">
-        <div className="login-card mfa-container">
-          <div className="mfa-icon-wrapper"><Lock size={40} color="#8b5cf6" /></div>
-          <h2 style={{ color: 'white', margin: 0 }}>Código de Segurança</h2>
-          <p className="subtitle">Enviamos um código para <strong>{currentUser?.email}</strong>.</p>
-          <input className="mfa-input-single" type="text" value={mfaCode} onChange={(e) => handleMfaChange(e.target.value)} placeholder="000000" autoFocus />
-          <button onClick={handleMfaVerify} className="btn-verify" disabled={isLoading}>{isLoading ? 'Verificando...' : 'Confirmar Acesso'}</button>
-          <button onClick={() => { setIsMfaRequired(false); setCurrentUser(null); setMfaCode(''); }} style={{ background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', marginTop: 10 }}>Voltar ao login</button>
-        </div>
-      </div>
-    </div>
-  );
-
   if (!isLoggedIn) return (
     <div className="login-wrapper">
       <div className="login-marketing">
@@ -369,34 +354,59 @@ export default function App() {
 
       <div className="login-form-side">
         <div className="login-card fade-in">
-          <div style={{ background: 'rgba(124, 58, 237, 0.1)', width: '64px', height: '64px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid rgba(124, 58, 237, 0.2)' }}>
-            <Bird size={36} color="#a78bfa" />
-          </div>
-          <h2>Boas-vindas ao Theris</h2>
-          <p className="subtitle">Acesse sua conta corporativa para continuar.</p>
-
-          {isLoading ? (
-            <div style={{ marginTop: 20, color: '#8b5cf6', fontSize: '14px', fontWeight: 500 }}>
-              <div className="spinner" style={{ border: '3px solid rgba(139, 92, 246, 0.1)', borderTop: '3px solid #8b5cf6', borderRadius: '50%', width: '24px', height: '24px', animation: 'spin 1s linear infinite', margin: '0 auto 10px' }}></div>
-              Configurando ambiente...
-            </div>
-          ) : (
+          {!isMfaRequired ? (
             <>
-              <button onClick={() => handleLogin()} className="btn-google">
-                <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="Google" />
-                Entrar com Google Workspace
-              </button>
-
-              <div style={{ marginTop: 40, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: 20, justifyContent: 'center' }}>
-                <div style={{ color: '#52525b', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Shield size={12} /> Compliance 100%
-                </div>
-                <div style={{ color: '#52525b', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Activity size={12} /> Status: Online
-                </div>
+              <div style={{ background: 'rgba(124, 58, 237, 0.1)', width: '64px', height: '64px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid rgba(124, 58, 237, 0.2)' }}>
+                <Bird size={36} color="#a78bfa" />
               </div>
+              <h2>Boas-vindas ao Theris</h2>
+              <p className="subtitle">Acesse sua conta corporativa para continuar.</p>
+
+              {isLoading ? (
+                <div style={{ marginTop: 20, color: '#8b5cf6', fontSize: '14px', fontWeight: 500 }}>
+                  <div className="spinner" style={{ border: '3px solid rgba(139, 92, 246, 0.1)', borderTop: '3px solid #8b5cf6', borderRadius: '50%', width: '24px', height: '24px', animation: 'spin 1s linear infinite', margin: '0 auto 10px' }}></div>
+                  Configurando ambiente...
+                </div>
+              ) : (
+                <button onClick={() => handleLogin()} className="btn-google">
+                  <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="Google" />
+                  Entrar com Google Workspace
+                </button>
+              )}
             </>
+          ) : (
+            <div className="mfa-container">
+              <div className="mfa-icon-wrapper" style={{ margin: '0 auto 20px' }}><Lock size={32} color="#8b5cf6" /></div>
+              <h2 style={{ color: 'white', margin: 0, fontSize: 20 }}>Código de Segurança</h2>
+              <p className="subtitle" style={{ marginBottom: 24 }}>Enviamos um código para <strong>{currentUser?.email}</strong>.</p>
+              <input
+                className="mfa-input-single"
+                type="text"
+                value={mfaCode}
+                onChange={(e) => handleMfaChange(e.target.value)}
+                placeholder="000000"
+                autoFocus
+              />
+              <button onClick={handleMfaVerify} className="btn-verify" disabled={isLoading}>
+                {isLoading ? 'Verificando...' : 'Confirmador Acesso'}
+              </button>
+              <button
+                onClick={() => { setIsMfaRequired(false); setCurrentUser(null); setMfaCode(''); }}
+                style={{ background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', marginTop: 20, fontSize: 13 }}
+              >
+                Voltar ao login
+              </button>
+            </div>
           )}
+
+          <div style={{ marginTop: 40, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: 20, justifyContent: 'center' }}>
+            <div style={{ color: '#52525b', fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Shield size={12} /> Compliance 100%
+            </div>
+            <div style={{ color: '#52525b', fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Activity size={12} /> Status: Online
+            </div>
+          </div>
         </div>
       </div>
     </div>
