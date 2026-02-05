@@ -25,6 +25,7 @@ interface Tool {
     toolGroupId?: string;
     toolGroup?: ToolGroup;
     availableAccessLevels?: string[];
+    description?: string;
     accesses: { user: User; status: string }[];
 }
 
@@ -46,6 +47,7 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
     const [groupId, setGroupId] = useState(tool.toolGroupId || '');
     const [ownerId, setOwnerId] = useState(tool.owner?.id || '');
     const [subOwnerId, setSubOwnerId] = useState(tool.subOwner?.id || '');
+    const [description, setDescription] = useState(tool.description || '');
     const [accessLevels, setAccessLevels] = useState<string[]>(tool.availableAccessLevels || ["Admin", "User", "Viewer"]);
 
     // Data Lists
@@ -87,6 +89,7 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                     toolGroupId: groupId,
                     ownerId: ownerId || null,
                     subOwnerId: subOwnerId || null,
+                    description,
                     availableAccessLevels: accessLevels // Envia níveis também, caso tenha editado
                 })
             });
@@ -232,6 +235,17 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                                     <option value="">Selecione...</option>
                                     {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                 </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Descrição do Sistema</label>
+                                <textarea
+                                    value={description}
+                                    onChange={e => setDescription(e.target.value)}
+                                    className="form-input"
+                                    style={{ width: '100%', textAlign: 'left', fontSize: 14, minHeight: '80px', resize: 'vertical' }}
+                                    placeholder="Descreva a finalidade desta ferramenta..."
+                                />
                             </div>
 
                             <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #27272a' }}>
