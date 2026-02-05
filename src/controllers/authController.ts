@@ -4,6 +4,19 @@ import { sendMfaEmail } from '../services/emailService';
 
 const prisma = new PrismaClient();
 
+// FUNÇÃO DE NORMALIZAÇÃO DE E-MAIL (nome.sobrenome@grupo-3c.com)
+const normalizeEmail = (email: string): string => {
+  const [localPart, domain] = email.toLowerCase().split('@');
+  const parts = localPart.split('.');
+
+  // Se tiver mais de 2 partes (ex: nome.nome.sobrenome), pega apenas a primeira e a última
+  const normalizedLocal = parts.length > 2
+    ? `${parts[0]}.${parts[parts.length - 1]}`
+    : localPart;
+
+  return `${normalizedLocal}@grupo-3c.com`; // Força o domínio correto também
+};
+
 // LOGIN COM GOOGLE
 export const googleLogin = async (req: Request, res: Response) => {
   const { accessToken } = req.body;
@@ -17,7 +30,8 @@ export const googleLogin = async (req: Request, res: Response) => {
     if (!googleRes.ok) return res.status(401).json({ error: 'Token Google inválido' });
 
     const googleData = await googleRes.json();
-    const email = googleData.email;
+    const rawEmail = googleData.email;
+    const email = normalizeEmail(rawEmail);
 
     // 2. Verificar Domínio (Segurança)
     if (!email.endsWith('@grupo-3c.com')) {

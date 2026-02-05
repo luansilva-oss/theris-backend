@@ -9,7 +9,11 @@ export const getTools = async (req: Request, res: Response) => {
   try {
     const tools = await prisma.tool.findMany({
       include: {
-        owner: true,
+        owner: {
+          include: {
+            myDeputy: true
+          }
+        },
         subOwner: true,
         toolGroup: true, // Inclui o grupo
         accesses: {
@@ -30,12 +34,13 @@ export const getTools = async (req: Request, res: Response) => {
 };
 
 export const createTool = async (req: Request, res: Response) => {
-  const { name, acronym, toolGroupId } = req.body;
+  const { name, acronym, description, toolGroupId } = req.body;
   try {
     const tool = await prisma.tool.create({
       data: {
         name,
         acronym,
+        description,
         toolGroupId: toolGroupId || null,
         availableAccessLevels: []
       }
@@ -49,7 +54,7 @@ export const createTool = async (req: Request, res: Response) => {
 
 export const updateTool = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, acronym, ownerId, subOwnerId, toolGroupId, availableAccessLevels } = req.body;
+  const { name, acronym, description, ownerId, subOwnerId, toolGroupId, availableAccessLevels } = req.body;
 
   try {
     const updatedTool = await prisma.tool.update({
@@ -57,6 +62,7 @@ export const updateTool = async (req: Request, res: Response) => {
       data: {
         name,
         acronym,
+        description,
         ownerId: ownerId || null,
         subOwnerId: subOwnerId || null,
         toolGroupId: toolGroupId || null,
