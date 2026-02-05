@@ -80,6 +80,7 @@ export default function App() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]); // Lista de colaboradores
+  const [departments, setDepartments] = useState<any[]>([]); // Lista mestra de departamentos
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
@@ -157,8 +158,12 @@ export default function App() {
 
       // Carrega usuários se estiver na aba de gestão
       if (activeTab === 'PEOPLE') {
-        const resUsers = await fetch(`${API_URL}/api/users`);
+        const [resUsers, resDepts] = await Promise.all([
+          fetch(`${API_URL}/api/users`),
+          fetch(`${API_URL}/api/structure`)
+        ]);
         if (resUsers.ok) setAllUsers(await resUsers.json());
+        if (resDepts.ok) setDepartments(await resDepts.json());
       }
 
     } catch (e) { console.error(e); }
@@ -272,6 +277,12 @@ export default function App() {
 
   const getGroupedPeople = () => {
     const grouped: Record<string, Record<string, User[]>> = {};
+
+    // Inicializa com todos os departamentos conhecidos
+    departments.forEach(d => {
+      grouped[d.name] = {};
+    });
+
     allUsers.forEach(u => {
       const dept = u.department || 'Geral';
       const role = u.jobTitle || 'Sem Cargo';
