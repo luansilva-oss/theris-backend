@@ -266,6 +266,12 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                                     {accessLevels.map(lvl => (
                                         <span key={lvl} style={{ background: '#3f3f46', padding: '4px 8px', borderRadius: 4, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                                             {lvl}
+                                            <button
+                                                onClick={() => setAccessLevels(accessLevels.filter(l => l !== lvl))}
+                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 0, display: 'flex' }}
+                                            >
+                                                <X size={12} />
+                                            </button>
                                         </span>
                                     ))}
                                 </div>
@@ -286,9 +292,16 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                                         }}
                                         className="btn-mini"
                                     >
-                                        Adicionar
+                                        Adicionar e Salvar
                                     </button>
                                 </div>
+                            </div>
+
+                            {/* Save Button for Access Tab (Explicit Request) */}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <button onClick={handleSaveIdentity} disabled={isSaving} className="btn-verify" style={{ width: 'auto', padding: '8px 20px', fontSize: 13 }}>
+                                    {isSaving ? 'Salvando Configurações...' : 'Salvar Níveis e Alterações'}
+                                </button>
                             </div>
 
                             {/* Adicionar Usuário */}

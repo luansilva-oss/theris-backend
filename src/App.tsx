@@ -285,6 +285,12 @@ export default function App() {
   const getGroupedAccesses = (tool: Tool) => {
     if (!tool.accesses) return { permanent: {}, extraordinary: [] };
 
+    // Initialize with all available levels
+    const initialPermanent = (tool.availableAccessLevels || []).reduce((acc, lvl) => {
+      acc[lvl] = [];
+      return acc;
+    }, {} as Record<string, any[]>);
+
     return tool.accesses.reduce((acc, curr) => {
       if (curr.isExtraordinary) {
         acc.extraordinary.push(curr);
@@ -294,7 +300,7 @@ export default function App() {
         acc.permanent[level].push(curr);
       }
       return acc;
-    }, { permanent: {} as Record<string, any[]>, extraordinary: [] as any[] });
+    }, { permanent: initialPermanent, extraordinary: [] as any[] });
   };
 
   const getGroupedPeople = () => {
@@ -768,6 +774,18 @@ export default function App() {
                           <span style={{ fontSize: 11, color: '#a1a1aa', background: '#27272a', padding: '4px 8px', borderRadius: 6, fontWeight: 500 }}>
                             {accessRecords.length} Colaboradores
                           </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsEditModalOpen(true);
+                              // Ideally we would pass a state to switch tab to ACCESS, but state is internal to EditToolModal
+                              // For now, just opening the modal is a good shortcut.
+                            }}
+                            className="btn-mini"
+                            style={{ padding: '4px 8px', fontSize: 11, background: '#27272a', border: '1px solid #3f3f46', height: 'auto', display: 'flex', gap: 4 }}
+                          >
+                            <Plus size={12} /> Add
+                          </button>
                           {expandedLevel === level ? <ChevronDown size={18} color="#a1a1aa" /> : <ChevronRight size={18} color="#52525b" />}
                         </div>
                       </div>
