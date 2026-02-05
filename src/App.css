@@ -637,12 +637,15 @@ html {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 20px;
+  padding: 16px;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   align-items: center;
   gap: 15px;
+  height: 90px;
+  /* Tamanho fixo padronizado */
+  min-width: 0;
 }
 
 .tool-tile:hover {

@@ -852,6 +852,7 @@ export default function App() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #27272a', color: '#a1a1aa', textAlign: 'left' }}>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>ID</th>
                       <th style={{ padding: '16px', fontWeight: 600 }}>STATUS</th>
                       <th style={{ padding: '16px', fontWeight: 600 }}>SOLICITANTE</th>
                       <th style={{ padding: '16px', fontWeight: 600 }}>RESPONSÁVEL (APROVADOR)</th>
@@ -865,6 +866,9 @@ export default function App() {
                       .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
                       .map(r => (
                         <tr key={r.id} style={{ borderBottom: '1px solid #1f1f22', color: '#e4e4e7' }}>
+                          <td style={{ padding: '16px', fontSize: 11, color: '#71717a', fontFamily: 'monospace' }} title={r.id}>
+                            #{r.id.split('-')[0].toUpperCase()}
+                          </td>
                           <td style={{ padding: '16px' }}>
                             <span style={{
                               padding: '4px 10px', borderRadius: '20px', fontSize: 11, fontWeight: 700,
