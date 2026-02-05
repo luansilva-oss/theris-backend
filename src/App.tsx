@@ -12,7 +12,8 @@ import { ModalObservacao } from './components/ModalObservacao';
 import { EditToolModal } from './components/EditToolModal';
 import { CreateToolModal } from './components/CreateToolModal';
 import { EditUserModal } from './components/EditUserModal';
-import { Pen, PlusCircle, Edit2 } from 'lucide-react';
+import { EditAccessModal } from './components/EditAccessModal';
+import { Pen, PlusCircle, Edit2, Timer } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -35,8 +36,15 @@ interface Tool {
   subOwner?: User;
   toolGroupId?: string;
   toolGroup?: { id: string; name: string };
-  availableAccessLevels?: string[]; // Opcional pois pode vir vazio do backend antigo ou cache
-  accesses?: { user: User; status: string }[];
+  availableAccessLevels?: string[];
+  accesses?: {
+    id: string; // ID do registro de acesso
+    user: User;
+    status: string; // Nível
+    isExtraordinary: boolean;
+    duration?: number;
+    unit?: string;
+  }[];
 }
 
 interface Request {
@@ -88,6 +96,8 @@ export default function App() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedAccess, setSelectedAccess] = useState<any>(null);
+  const [isEditAccessModalOpen, setIsEditAccessModalOpen] = useState(false);
 
   // Stats
   const stats = {
@@ -246,10 +256,18 @@ export default function App() {
   };
 
   const getGroupedAccesses = (tool: Tool) => {
-    if (!tool.accesses) return {};
+    if (!tool.accesses) return { permanent: {}, extraordinary: [] };
+
     return tool.accesses.reduce((acc, curr) => {
-      const level = curr.status; if (!acc[level]) acc[level] = []; acc[level].push(curr.user); return acc;
-    }, {} as Record<string, User[]>);
+      if (curr.isExtraordinary) {
+        acc.extraordinary.push(curr);
+      } else {
+        const level = curr.status;
+        if (!acc.permanent[level]) acc.permanent[level] = [];
+        acc.permanent[level].push(curr);
+      }
+      return acc;
+    }, { permanent: {} as Record<string, any[]>, extraordinary: [] as any[] });
   };
 
   const getGroupedPeople = () => {
@@ -577,24 +595,21 @@ export default function App() {
                 </div>
               </div>
 
-              {/* LISTA DE USUÁRIOS AGRUPADOS POR NÍVEL */}
-              <h3 style={{ color: '#d4d4d8', marginBottom: 15, fontSize: 18 }}>Níveis de Acesso Vigentes</h3>
+              {/* LISTA DE USUÁRIOS AGRUPADOS POR NÍVEL (PERMANENTE) */}
+              <h3 style={{ color: '#d4d4d8', marginBottom: 15, fontSize: 18 }}>Membros Permanentes</h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {Object.keys(getGroupedAccesses(selectedTool)).length === 0 && (
-                  <div className="card-base" style={{ textAlign: 'center', color: '#52525b', padding: 40 }}>
-                    <Bird size={40} style={{ marginBottom: 10, opacity: 0.5 }} />
-                    <br />
-                    Nenhum usuário vinculado a esta ferramenta ainda.
+                {Object.keys(getGroupedAccesses(selectedTool).permanent).length === 0 && (
+                  <div className="card-base" style={{ textAlign: 'center', color: '#52525b', padding: 40, borderStyle: 'dashed' }}>
+                    Nenhum membro permanente vinculado.
                   </div>
                 )}
 
-                {Object.entries(getGroupedAccesses(selectedTool))
-                  .sort((a, b) => a[0].localeCompare(b[0])) // Ordena alfabeticamente os níveis
-                  .map(([level, users]) => (
+                {Object.entries(getGroupedAccesses(selectedTool).permanent)
+                  .sort((a, b) => a[0].localeCompare(b[0]))
+                  .map(([level, accessRecords]) => (
                     <div key={level} className="card-base" style={{ padding: 0, overflow: 'hidden', border: '1px solid #27272a', transition: 'all 0.2s' }}>
 
-                      {/* BARRA DO NÍVEL (Clicável) */}
                       <div
                         onClick={() => setExpandedLevel(expandedLevel === level ? null : level)}
                         style={{
@@ -608,56 +623,101 @@ export default function App() {
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          {/* Ícone dinâmico: Coroa para admins, Escudo para outros */}
                           {level.toLowerCase().match(/admin|owner|proprietário|full/)
                             ? <Crown size={20} color="#fbbf24" fill="rgba(251, 191, 36, 0.2)" />
                             : <Shield size={20} color="#a1a1aa" />}
-
                           <span style={{ fontWeight: 600, color: '#f4f4f5', fontSize: 15 }}>{level}</span>
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
                           <span style={{ fontSize: 11, color: '#a1a1aa', background: '#27272a', padding: '4px 8px', borderRadius: 6, fontWeight: 500 }}>
-                            {users.length} Colaboradores
+                            {accessRecords.length} Colaboradores
                           </span>
                           {expandedLevel === level ? <ChevronDown size={18} color="#a1a1aa" /> : <ChevronRight size={18} color="#52525b" />}
                         </div>
                       </div>
 
-                      {/* LISTA DE PESSOAS NAQUELE NÍVEL */}
                       {expandedLevel === level && (
-                        <div style={{ background: '#09090b', animation: 'fadeIn 0.3s ease' }}>
-                          {users.map((u, idx) => (
-                            <div key={u.id} style={{
+                        <div style={{ background: '#09090b' }}>
+                          {accessRecords.map((acc, idx) => (
+                            <div key={acc.user.id} style={{
                               padding: '14px 24px',
                               display: 'flex',
                               alignItems: 'center',
                               gap: 16,
-                              borderBottom: idx === users.length - 1 ? 'none' : '1px solid #1f1f22'
+                              borderBottom: idx === accessRecords.length - 1 ? 'none' : '1px solid #1f1f22'
                             }}>
-                              {/* Avatar */}
                               <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#27272a', color: '#e4e4e7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, border: '1px solid #3f3f46' }}>
-                                {u.name.charAt(0)}
+                                {acc.user.name.charAt(0)}
                               </div>
-
-                              {/* Info */}
                               <div style={{ flex: 1 }}>
-                                <div style={{ color: '#e4e4e7', fontSize: 14, fontWeight: 500 }}>{u.name}</div>
-                                <div style={{ color: '#71717a', fontSize: 12 }}>{u.email}</div>
+                                <div style={{ color: '#e4e4e7', fontSize: 14, fontWeight: 500 }}>{acc.user.name}</div>
+                                <div style={{ color: '#71717a', fontSize: 12 }}>{acc.user.email}</div>
                               </div>
-
-                              {/* Departamento (Badge) */}
-                              {u.department && (
-                                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: '#18181b', color: '#52525b', border: '1px solid #27272a' }}>
-                                  {u.department}
-                                </span>
-                              )}
                             </div>
                           ))}
                         </div>
                       )}
                     </div>
                   ))}
+              </div>
+
+              {/* LISTA DE ACESSOS EXTRAORDINÁRIOS (NOVO) */}
+              <h3 style={{ color: '#c084fc', marginTop: 40, marginBottom: 15, fontSize: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Timer size={20} /> Acessos Extraordinários (Temporários)
+              </h3>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {getGroupedAccesses(selectedTool).extraordinary.length === 0 ? (
+                  <div className="card-base" style={{ textAlign: 'center', color: '#52525b', padding: 40, borderStyle: 'dashed', borderColor: 'rgba(167, 139, 250, 0.2)' }}>
+                    Nenhum acesso extraordinário vigente.
+                  </div>
+                ) : (
+                  getGroupedAccesses(selectedTool).extraordinary.map((acc) => (
+                    <div key={acc.user.id} className="card-base" style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 16,
+                      padding: '16px 24px',
+                      background: 'rgba(167, 139, 250, 0.05)',
+                      border: '1px solid rgba(167, 139, 250, 0.1)'
+                    }}>
+                      <div style={{ width: 42, height: 42, borderRadius: '12px', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>
+                        {acc.user.name.charAt(0)}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ color: 'white', fontWeight: 600 }}>{acc.user.name}</span>
+                          <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>
+                            {acc.status}
+                          </span>
+                        </div>
+                        <div style={{ color: '#a1a1aa', fontSize: 12 }}>{acc.user.email}</div>
+                      </div>
+
+                      {/* DURAÇÃO */}
+                      <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 20 }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700 }}>Duração Pedida</div>
+                          <div style={{ color: '#f4f4f5', fontWeight: 600 }}>{acc.duration} {acc.unit}</div>
+                        </div>
+
+                        {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                          <button
+                            className="btn-mini"
+                            style={{ padding: '8px 12px', display: 'flex', gap: 6, alignItems: 'center', background: '#27272a' }}
+                            onClick={() => {
+                              setSelectedAccess(acc);
+                              setIsEditAccessModalOpen(true);
+                            }}
+                          >
+                            <Pen size={12} /> Editar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -763,6 +823,17 @@ export default function App() {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onCreated={loadData}
+      />
+
+      <EditAccessModal
+        isOpen={isEditAccessModalOpen}
+        onClose={() => {
+          setIsEditAccessModalOpen(false);
+          setSelectedAccess(null);
+        }}
+        access={selectedAccess}
+        toolId={selectedTool?.id || ''}
+        onUpdate={loadData}
       />
     </div>
   );

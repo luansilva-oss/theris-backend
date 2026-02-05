@@ -104,6 +104,12 @@ model Access {
   tool      Tool     @relation(fields: [toolId], references: [id], onDelete: Cascade)
   
   createdAt DateTime @default(now())
+  
+  // Detalhes Extraordinários
+  isExtraordinary Boolean   @default(false)
+  duration        Int?      
+  unit            String?   // horas, dias, meses
+  expiresAt       DateTime? 
 }
 
 model Request {
@@ -126,6 +132,8 @@ model Request {
   details             String   // JSON string
   justification       String?
   isExtraordinary     Boolean  @default(false)
+  extraordinaryDuration Int?     // Ex: 48
+  extraordinaryUnit     String?  // Ex: "horas", "dias", "meses"
   
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

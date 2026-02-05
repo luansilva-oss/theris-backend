@@ -141,3 +141,22 @@ export const removeToolAccess = async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'Erro ao remover acesso' });
   }
 };
+
+export const updateToolAccess = async (req: Request, res: Response) => {
+  const { toolId, userId } = req.params;
+  const { isExtraordinary, duration, unit } = req.body;
+  try {
+    await prisma.access.updateMany({
+      where: { toolId, userId },
+      data: {
+        isExtraordinary: isExtraordinary ?? undefined,
+        duration: duration !== undefined ? (duration ? parseInt(duration) : null) : undefined,
+        unit: unit ?? undefined
+      }
+    });
+    return res.json({ message: 'Acesso atualizado' });
+  } catch (error) {
+    console.error("Erro ao atualizar acesso:", error);
+    return res.status(500).json({ error: 'Erro ao atualizar acesso' });
+  }
+};
