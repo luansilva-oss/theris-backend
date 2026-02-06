@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: theris-backend
+    env: node
+    buildCommand: npm install && npx prisma generate && npx prisma db push --accept-data-loss && npx vite build && npx tsc && npx tsx prisma/seed_users.ts && npx tsx prisma/seed_tools.ts
+    startCommand: node dist-server/index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.0
