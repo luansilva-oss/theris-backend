@@ -1039,13 +1039,26 @@ export default function App() {
 
       <EditAccessModal
         isOpen={isEditAccessModalOpen}
-        onClose={() => {
-          setIsEditAccessModalOpen(false);
-          setSelectedAccess(null);
-        }}
+        onClose={() => setIsEditAccessModalOpen(false)}
         access={selectedAccess}
-        toolId={selectedTool?.id || ''}
         onUpdate={loadData}
+        allUsers={allUsers}
+      />
+
+      {/* RENDERIZAR O MODAL DE ESTRUTURA */}
+      <ManageStructureModal
+        isOpen={isManageStructureOpen}
+        onClose={() => setIsManageStructureOpen(false)}
+        onUpdate={loadData}
+      />
+      isOpen={isEditAccessModalOpen}
+      onClose={() => {
+        setIsEditAccessModalOpen(false);
+        setSelectedAccess(null);
+      }}
+      access={selectedAccess}
+      toolId={selectedTool?.id || ''}
+      onUpdate={loadData}
       />
 
       <ManageStructureModal
