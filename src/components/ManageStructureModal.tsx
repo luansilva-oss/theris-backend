@@ -425,18 +425,29 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                                     </div>
 
                                                     {/* Listed Users */}
-                                                    <div style={{ background: '#18181b', padding: '10px 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                                    <div style={{
+                                                        background: '#18181b',
+                                                        padding: '12px 16px',
+                                                        display: 'flex',
+                                                        flexWrap: 'wrap',
+                                                        gap: 8,
+                                                        minHeight: '48px',
+                                                        maxHeight: '200px',
+                                                        overflowY: 'auto'
+                                                    }}>
                                                         {roleUsers.length === 0 ? (
                                                             <span style={{ fontSize: 12, color: '#52525b', fontStyle: 'italic' }}>Ninguém neste cargo ainda.</span>
                                                         ) : (
                                                             roleUsers.map(u => (
                                                                 <div key={u.id} style={{
                                                                     display: 'flex', alignItems: 'center', gap: 6,
-                                                                    background: '#09090b', padding: '4px 10px', borderRadius: 20,
-                                                                    border: '1px solid #27272a', fontSize: 12, color: '#d4d4d8'
+                                                                    background: '#09090b', padding: '6px 12px', borderRadius: 20,
+                                                                    border: '1px solid #27272a', fontSize: 12, color: '#d4d4d8',
+                                                                    flexShrink: 0,
+                                                                    height: 'fit-content'
                                                                 }}>
                                                                     <UserIcon size={10} color="#a1a1aa" />
-                                                                    {u.name}
+                                                                    <span style={{ whiteSpace: 'nowrap' }}>{u.name}</span>
                                                                     <button
                                                                         onClick={() => handleRemoveUserFromRole(u)}
                                                                         style={{
