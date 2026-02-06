@@ -3,56 +3,88 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-    console.log('🧹 Iniciando limpeza de duplicatas...');
+    console.log('🧹 Iniciando varredura agressiva de duplicatas...');
 
-    const users = await prisma.user.findMany();
-    const placeholders = users.filter(u => u.jobTitle === 'Não mapeado');
-    const realUsers = users.filter(u => u.jobTitle !== 'Não mapeado');
+    const allUsers = await prisma.user.findMany({
+        include: { accesses: true, toolsOwned: true, toolsSubOwned: true }
+    });
 
-    console.log(`📊 Encontrados ${placeholders.length} placeholders e ${realUsers.length} usuários reais.`);
+    // Agrupa por e-mail normalizado (lowercase)
+    const emailGroups = new Map<string, typeof allUsers>();
 
-    let deletedCount = 0;
+    for (const u of allUsers) {
+        const email = u.email.trim().toLowerCase();
+        if (!emailGroups.has(email)) {
+            emailGroups.set(email, []);
+        }
+        emailGroups.get(email)?.push(u);
+    }
 
-    for (const placeholder of placeholders) {
-        const prefix = placeholder.email.split('@')[0];
+    let mergedCount = 0;
 
-        // Procura um usuário real que tenha o mesmo prefixo parcial no email
-        // Ex: alana.gaspar (placeholder) vs alana.maiumy.gaspar (real)
-        const match = realUsers.find(real => {
-            const realPrefix = real.email.split('@')[0];
-            // Verifica se o prefixo do placeholder está contido no real ou vice-versa
-            // Ou se eles compartilham os mesmos componentes básicos
-            const placeholderParts = prefix.split('.');
-            const realParts = realPrefix.split('.');
+    for (const [email, group] of emailGroups.entries()) {
+        if (group.length > 1) {
+            console.log(`⚠️ Encontrados ${group.length} registros para ${email}:`);
 
-            // Se as partes principais (primeira e última) batem, é provável que seja o mesmo
-            const firstMatch = placeholderParts[0] === realParts[0];
-            const lastMatch = placeholderParts[placeholderParts.length - 1] === realParts[realParts.length - 1];
-
-            return firstMatch && lastMatch;
-        });
-
-        if (match) {
-            console.log(`🗑️ Removendo duplicata: ${placeholder.email} -> Corresponde a ${match.email}`);
-
-            // Antes de deletar, precisamos mover os acessos do placeholder para o usuário real
-            await prisma.access.updateMany({
-                where: { userId: placeholder.id },
-                data: { userId: match.id }
+            // 1. Eleger o "Principal" (o que tem mais acessos ou mais ferramentas ou o mais antigo)
+            // Score based prioritization
+            group.sort((a, b) => {
+                const scoreA = a.accesses.length * 10 + a.toolsOwned.length * 5 + (a.jobTitle !== 'Não mapeado' ? 2 : 0);
+                const scoreB = b.accesses.length * 10 + b.toolsOwned.length * 5 + (b.jobTitle !== 'Não mapeado' ? 2 : 0);
+                return scoreB - scoreA; // Maior score primeiro
             });
 
-            // Mover solicitações também
-            await prisma.request.updateMany({
-                where: { requesterId: placeholder.id },
-                data: { requesterId: match.id }
-            });
+            const winner = group[0];
+            const losers = group.slice(1);
 
-            await prisma.user.delete({ where: { id: placeholder.id } });
-            deletedCount++;
+            console.log(`   👑 Principal: ${winner.name} (${winner.id}) - Acessos: ${winner.accesses.length}`);
+
+            for (const loser of losers) {
+                console.log(`   🗑️ Mesclando e removendo: ${loser.name} (${loser.id}) - Acessos: ${loser.accesses.length}`);
+
+                // Move relations
+                try {
+                    // Update Accesses
+                    await prisma.access.updateMany({
+                        where: { userId: loser.id },
+                        data: { userId: winner.id }
+                    });
+
+                    // Update Requests
+                    await prisma.request.updateMany({
+                        where: { requesterId: loser.id },
+                        data: { requesterId: winner.id }
+                    });
+
+                    // Update Tools Owned
+                    await prisma.tool.updateMany({
+                        where: { ownerId: loser.id },
+                        data: { ownerId: winner.id }
+                    });
+
+                    // Update Tools SubOwned
+                    await prisma.tool.updateMany({
+                        where: { subOwnerId: loser.id },
+                        data: { subOwnerId: winner.id }
+                    });
+
+                    // Update User Manager Relation (if any subordinate points to loser)
+                    await prisma.user.updateMany({
+                        where: { managerId: loser.id },
+                        data: { managerId: winner.id }
+                    });
+
+                    // Finally delete loser
+                    await prisma.user.delete({ where: { id: loser.id } });
+                    mergedCount++;
+                } catch (e) {
+                    console.error(`   ❌ Falha ao mesclar ${loser.email}:`, e);
+                }
+            }
         }
     }
 
-    console.log(`✅ Limpeza concluída. ${deletedCount} usuários duplicados removidos.`);
+    console.log(`✅ Limpeza concluída. ${mergedCount} duplicatas fundidas/removidas.`);
 }
 
 main()
