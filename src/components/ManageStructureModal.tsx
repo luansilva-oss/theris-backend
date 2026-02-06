@@ -376,7 +376,8 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                         <button className="btn-mini" onClick={handleCreateRole} style={{ background: '#27272a', border: '1px solid #3f3f46' }}><Plus size={14} /> Adicionar Cargo</button>
                                     </div>
 
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                    {/* Scrollable Roles Container */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '400px', overflowY: 'auto', paddingRight: 8 }}>
                                         {roles.filter(r => r.departmentId === currentDept.id).map(role => {
                                             const roleUsers = allUsers.filter(u => u.jobTitle === role.name && u.department === currentDept.name);
 
