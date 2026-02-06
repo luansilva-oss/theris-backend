@@ -604,6 +604,7 @@ export default function App() {
                               style={{ padding: 4 }}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                setSelectedStructureDept(dept);
                                 setIsManageStructureOpen(true);
                               }}
                               title="Editar Estrutura"
@@ -1061,8 +1062,13 @@ export default function App() {
       {/* RENDERIZAR O MODAL DE ESTRUTURA */}
       <ManageStructureModal
         isOpen={isManageStructureOpen}
-        onClose={() => setIsManageStructureOpen(false)}
+        onClose={() => {
+          setIsManageStructureOpen(false);
+          setSelectedStructureDept(null);
+        }}
         onUpdate={loadData}
+        initialDepartment={selectedStructureDept}
+        allUsers={allUsers}
       />
 
       {selectedTool && selectedLevelName && (
