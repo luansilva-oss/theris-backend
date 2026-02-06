@@ -598,6 +598,19 @@ export default function App() {
                           <span style={{ fontSize: 11, color: '#a1a1aa', background: '#27272a', padding: '2px 8px', borderRadius: 4 }}>
                             {Object.values(roles).flat().length} Pessoas
                           </span>
+                          {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                            <button
+                              className="btn-icon"
+                              style={{ padding: 4 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsManageStructureOpen(true);
+                              }}
+                              title="Editar Estrutura"
+                            >
+                              <Settings size={14} color="#71717a" />
+                            </button>
+                          )}
                           {expandedDept === dept ? <ChevronDown size={18} color="#a1a1aa" /> : <ChevronRight size={18} color="#52525b" />}
                         </div>
                       </div>

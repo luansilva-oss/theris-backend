@@ -81,7 +81,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
 
             if (res.ok) {
                 onUpdate();
-                if (name !== levelName) onClose(); // Close if renamed to avoid confusion
+                onClose(); // Always close on success
             } else {
                 const data = await res.json();
                 alert(data.error || "Erro ao salvar.");
