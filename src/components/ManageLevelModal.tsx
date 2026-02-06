@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Trash2, Search, Plus } from 'lucide-react';
+import { X, Save, Trash2, Search, Plus, Shield, Crown, Zap, } from 'lucide-react'; // Added icons
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -22,6 +22,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
 
     const [name, setName] = useState(levelName);
     const [description, setDescription] = useState('');
+    const [icon, setIcon] = useState('Shield');
     const [searchTerm, setSearchTerm] = useState('');
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [isSaving, setIsSaving] = useState(false);
@@ -31,22 +32,23 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
 
     useEffect(() => {
         if (levelName) {
-            // Only update name if it matches the *initial* level name prop, to avoid overwriting user edits on background refresh
-            // Ideally, we only set it once on mount or if levelName *actually* changes (e.g. switching levels)
-            // But since this modal usually unmounts on close, we can just set it if we haven't touched accessLevelDescriptions 
-            // Better: just check if description is empty to init, but name should track levelName if it CHANGES.
-            // Problem: tool refresh triggers re-render. 
-            // FIX: Don't rely on 'tool' for name resetting.
-        }
-    }, [levelName]); // Remove 'tool' from dependency for name/desc init
+            // Keep name in sync only on mounting/level change significantly
+            setName(levelName);
 
-    // Separate effect for description if needed, or just combine but be careful.
-    // Actually, simpler: Use a ref or just rely on levelName change.
-    useEffect(() => {
-        // Init state when levelName changes (e.g. opening modal)
-        setName(levelName);
-        const descMap = tool.accessLevelDescriptions || {};
-        setDescription(descMap[levelName] || '');
+            const descData = (tool.accessLevelDescriptions as any)?.[levelName];
+
+            // Handle both string (legacy) and object format
+            if (typeof descData === 'string') {
+                setDescription(descData);
+                setIcon(levelName.match(/admin|owner/i) ? 'Crown' : 'Shield');
+            } else if (typeof descData === 'object' && descData !== null) {
+                setDescription(descData.description || '');
+                setIcon(descData.icon || (levelName.match(/admin|owner/i) ? 'Crown' : 'Shield'));
+            } else {
+                setDescription('');
+                setIcon(levelName.match(/admin|owner/i) ? 'Crown' : 'Shield');
+            }
+        }
     }, [levelName]);
 
     const loadUsers = async () => {
@@ -71,7 +73,8 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     newLevelName: name,
-                    description: description
+                    description: description,
+                    icon: icon
                 })
             });
 
@@ -87,6 +90,26 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
         }
         setIsSaving(false);
     };
+
+    const handleDeleteLevel = async () => {
+        if (!confirm(`Tem certeza que deseja EXCLUIR o nível "${levelName}"? Isso removerá o acesso de todos os usuários neste nível.`)) return;
+
+        try {
+            const res = await fetch(`${API_URL}/api/tools/${tool.id}/level/${encodeURIComponent(levelName)}`, {
+                method: 'DELETE'
+            });
+
+            if (res.ok) {
+                onUpdate();
+                onClose();
+            } else {
+                const data = await res.json();
+                alert(data.error || "Erro ao excluir nível.");
+            }
+        } catch (e) {
+            alert("Erro ao excluir nível.");
+        }
+    }
 
     const addUser = async (userId: string) => {
         try {
@@ -139,6 +162,36 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
                                 style={{ width: '100%' }}
                             />
                         </div>
+
+                        {/* ICON PICKER */}
+                        <div className="form-group" style={{ marginTop: 12 }}>
+                            <label>Ícone do Nível</label>
+                            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                                {['Shield', 'Crown'].map(ic => (
+                                    <button
+                                        key={ic}
+                                        onClick={() => setIcon(ic)}
+                                        style={{
+                                            background: icon === ic ? '#3f3f46' : '#27272a',
+                                            border: icon === ic ? '1px solid #a78bfa' : '1px solid #3f3f46',
+                                            borderRadius: 6,
+                                            padding: 8,
+                                            cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            flex: 1
+                                        }}
+                                        className="hover:bg-zinc-800"
+                                    >
+                                        <span style={{ marginRight: 6 }}>
+                                            {ic === 'Crown' ? <Crown size={16} color={icon === ic ? '#a78bfa' : '#71717a'} /> : <Shield size={16} color={icon === ic ? '#a78bfa' : '#71717a'} />}
+                                        </span>
+                                        <span style={{ fontSize: 13, color: icon === ic ? '#f4f4f5' : '#71717a', fontWeight: 500 }}>{ic === 'Crown' ? 'Coroa (Admin)' : 'Escudo (User)'}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            {/* Advanced Picker (Hidden for now or secondary) -> Just simplified for request */}
+                        </div>
+
                         <div className="form-group" style={{ marginTop: 12 }}>
                             <label>Descrição / Permissões</label>
                             <textarea
@@ -149,7 +202,6 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
                                 placeholder="O que este nível pode fazer?"
                             />
                         </div>
-                        {/* Removido botão daqui */}
                     </div>
 
                     {/* USERS SECTION */}
@@ -204,7 +256,15 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
 
                 </div>
 
-                <div className="modal-footer" style={{ borderTop: '1px solid #27272a', padding: '16px 0 0 0', marginTop: 0, display: 'flex', justifySelf: 'flex-end', justifyContent: 'flex-end' }}>
+                <div className="modal-footer" style={{ borderTop: '1px solid #27272a', padding: '16px 0 0 0', marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button
+                        onClick={handleDeleteLevel}
+                        className="btn-text"
+                        style={{ color: '#ef4444', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                    >
+                        <Trash2 size={14} /> Excluir Nível
+                    </button>
+
                     <button onClick={handleSaveInfo} disabled={isSaving} className="btn-verify" style={{ width: 'auto', padding: '10px 24px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <Save size={16} />
                         {isSaving ? 'Salvando...' : 'Salvar Alterações'}

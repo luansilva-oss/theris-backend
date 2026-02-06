@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateToolAccess = exports.removeToolAccess = exports.addToolAccess = exports.deleteToolGroup = exports.createToolGroup = exports.getToolGroups = exports.updateTool = exports.deleteTool = exports.createTool = exports.getTools = void 0;
+exports.deleteToolLevel = exports.updateToolLevel = exports.updateToolAccess = exports.removeToolAccess = exports.addToolAccess = exports.deleteToolGroup = exports.createToolGroup = exports.getToolGroups = exports.updateTool = exports.deleteTool = exports.createTool = exports.getTools = void 0;
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
 // --- TOOLS ---
@@ -186,3 +186,93 @@ const updateToolAccess = async (req, res) => {
     }
 };
 exports.updateToolAccess = updateToolAccess;
+// --- LEVEL MANAGEMENT ---
+const updateToolLevel = async (req, res) => {
+    const { toolId, oldLevelName } = req.params;
+    const { newLevelName, description, icon } = req.body;
+    try {
+        const tool = await prisma.tool.findUnique({ where: { id: toolId } });
+        if (!tool)
+            return res.status(404).json({ error: 'Ferramenta não encontrada' });
+        let updatedLevels = [...(tool.availableAccessLevels || [])];
+        let updatedDescriptions = tool.accessLevelDescriptions || {};
+        // 1. Rename Level (if name changed)
+        if (newLevelName && newLevelName !== oldLevelName) {
+            // Check if new name already exists
+            if (updatedLevels.includes(newLevelName)) {
+                return res.status(400).json({ error: 'Este nome de nível já existe.' });
+            }
+            // Update array
+            updatedLevels = updatedLevels.map(l => l === oldLevelName ? newLevelName : l);
+            // Update descriptions map key
+            if (updatedDescriptions[oldLevelName]) {
+                updatedDescriptions[newLevelName] = updatedDescriptions[oldLevelName];
+                delete updatedDescriptions[oldLevelName];
+            }
+            // Update all Access records
+            await prisma.access.updateMany({
+                where: { toolId, status: oldLevelName },
+                data: { status: newLevelName }
+            });
+        }
+        // 2. Update Description & Icon
+        const targetName = newLevelName || oldLevelName;
+        if (description !== undefined || icon !== undefined) {
+            const currentData = updatedDescriptions[targetName];
+            // Handle backward compatibility (string vs object)
+            const baseData = typeof currentData === 'string'
+                ? { description: currentData }
+                : (currentData || {});
+            updatedDescriptions[targetName] = {
+                ...baseData,
+                ...(description !== undefined ? { description } : {}),
+                ...(icon !== undefined ? { icon } : {})
+            };
+        }
+        // Save Tool
+        const updatedTool = await prisma.tool.update({
+            where: { id: toolId },
+            data: {
+                availableAccessLevels: updatedLevels,
+                accessLevelDescriptions: updatedDescriptions
+            }
+        });
+        return res.json(updatedTool);
+    }
+    catch (error) {
+        console.error("Erro ao atualizar nível:", error);
+        return res.status(500).json({ error: 'Erro ao atualizar nível' });
+    }
+};
+exports.updateToolLevel = updateToolLevel;
+const deleteToolLevel = async (req, res) => {
+    const { toolId, levelName } = req.params;
+    try {
+        const tool = await prisma.tool.findUnique({ where: { id: toolId } });
+        if (!tool)
+            return res.status(404).json({ error: 'Ferramenta não encontrada' });
+        // 1. Remove from availableAccessLevels
+        const updatedLevels = (tool.availableAccessLevels || []).filter(l => l !== levelName);
+        // 2. Remove from accessLevelDescriptions
+        const updatedDescriptions = tool.accessLevelDescriptions || {};
+        delete updatedDescriptions[levelName];
+        // 3. Remove/Update associated Access records (Optional: could block if users exist)
+        // For now, we will just remove the access records for this level
+        await prisma.access.deleteMany({
+            where: { toolId, status: levelName }
+        });
+        const updatedTool = await prisma.tool.update({
+            where: { id: toolId },
+            data: {
+                availableAccessLevels: updatedLevels,
+                accessLevelDescriptions: updatedDescriptions
+            }
+        });
+        return res.json(updatedTool);
+    }
+    catch (error) {
+        console.error("Erro ao excluir nível:", error);
+        return res.status(500).json({ error: 'Erro ao excluir nível' });
+    }
+};
+exports.deleteToolLevel = deleteToolLevel;

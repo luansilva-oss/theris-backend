@@ -69,7 +69,9 @@ app.delete('/api/tool-groups/:id', deleteToolGroup);
 
 app.post('/api/tools/:id/access', addToolAccess);     // Adicionar/Atualizar acesso de usuário
 app.delete('/api/tools/:id/access/:userId', removeToolAccess); // Remover acesso
+import { deleteToolLevel } from './controllers/toolController'; // Helper import if needed, but better to update top import
 app.patch('/api/tools/:toolId/level/:oldLevelName', updateToolLevel);
+app.delete('/api/tools/:toolId/level/:levelName', deleteToolLevel);
 app.patch('/api/tools/:toolId/access/:userId', updateToolAccess); // Atualizar detalhes do acesso (ex: extra)
 
 // 3. Usuários

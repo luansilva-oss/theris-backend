@@ -770,14 +770,26 @@ export default function App() {
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          {level.toLowerCase().match(/admin|owner|proprietário|full/)
-                            ? <Crown size={20} color="#fbbf24" fill="rgba(251, 191, 36, 0.2)" />
-                            : <Shield size={20} color="#a1a1aa" />}
+                          {(() => {
+                            // Logic to resolve icon: 1. Custom Icon (string), 2. Default regex
+                            const descData = (selectedTool.accessLevelDescriptions as any)?.[level];
+                            const customIcon = typeof descData === 'object' ? descData.icon : null;
+                            const description = typeof descData === 'object' ? descData.description : (typeof descData === 'string' ? descData : null);
+
+                            if (customIcon === 'Crown') return <Crown size={20} color="#fbbf24" fill="rgba(251, 191, 36, 0.2)" />;
+                            if (customIcon === 'Shield') return <Shield size={20} color="#a1a1aa" />;
+                            if (customIcon === 'Star') return <Zap size={20} color="#f472b6" />; // Example mapping
+                            // Fallback to regex if no custom icon
+                            if (level.toLowerCase().match(/admin|owner|proprietário|full/)) return <Crown size={20} color="#fbbf24" fill="rgba(251, 191, 36, 0.2)" />;
+                            return <Shield size={20} color="#a1a1aa" />;
+                          })()}
                           <span style={{ fontWeight: 600, color: '#f4f4f5', fontSize: 15 }}>{level}</span>
                           <span style={{ fontSize: 10, color: '#71717a', marginLeft: 8 }}>
-                            {(selectedTool.accessLevelDescriptions as any)?.[level] &&
-                              ` - ${(selectedTool.accessLevelDescriptions as any)[level].substring(0, 30)}${((selectedTool.accessLevelDescriptions as any)[level].length > 30 ? '...' : '')}`
-                            }
+                            {(() => {
+                              const descData = (selectedTool.accessLevelDescriptions as any)?.[level];
+                              const description = typeof descData === 'object' ? descData.description : (typeof descData === 'string' ? descData : null);
+                              return description && ` - ${description.substring(0, 30)}${description.length > 30 ? '...' : ''}`;
+                            })()}
                           </span>
                         </div>
 
