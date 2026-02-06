@@ -466,47 +466,62 @@ async function upsertUser(email: string, name: string) {
 }
 
 async function main() {
-  console.log('🌱 Iniciando Seed COMPLETO (Baseado nos CSVs reais)...');
+  console.log('🌱 Iniciando Seed SEGURO (Baseado nos CSVs reais)...');
 
-  // Limpa tudo (para garantir integridade)
-  await prisma.access.deleteMany();
-  await prisma.tool.deleteMany();
+  // MODO SEGURO: Não apaga nada
+  // await prisma.access.deleteMany();
+  // await prisma.tool.deleteMany();
 
   const toolMap = new Map<string, string>();
 
-  // 1. Criar Ferramentas e Owners
+  // 1. Criar Ferramentas e Owners (Apenas se faltar)
   for (const t of toolsMaster) {
     const owner = await upsertUser(t.ownerEmail, 'Owner ' + t.sigla);
     let subOwner = null;
     if (t.subEmail) subOwner = await upsertUser(t.subEmail, 'Sub ' + t.sigla);
 
-    const tool = await prisma.tool.create({
-      data: {
-        name: t.name,
-        ownerId: owner?.id,
-        subOwnerId: subOwner?.id
-      }
+    // Check existing
+    let tool = await prisma.tool.findFirst({
+      where: { name: { equals: t.name, mode: 'insensitive' } }
     });
+
+    if (!tool) {
+      tool = await prisma.tool.create({
+        data: {
+          name: t.name,
+          ownerId: owner?.id,
+          subOwnerId: subOwner?.id
+        }
+      });
+      console.log(`➕ Ferramenta criada: ${t.name}`);
+    }
+
     toolMap.set(t.sigla, tool.id);
   }
 
-  // 2. Inserir Acessos (Lista Massiva)
+  // 2. Inserir Acessos (Checando duplicidade)
   for (const item of accessData) {
     const user = await upsertUser(item.e, item.n);
     const toolId = toolMap.get(item.s);
 
     if (user && toolId) {
-      await prisma.access.create({
-        data: {
-          userId: user.id,
-          toolId: toolId,
-          status: item.l // Aqui entra o nível EXATO (ex: 'Full (FA - 1)')
-        }
+      const existing = await prisma.access.findFirst({
+        where: { userId: user.id, toolId: toolId }
       });
+
+      if (!existing) {
+        await prisma.access.create({
+          data: {
+            userId: user.id,
+            toolId: toolId,
+            status: item.l
+          }
+        });
+      }
     }
   }
 
-  console.log('✅ Seed finalizado. Todos os usuários importados corretamente.');
+  console.log('✅ Seed finalizado. Dados preservados e completados.');
 }
 
 main()
