@@ -280,14 +280,14 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                     <button onClick={onClose} className="btn-icon"><X size={20} /></button>
                 </div>
 
-                <div className="modal-body" style={{ flex: 1, padding: 0, display: 'flex', flexDirection: 'column' }}>
+                <div className="modal-body" style={{ flex: 1, padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
                     {viewMode === 'GLOBAL' ? (
-                        <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
-                            <h4 style={{ color: '#d4d4d8', marginTop: 0 }}>Departamentos</h4>
+                        <div style={{ padding: 24, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                            <h4 style={{ color: '#d4d4d8', marginTop: 0, marginBottom: 16 }}>Departamentos</h4>
 
                             {/* Create Dept */}
-                            <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexShrink: 0 }}>
                                 <input
                                     className="form-input"
                                     placeholder="Novo Departamento..."
@@ -298,7 +298,8 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                 <button className="btn-verify" style={{ margin: 0, width: 'auto' }} onClick={handleCreateDept}><Plus size={16} /> Criar</button>
                             </div>
 
-                            <div style={{ display: 'grid', gap: 10 }}>
+                            {/* Scrollable Department List */}
+                            <div style={{ display: 'grid', gap: 10, overflowY: 'auto', paddingRight: 8, flex: 1 }}>
                                 {departments.map(d => (
                                     <div
                                         key={d.id}
