@@ -667,19 +667,17 @@ async function ensureUser(email: string, name: string) {
 
 
 async function main() {
-    console.log('🚨 INICIANDO RESET COMPLETO DO CATÁLOGO DE FERRAMENTAS...');
+    console.log('🚨 INICIANDO SEED SEGURO DO CATÁLOGO DE FERRAMENTAS...');
     console.log('---------------------------------------------------------');
 
-    // 1. LIMPEZA TOTAL DE FERRAMENTAS E ACESSOS
-    // (Mantemos Usuários e Solicitações)
-    const deletedAccess = await prisma.access.deleteMany({});
-    console.log(`🗑️ Acessos removidos: ${deletedAccess.count}`);
-
-    const deletedTools = await prisma.tool.deleteMany({});
-    console.log(`🗑️ Ferramentas removidas: ${deletedTools.count}`);
+    // 1. NÃO APAGAR DADOS (Modo Seguro)
+    // const deletedAccess = await prisma.access.deleteMany({});
+    // console.log(`🗑️ Acessos removidos: ${deletedAccess.count}`);
+    // const deletedTools = await prisma.tool.deleteMany({});
+    // console.log(`🗑️ Ferramentas removidas: ${deletedTools.count}`);
 
     console.log('---------------------------------------------------------');
-    console.log('🚀 Reinserindo ferramentas e acessos oficiais...');
+    console.log('🚀 Verificando e completando ferramentas e acessos oficiais...');
 
     for (const t of toolsData) {
         // 1. Garante Owner
@@ -691,18 +689,27 @@ async function main() {
             subOwner = await ensureUser(t.subOwnerEmail, t.subOwnerName || '');
         }
 
-        // 3. Cria Ferramenta
-        const newTool = await prisma.tool.create({
-            data: {
-                name: t.name,
-                acronym: t.acronym || undefined,
-                description: t.description || null,
-                ownerId: owner?.id,
-                subOwnerId: subOwner?.id
-            }
+        // 3. Garante Ferramenta (Cria se não existir)
+        let tool = await prisma.tool.findFirst({
+            where: { name: { equals: t.name, mode: 'insensitive' } }
         });
 
-        // 4. Cria Acessos
+        if (!tool) {
+            tool = await prisma.tool.create({
+                data: {
+                    name: t.name,
+                    acronym: t.acronym || undefined,
+                    description: t.description || null,
+                    ownerId: owner?.id,
+                    subOwnerId: subOwner?.id
+                }
+            });
+            console.log(`➕ Ferramenta Criada: ${t.name}`);
+        } else {
+            console.log(`ℹ️ Ferramenta Existente: ${t.name} (Pulando criação)`);
+        }
+
+        // 4. Cria Acessos (Se não existirem)
         let accessCount = 0;
         if (t.accesses && t.accesses.length > 0) {
             for (const acc of t.accesses) {
@@ -710,23 +717,33 @@ async function main() {
                 const userAcc = await ensureUser(acc.email, acc.email.split('@')[0]);
 
                 if (userAcc) {
-                    await prisma.access.create({
-                        data: {
-                            toolId: newTool.id,
-                            userId: userAcc.id,
-                            status: acc.level
+                    // Verifica se já tem acesso PARA ESSA FERRAMENTA
+                    const existingAccess = await prisma.access.findFirst({
+                        where: {
+                            toolId: tool.id,
+                            userId: userAcc.id
                         }
                     });
-                    accessCount++;
+
+                    if (!existingAccess) {
+                        await prisma.access.create({
+                            data: {
+                                toolId: tool.id,
+                                userId: userAcc.id,
+                                status: acc.level
+                            }
+                        });
+                        accessCount++;
+                    }
                 }
             }
         }
 
-        console.log(`✅ [${t.acronym || '??'}] ${t.name} -> Owner: ${owner?.name} | Acessos: ${accessCount}`);
+        console.log(`✅ [${t.acronym || '??'}] ${t.name} -> Owner: ${owner?.name} | Novos Acessos: ${accessCount}`);
     }
 
     console.log('---------------------------------------------------------');
-    console.log('🏁 SEED CONCLUÍDO COM SUCESSO!');
+    console.log('🏁 SEED SEGURO CONCLUÍDO!');
 }
 
 main()
