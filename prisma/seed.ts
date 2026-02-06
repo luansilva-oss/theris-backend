@@ -460,7 +460,10 @@ const accessData = [
 
 async function upsertUser(email: string, name: string) {
   if (!email) return null;
-  const existing = await prisma.user.findUnique({ where: { email } });
+  // Use findFirst with insensitive mode instead of findUnique to avoid duplicates
+  const existing = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: 'insensitive' } }
+  });
   if (existing) return existing;
   return await prisma.user.create({ data: { email, name } });
 }
