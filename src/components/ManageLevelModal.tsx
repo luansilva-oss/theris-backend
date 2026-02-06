@@ -26,6 +26,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
     const [searchTerm, setSearchTerm] = useState('');
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [isSaving, setIsSaving] = useState(false);
+    const [showAllUsers, setShowAllUsers] = useState(false);
 
     // Filter users already in this level
     const usersInLevel = tool.accesses.filter((acc: any) => acc.status === levelName).map((acc: any) => acc.user);
@@ -235,21 +236,66 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
                             )}
                         </div>
 
-                        {/* LIST USERS */}
-                        <div className="card-base" style={{ padding: 0, border: '1px solid #27272a', overflow: 'hidden' }}>
+                        {/* LIST USERS - CHIPS LAYOUT */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                             {usersInLevel.length === 0 ? (
-                                <div style={{ padding: 20, textAlign: 'center', color: '#52525b', fontSize: 13 }}>
+                                <div style={{ padding: 20, textAlign: 'center', color: '#52525b', fontSize: 13, border: '1px solid #27272a', borderRadius: 8 }}>
                                     Nenhum usuário neste nível.
                                 </div>
                             ) : (
-                                usersInLevel.map((u: User) => (
-                                    <div key={u.id} style={{ padding: '12px 16px', borderBottom: '1px solid #27272a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <span style={{ color: '#e4e4e7', fontSize: 13 }}>{u.name}</span>
-                                        <button onClick={() => removeUser(u.id)} className="btn-icon" style={{ color: '#ef4444' }}>
-                                            <Trash2 size={14} />
-                                        </button>
+                                <>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                        {(showAllUsers ? usersInLevel : usersInLevel.slice(0, 5)).map((u: User) => (
+                                            <div
+                                                key={u.id}
+                                                style={{
+                                                    background: '#27272a',
+                                                    border: '1px solid #3f3f46',
+                                                    borderRadius: 20,
+                                                    padding: '6px 12px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 8,
+                                                    fontSize: 13,
+                                                    color: '#e4e4e7'
+                                                }}
+                                            >
+                                                <span>{u.name}</span>
+                                                <button
+                                                    onClick={() => removeUser(u.id)}
+                                                    style={{
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        color: '#71717a',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        padding: 0
+                                                    }}
+                                                    className="hover:text-red-400"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))
+
+                                    {usersInLevel.length > 5 && (
+                                        <button
+                                            onClick={() => setShowAllUsers(!showAllUsers)}
+                                            style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                color: '#a78bfa',
+                                                fontSize: 13,
+                                                cursor: 'pointer',
+                                                alignSelf: 'flex-start',
+                                                marginTop: 4
+                                            }}
+                                        >
+                                            {showAllUsers ? 'Mostrar menos' : `Mostrar mais (${usersInLevel.length - 5})`}
+                                        </button>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>
