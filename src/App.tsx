@@ -1051,21 +1051,6 @@ export default function App() {
         onClose={() => setIsManageStructureOpen(false)}
         onUpdate={loadData}
       />
-      isOpen={isEditAccessModalOpen}
-      onClose={() => {
-        setIsEditAccessModalOpen(false);
-        setSelectedAccess(null);
-      }}
-      access={selectedAccess}
-      toolId={selectedTool?.id || ''}
-      onUpdate={loadData}
-      />
-
-      <ManageStructureModal
-        isOpen={isManageStructureOpen}
-        onClose={() => setIsManageStructureOpen(false)}
-        onUpdate={loadData}
-      />
 
       {selectedTool && selectedLevelName && (
         <ManageLevelModal
