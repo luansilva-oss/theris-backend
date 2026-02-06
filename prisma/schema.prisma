@@ -11,7 +11,7 @@ datasource db {
 // mas desconectei do User para facilitar o CSV)
 model Department {
   id        String   @id @default(uuid())
-  name      String
+  name      String   @unique
   createdAt DateTime @default(now())
   roles     Role[]
 }

@@ -12,6 +12,7 @@ import { getAllUsers, updateUser } from './controllers/userController';
 // NOVO: Importar o controlador de reset
 import { resetCatalog } from './controllers/adminController';
 import * as structureController from './controllers/structureController';
+import { syncStructureFromUsers } from './services/structureSync'; // Import sync service
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -20,6 +21,9 @@ dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
+
+// Auto-sync structure on startup
+syncStructureFromUsers();
 
 // --- CORS ---
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
