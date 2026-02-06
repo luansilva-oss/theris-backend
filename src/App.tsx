@@ -306,6 +306,27 @@ export default function App() {
     }, { permanent: initialPermanent, extraordinary: [] as any[] });
   };
 
+  const handleDeleteUser = async (userToDelete: User) => {
+    if (!confirm(`Tem certeza que deseja excluir o usuário ${userToDelete.name}?`)) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/users/${userToDelete.id}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        setAllUsers(prev => prev.filter(u => u.id !== userToDelete.id));
+        // Also remove from selected if needed
+        if (selectedUser?.id === userToDelete.id) setSelectedUser(null);
+      } else {
+        const data = await res.json();
+        alert(data.error || "Erro ao excluir usuário.");
+      }
+    } catch (error) {
+      alert("Erro ao excluir usuário.");
+    }
+  };
+
   const getGroupedPeople = () => {
     const grouped: Record<string, Record<string, User[]>> = {};
 
@@ -603,17 +624,29 @@ export default function App() {
                                         <div style={{ color: '#52525b', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</div>
                                       </div>
                                       {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
-                                        <button
-                                          className="btn-icon"
-                                          style={{ padding: '6px' }}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedUser(u);
-                                            setIsEditUserModalOpen(true);
-                                          }}
-                                        >
-                                          <Edit2 size={14} color="#a1a1aa" />
-                                        </button>
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                          <button
+                                            className="btn-icon"
+                                            style={{ padding: '6px' }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedUser(u);
+                                              setIsEditUserModalOpen(true);
+                                            }}
+                                          >
+                                            <Edit2 size={14} color="#a1a1aa" />
+                                          </button>
+                                          <button
+                                            className="btn-icon"
+                                            style={{ padding: '6px' }}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeleteUser(u);
+                                            }}
+                                          >
+                                            <Trash2 size={14} color="#b91c1c" />
+                                          </button>
+                                        </div>
                                       )}
                                       {u.manager && (
                                         <div title={`Gestor: ${u.manager.name}`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#a78bfa' }}></div>
