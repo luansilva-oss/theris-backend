@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -15,6 +48,7 @@ const toolController_1 = require("./controllers/toolController");
 const userController_1 = require("./controllers/userController");
 // NOVO: Importar o controlador de reset
 const adminController_1 = require("./controllers/adminController");
+const structureController = __importStar(require("./controllers/structureController"));
 // Slack
 const slackService_1 = require("./services/slackService");
 dotenv_1.default.config();
@@ -41,17 +75,13 @@ app.get('/api/admin/reset-tools', adminController_1.resetCatalog);
 // --- ROTAS DE DADOS ---
 // ============================================================
 // 1. Estrutura
-app.get('/api/structure', async (req, res) => {
-    try {
-        const data = await prisma.department.findMany({
-            include: { roles: true }
-        });
-        res.json(data);
-    }
-    catch (error) {
-        res.status(500).json({ error: 'Erro ao buscar estrutura.' });
-    }
-});
+app.get('/api/structure', structureController.getStructure);
+app.post('/api/structure/departments', structureController.createDepartment);
+app.put('/api/structure/departments/:id', structureController.updateDepartment);
+app.delete('/api/structure/departments/:id', structureController.deleteDepartment);
+app.post('/api/structure/roles', structureController.createRole);
+app.put('/api/structure/roles/:id', structureController.updateRole);
+app.delete('/api/structure/roles/:id', structureController.deleteRole);
 // 2. Ferramentas
 app.get('/api/tools', toolController_1.getTools);
 app.post('/api/tools', toolController_1.createTool);
@@ -62,6 +92,9 @@ app.post('/api/tool-groups', toolController_1.createToolGroup);
 app.delete('/api/tool-groups/:id', toolController_1.deleteToolGroup);
 app.post('/api/tools/:id/access', toolController_1.addToolAccess); // Adicionar/Atualizar acesso de usuário
 app.delete('/api/tools/:id/access/:userId', toolController_1.removeToolAccess); // Remover acesso
+const toolController_2 = require("./controllers/toolController"); // Helper import if needed, but better to update top import
+app.patch('/api/tools/:toolId/level/:oldLevelName', toolController_1.updateToolLevel);
+app.delete('/api/tools/:toolId/level/:levelName', toolController_2.deleteToolLevel);
 app.patch('/api/tools/:toolId/access/:userId', toolController_1.updateToolAccess); // Atualizar detalhes do acesso (ex: extra)
 // 3. Usuários
 app.get('/api/users', userController_1.getAllUsers);

@@ -51,7 +51,7 @@ const ModalObservacao = ({ isOpen, onClose, onConfirm, titulo, tipo }) => {
                                 resize: 'none',
                                 outline: 'none',
                                 fontSize: '14px',
-                                fontFamily: 'inherit'
+                                fontFamily: "'Inter', sans-serif"
                             }, placeholder: tipo === 'reprovar' ? "Digite o motivo da reprovação (Obrigatório)..." : "Alguma observação adicional?...", value: observacao, onChange: (e) => setObservacao(e.target.value), autoFocus: true })] }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: '12px' }, children: [(0, jsx_runtime_1.jsx)("button", { onClick: onClose, style: {
                                 padding: '8px 16px',
                                 backgroundColor: 'transparent',

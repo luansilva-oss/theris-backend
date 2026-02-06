@@ -186,14 +186,14 @@ export const updateToolAccess = async (req: Request, res: Response) => {
 
 export const updateToolLevel = async (req: Request, res: Response) => {
   const { toolId, oldLevelName } = req.params;
-  const { newLevelName, description } = req.body;
+  const { newLevelName, description, icon } = req.body;
 
   try {
     const tool = await prisma.tool.findUnique({ where: { id: toolId } });
     if (!tool) return res.status(404).json({ error: 'Ferramenta não encontrada' });
 
     let updatedLevels = [...(tool.availableAccessLevels || [])];
-    let updatedDescriptions = (tool.accessLevelDescriptions as Record<string, string>) || {};
+    let updatedDescriptions = (tool.accessLevelDescriptions as Record<string, any>) || {};
 
     // 1. Rename Level (if name changed)
     if (newLevelName && newLevelName !== oldLevelName) {
@@ -218,10 +218,21 @@ export const updateToolLevel = async (req: Request, res: Response) => {
       });
     }
 
-    // 2. Update Description
-    if (description !== undefined) {
-      const targetName = newLevelName || oldLevelName;
-      updatedDescriptions[targetName] = description;
+    // 2. Update Description & Icon
+    const targetName = newLevelName || oldLevelName;
+    if (description !== undefined || icon !== undefined) {
+      const currentData = updatedDescriptions[targetName];
+
+      // Handle backward compatibility (string vs object)
+      const baseData = typeof currentData === 'string'
+        ? { description: currentData }
+        : (currentData || {});
+
+      updatedDescriptions[targetName] = {
+        ...baseData,
+        ...(description !== undefined ? { description } : {}),
+        ...(icon !== undefined ? { icon } : {})
+      };
     }
 
     // Save Tool
@@ -237,5 +248,40 @@ export const updateToolLevel = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Erro ao atualizar nível:", error);
     return res.status(500).json({ error: 'Erro ao atualizar nível' });
+  }
+};
+
+export const deleteToolLevel = async (req: Request, res: Response) => {
+  const { toolId, levelName } = req.params;
+
+  try {
+    const tool = await prisma.tool.findUnique({ where: { id: toolId } });
+    if (!tool) return res.status(404).json({ error: 'Ferramenta não encontrada' });
+
+    // 1. Remove from availableAccessLevels
+    const updatedLevels = (tool.availableAccessLevels || []).filter(l => l !== levelName);
+
+    // 2. Remove from accessLevelDescriptions
+    const updatedDescriptions = (tool.accessLevelDescriptions as Record<string, any>) || {};
+    delete updatedDescriptions[levelName];
+
+    // 3. Remove/Update associated Access records (Optional: could block if users exist)
+    // For now, we will just remove the access records for this level
+    await prisma.access.deleteMany({
+      where: { toolId, status: levelName }
+    });
+
+    const updatedTool = await prisma.tool.update({
+      where: { id: toolId },
+      data: {
+        availableAccessLevels: updatedLevels,
+        accessLevelDescriptions: updatedDescriptions
+      }
+    });
+
+    return res.json(updatedTool);
+  } catch (error) {
+    console.error("Erro ao excluir nível:", error);
+    return res.status(500).json({ error: 'Erro ao excluir nível' });
   }
 };
