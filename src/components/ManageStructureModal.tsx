@@ -299,7 +299,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                             </div>
 
                             {/* Scrollable Department List */}
-                            <div style={{ display: 'grid', gap: 10, overflowY: 'auto', paddingRight: 8, flex: 1 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', paddingRight: 8, flex: 1 }}>
                                 {departments.map(d => (
                                     <div
                                         key={d.id}
@@ -310,13 +310,18 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                         }}
                                         className="card-base hover-card"
                                         style={{
-                                            padding: 16, cursor: 'pointer',
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            border: '1px solid #27272a'
+                                            padding: '16px 20px',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            justifyContent: 'center',
+                                            alignItems: 'center',
+                                            border: '1px solid #27272a',
+                                            position: 'relative',
+                                            minHeight: '56px'
                                         }}
                                     >
-                                        <span style={{ fontSize: 16, fontWeight: 500, color: 'white' }}>{d.name}</span>
-                                        <ChevronRight size={20} color="#52525b" />
+                                        <span style={{ fontSize: 16, fontWeight: 500, color: 'white', textAlign: 'center' }}>{d.name}</span>
+                                        <ChevronRight size={20} color="#52525b" style={{ position: 'absolute', right: 16 }} />
                                     </div>
                                 ))}
                             </div>
