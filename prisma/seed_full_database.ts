@@ -31,62 +31,91 @@ const toolsData: ToolData[] = [
         acronym: "JC",
         description: "Plataforma de diretório em nuvem para gerenciamento de identidades.",
         ownerEmail: "vladimir.sesar@grupo-3c.com", ownerName: "Vladimir Sesar",
-        subOwnerEmail: "luan.silva@grupo-3c.com", subOwnerName: "Luan Matheus", // Primary Sub-owner
-        // Note: Allan is also mentioned as sub-owner in list, but schema supports one. Luan is first in "Luan e Allan".
+        subOwnerEmail: "luan.silva@grupo-3c.com", subOwnerName: "Luan Matheus",
         criticality: "Alta", isCritical: true,
-        accesses: []
+        accesses: [
+            { email: "vladimir.sesar@grupo-3c.com", level: "ACTIVE" },
+            { email: "luan.silva@grupo-3c.com", level: "ACTIVE" },
+            { email: "allan.vonstein@grupo-3c.com", level: "ACTIVE" },
+            { email: "fernando.mosquer@grupo-3c.com", level: "ACTIVE" },
+            { email: "ney.pereira@grupo-3c.com", level: "ACTIVE" },
+            { email: "raphael.pires@grupo-3c.com", level: "ACTIVE" },
+            { email: "renata.czapiewski@grupo-3c.com", level: "ACTIVE" },
+            { email: "alexander.reis@grupo-3c.com", level: "ACTIVE" },
+            { email: "alana.gaspar@grupo-3c.com", level: "ACTIVE" },
+            { email: "wagner.wolff@grupo-3c.com", level: "ACTIVE" },
+            { email: "thiago.marcondes@grupo-3c.com", level: "ACTIVE" }
+        ]
     },
     // 2. ClickUp (CK)
     {
         name: "ClickUp",
         acronym: "CK",
         description: "Hub de produtividade e gerenciamento de projetos.",
-        ownerEmail: "isabely.wendler@grupo-3c.com", ownerName: "Isabely Wendler",
-        subOwnerEmail: "renata.czapiewski@grupo-3c.com", subOwnerName: "Renata Czapiewski",
+        ownerEmail: "ney.pereira@grupo-3c.com", ownerName: "Ney Eurico Pereira",
+        subOwnerEmail: "alexander.reis@grupo-3c.com", subOwnerName: "Alexander Reis",
         criticality: "Alta", isCritical: true,
-        accesses: []
+        accesses: [
+            { email: "ney.pereira@grupo-3c.com", level: "ACTIVE" },
+            { email: "alexander.reis@grupo-3c.com", level: "ACTIVE" },
+            { email: "raphael.pires@grupo-3c.com", level: "ACTIVE" },
+            { email: "alana.gaspar@grupo-3c.com", level: "ACTIVE" },
+            { email: "wagner.wolff@grupo-3c.com", level: "ACTIVE" },
+            { email: "lucas.matheus@grupo-3c.com", level: "ACTIVE" },
+            { email: "guilherme.pimpao@grupo-3c.com", level: "ACTIVE" }
+        ]
     },
     // 3. HubSpot (HS)
     {
         name: "Hubspot",
         acronym: "HS",
         description: "CRM e automação de marketing.",
-        ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
-        subOwnerEmail: "deborah.peres@grupo-3c.com", subOwnerName: "Deborah Peres",
+        ownerEmail: "wagner.wolff@grupo-3c.com", ownerName: "Wagner Wolff",
+        subOwnerEmail: "thiago.marcondes@grupo-3c.com", subOwnerName: "Thiago Marcondes",
         criticality: "Alta", isCritical: true,
-        accesses: []
+        accesses: [
+            { email: "wagner.wolff@grupo-3c.com", level: "ACTIVE" },
+            { email: "thiago.marcondes@grupo-3c.com", level: "ACTIVE" },
+            { email: "ney.pereira@grupo-3c.com", level: "ACTIVE" },
+            { email: "raphael.pires@grupo-3c.com", level: "ACTIVE" },
+            { email: "allan.vonstein@grupo-3c.com", level: "ACTIVE" },
+            { email: "fernando.mosquer@grupo-3c.com", level: "ACTIVE" },
+            { email: "luan.silva@grupo-3c.com", level: "ACTIVE" },
+            { email: "pablo.emanuel@grupo-3c.com", level: "ACTIVE" },
+            { email: "deborah.peres@grupo-3c.com", level: "ACTIVE" }
+        ]
     },
     // 4. 3C Plus (CP)
     {
-        name: "3C",
+        name: "3C Plus",
         acronym: "CP",
         description: "Solução de discador e contact center.",
-        ownerEmail: "allan.vonstein@grupo-3c.com", ownerName: "Allan Von Stein",
-        subOwnerEmail: "fernando.mosquer@grupo-3c.com", subOwnerName: "Fernando Mosquer",
+        ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
+        subOwnerEmail: null, subOwnerName: null,
         criticality: "Alta", isCritical: true,
-        accesses: []
+        accesses: [
+            { email: "allan.vonstein@grupo-3c.com", level: "ACTIVE" },
+            { email: "fernando.mosquer@grupo-3c.com", level: "ACTIVE" },
+            { email: "ney.pereira@grupo-3c.com", level: "ACTIVE" },
+            { email: "raphael.pires@grupo-3c.com", level: "ACTIVE" },
+            { email: "renata.czapiewski@grupo-3c.com", level: "ACTIVE" },
+            { email: "alexander.reis@grupo-3c.com", level: "ACTIVE" }
+        ]
     },
-    // 5. Evolux (EX)
-    {
-        name: "Evolux",
-        acronym: "EX",
-        description: "Telefonia IP e gestão de chamadas.",
-        ownerEmail: "carlos.marques@grupo-3c.com", ownerName: "Carlos Marques",
-        subOwnerEmail: "bruno.levi@grupo-3c.com", subOwnerName: "Bruno Levi", // "Levi"
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 6. Dizify (DZ)
+    // 5. Dizify (DZ)
     {
         name: "Dizify",
         acronym: "DZ",
         description: "Automação e integração de processos.",
         ownerEmail: "marieli.ferreira@grupo-3c.com", ownerName: "Marieli Ferreira",
         subOwnerEmail: "jeferson.cruz@grupo-3c.com", subOwnerName: "Jefferson Da Cruz",
-        criticality: "Alta", isCritical: true,
-        accesses: []
+        criticality: "Média", isCritical: false,
+        accesses: [
+            { email: "marieli.ferreira@grupo-3c.com", level: "ACTIVE" },
+            { email: "jeferson.cruz@grupo-3c.com", level: "ACTIVE" }
+        ]
     },
-    // 7. NetSuite (NS)
+    // 6. NetSuite (NS)
     {
         name: "Netsuit",
         acronym: "NS",
@@ -94,150 +123,232 @@ const toolsData: ToolData[] = [
         ownerEmail: "aline.fonseca@grupo-3c.com", ownerName: "Aline Fonseca",
         subOwnerEmail: "fernando.takakusa@grupo-3c.com", subOwnerName: "Fernando Takakusa",
         criticality: "Alta", isCritical: true,
-        accesses: []
+        accesses: [
+            { email: "aline.fonseca@grupo-3c.com", level: "ACTIVE" },
+            { email: "fernando.takakusa@grupo-3c.com", level: "ACTIVE" },
+            { email: "pinhas.spinelli@grupo-3c.com", level: "ACTIVE" },
+            { email: "guilherme.pimpao@grupo-3c.com", level: "ACTIVE" },
+            { email: "alana.gaspar@grupo-3c.com", level: "ACTIVE" }
+        ]
     },
-    // 8. GitLab (GL)
+    // 7. GitLab (GL)
     {
-        name: "Gitlab",
+        name: "GitLab",
         acronym: "GL",
-        description: "DevOps e controle de versão.",
-        ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
-        subOwnerEmail: "joao.vasconcelos@grupo-3c.com", subOwnerName: "Joao Paulo",
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 9. AWS (AS)
-    {
-        name: "AWS",
-        acronym: "AS",
-        description: "Infraestrutura em nuvem.",
+        description: "Repositório de código e CI/CD.",
         ownerEmail: "carlos.marques@grupo-3c.com", ownerName: "Carlos Marques",
-        subOwnerEmail: "joao.vasconcelos@grupo-3c.com", subOwnerName: "Joao Paulo",
+        subOwnerEmail: "bruno.levi@grupo-3c.com", subOwnerName: "Bruno Levy",
         criticality: "Alta", isCritical: true,
-        accesses: []
+        accesses: [
+            { email: "carlos.marques@grupo-3c.com", level: "ACTIVE" },
+            { email: "bruno.levi@grupo-3c.com", level: "ACTIVE" },
+            { email: "alexander.reis@grupo-3c.com", level: "ACTIVE" },
+            { email: "diogo.hartmann@grupo-3c.com", level: "ACTIVE" },
+            { email: "pablo.emanuel@grupo-3c.com", level: "ACTIVE" }
+        ]
     },
-    // 10. GCP (GC)
+    // 8. ClicSign (CS)
     {
-        name: "GCP",
-        acronym: "GC",
-        description: "Google Cloud Platform.",
-        ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
-        subOwnerEmail: "joao.vasconcelos@grupo-3c.com", subOwnerName: "Joao Paulo",
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 11. Convenia (CV)
-    {
-        name: "Convenia",
-        acronym: "CV",
-        description: "Gestão de RH e DP.",
-        ownerEmail: "raphael.pires@grupo-3c.com", ownerName: "Raphael Pires",
-        subOwnerEmail: "renata.czapiewski@grupo-3c.com", subOwnerName: "Renata Czapiewski",
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 12. Clicsign (CS)
-    {
-        name: "Clicsign",
+        name: "ClicSign",
         acronym: "CS",
-        description: "Assinaturas eletrônicas.",
+        description: "Assinatura eletrônica de documentos.",
         ownerEmail: "fernando.takakusa@grupo-3c.com", ownerName: "Fernando Takakusa",
         subOwnerEmail: "aline.fonseca@grupo-3c.com", subOwnerName: "Aline Fonseca",
-        criticality: "Média", isCritical: true, // Based on sheet, CS-1 is Alta, CS-2 is Média. Tool itself seems Alta/Sim in User List.
-        accesses: []
+        criticality: "Média", isCritical: false,
+        accesses: [
+            { email: "fernando.takakusa@grupo-3c.com", level: "ACTIVE" },
+            { email: "aline.fonseca@grupo-3c.com", level: "ACTIVE" },
+            { email: "ney.pereira@grupo-3c.com", level: "ACTIVE" },
+            { email: "raphael.pires@grupo-3c.com", level: "ACTIVE" }
+        ]
     },
-    // 13. Meta (MT)
-    {
-        name: "Meta",
-        acronym: "MT",
-        description: "Business Manager FB/IG.",
-        ownerEmail: "rafael.schimanski@grupo-3c.com", ownerName: "Rafael Blaka",
-        subOwnerEmail: "junior.andrade@grupo-3c.com", subOwnerName: "Junior Andrade",
-        criticality: "Alta", isCritical: true, // Média/Alta mixed
-        accesses: []
-    },
-    // 14. Fiqon (FO)
-    {
-        name: "Fiqon",
-        acronym: "FO",
-        description: "Middleware financeiro.",
-        ownerEmail: "pinhas.spinelli@grupo-3c.com", ownerName: "Pinhas Spinelli", // New owner from list
-        subOwnerEmail: "lucas.matheus@grupo-3c.com", subOwnerName: "Lucas Matheus",
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 15. N8N (NA) - Pablo & Alex (Using Pablo as primary owner or create two tools?)
-    // List says: N8N -> Pablo (Automacao) AND N8N -> Alex (PS) w/ Wosiak.
-    // I will keep Pablo as Owner and maybe add Alex as Sub or create separate entry if they are distinct instances.
-    // Assuming single tool for now, defaulting to Pablo as Owner (Automacao).
-    {
-        name: "N8N",
-        acronym: "NA",
-        description: "Automação de workflows.",
-        ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
-        subOwnerEmail: "alexander.reis@grupo-3c.com", subOwnerName: "Alexander Reis", // Alex from PS
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 16. Hik Connect (HC)
-    {
-        name: "Hik Connect",
-        acronym: "HC",
-        description: "Videomonitoramento.",
-        ownerEmail: "vladimir.sesar@grupo-3c.com", ownerName: "Vladimir Sesar",
-        subOwnerEmail: "allan.vonstein@grupo-3c.com", subOwnerName: "Allan Von Stein",
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 17. GPT (CG)
-    {
-        name: "GPT",
-        acronym: "CG",
-        description: "OpenAI ChatGPT.",
-        ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
-        subOwnerEmail: "wagner.wolff@grupo-3c.com", subOwnerName: "Wagner Wolff",
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 18. Focus (FU)
-    {
-        name: "Focus",
-        acronym: "FU",
-        description: "Gestão de indicadores.",
-        ownerEmail: "aline.fonseca@grupo-3c.com", ownerName: "Aline Fonseca",
-        subOwnerEmail: "thiago.marcondes@grupo-3c.com", subOwnerName: "Thiago Marcondes",
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 19. Vindi (VI)
-    {
-        name: "Vindi",
-        acronym: "VI",
-        description: "Pagamentos recorrentes.",
-        ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
-        subOwnerEmail: "ian.ronska@grupo-3c.com", subOwnerName: "Ian Ronska",
-        criticality: "Alta", isCritical: true,
-        accesses: []
-    },
-    // 20. Nextrouter (NR)
+    // 9. NextRouter (NR)
     {
         name: "Nextrouter",
         acronym: "NR",
-        description: "Roteamento inteligente.",
+        description: "Roteamento inteligente de chamadas.",
         ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
-        subOwnerEmail: "ian.ronska@grupo-3c.com", subOwnerName: "Ian Ronska",
-        criticality: "Média", isCritical: true,
-        accesses: []
+        subOwnerEmail: null, subOwnerName: null,
+        criticality: "Média", isCritical: false,
+        accesses: [
+            { email: "diogo.hartmann@grupo-3c.com", level: "ACTIVE" },
+            { email: "alana.gaspar@grupo-3c.com", level: "ACTIVE" }
+        ]
     },
-    // 21. Figma (FA)
+    // 10. AWS (AS)
+    {
+        name: "AWS",
+        acronym: "AS",
+        description: "Serviços de computação em nuvem.",
+        ownerEmail: "bruno.levi@grupo-3c.com", ownerName: "Bruno Levy",
+        subOwnerEmail: "alexander.reis@grupo-3c.com", subOwnerName: "Alexander Reis",
+        criticality: "Alta", isCritical: true,
+        accesses: [
+            { email: "bruno.levi@grupo-3c.com", level: "ACTIVE" },
+            { email: "alexander.reis@grupo-3c.com", level: "ACTIVE" },
+            { email: "diogo.hartmann@grupo-3c.com", level: "ACTIVE" },
+            { email: "pablo.emanuel@grupo-3c.com", level: "ACTIVE" },
+            { email: "carlos.marques@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 11. Google Cloud Platform (GC)
+    {
+        name: "Google Cloud Platform",
+        acronym: "GC",
+        description: "Plataforma de nuvem do Google.",
+        ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
+        subOwnerEmail: "pablo.emanuel@grupo-3c.com", subOwnerName: "Pablo Emanuel",
+        criticality: "Alta", isCritical: true,
+        accesses: [
+            { email: "diogo.hartmann@grupo-3c.com", level: "ACTIVE" },
+            { email: "pablo.emanuel@grupo-3c.com", level: "ACTIVE" },
+            { email: "alexander.reis@grupo-3c.com", level: "ACTIVE" },
+            { email: "bruno.levi@grupo-3c.com", level: "ACTIVE" },
+            { email: "carlos.marques@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 12. Convenia (CV)
+    {
+        name: "Convenia",
+        acronym: "CV",
+        description: "Gestão de RH e Departamento Pessoal.",
+        ownerEmail: "ney.pereira@grupo-3c.com", ownerName: "Ney Eurico Pereira",
+        subOwnerEmail: "lucas.limberger@grupo-3c.com", subOwnerName: "Lucas Limberger",
+        criticality: "Alta", isCritical: true,
+        accesses: [
+            { email: "ney.pereira@grupo-3c.com", level: "ACTIVE" },
+            { email: "lucas.limberger@grupo-3c.com", level: "ACTIVE" },
+            { email: "alexander.reis@grupo-3c.com", level: "ACTIVE" },
+            { email: "raphael.pires@grupo-3c.com", level: "ACTIVE" },
+            { email: "alana.gaspar@grupo-3c.com", level: "ACTIVE" },
+            { email: "renata.czapiewski@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 13. FiqOn (FO)
+    {
+        name: "Fiqon",
+        acronym: "FO",
+        description: "Plataforma financeira.",
+        ownerEmail: "guilherme.pimpao@grupo-3c.com", ownerName: "Guilherme Pimpão",
+        subOwnerEmail: "lucas.matheus@grupo-3c.com", subOwnerName: "Lucas Matheus",
+        criticality: "Média", isCritical: false,
+        accesses: [
+            { email: "guilherme.pimpao@grupo-3c.com", level: "ACTIVE" },
+            { email: "lucas.matheus@grupo-3c.com", level: "ACTIVE" },
+            { email: "pinhas.spinelli@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 14. N8N (NA)
+    {
+        name: "N8N",
+        acronym: "NA",
+        description: "Automação de fluxos de trabalho.",
+        ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
+        subOwnerEmail: null, subOwnerName: null,
+        criticality: "Média", isCritical: false,
+        accesses: [
+            { email: "pablo.emanuel@grupo-3c.com", level: "ACTIVE" },
+            { email: "alexander.reis@grupo-3c.com", level: "ACTIVE" },
+            { email: "jeferson.cruz@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 15. Hik Connect (HC)
+    {
+        name: "Hik Connect",
+        acronym: "HC",
+        description: "Sistema de segurança e monitoramento.",
+        ownerEmail: "ney.pereira@grupo-3c.com", ownerName: "Ney Pereira",
+        subOwnerEmail: "jaqueline.souza@grupo-3c.com", subOwnerName: "Jaqueline Souza",
+        criticality: "Média", isCritical: false,
+        accesses: [
+            { email: "vladimir.sesar@grupo-3c.com", level: "ACTIVE" },
+            { email: "allan.vonstein@grupo-3c.com", level: "ACTIVE" },
+            { email: "ney.pereira@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 16. ChatGPT (CG)
+    {
+        name: "GPT",
+        acronym: "CG",
+        description: "Assistente de IA generativa.",
+        ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
+        subOwnerEmail: null, subOwnerName: null,
+        criticality: "Baixa", isCritical: false,
+        accesses: [
+            { email: "pablo.emanuel@grupo-3c.com", level: "ACTIVE" },
+            { email: "wagner.wolff@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 17. Focus (FU)
+    {
+        name: "Focus",
+        acronym: "FU",
+        description: "Gestão de tarefas e tempo.",
+        ownerEmail: "aline.fonseca@3cplusnow.com", ownerName: "Aline Fonseca",
+        subOwnerEmail: "diogo.hartmann@grupo-3c.com", subOwnerName: "Diogo Hartmann",
+        criticality: "Baixa", isCritical: false,
+        accesses: [
+            { email: "aline.fonseca@3cplusnow.com", level: "ACTIVE" },
+            { email: "diogo.hartmann@grupo-3c.com", level: "ACTIVE" },
+            { email: "thiago.marcondes@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 18. Vindi (VI)
+    {
+        name: "Vindi",
+        acronym: "VI",
+        description: "Plataforma de pagamentos recorrentes.",
+        ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
+        subOwnerEmail: "alana.gaspar@grupo-3c.com", subOwnerName: "Alana Gaspar",
+        criticality: "Alta", isCritical: true,
+        accesses: [
+            { email: "pablo.emanuel@grupo-3c.com", level: "ACTIVE" },
+            { email: "alana.gaspar@grupo-3c.com", level: "ACTIVE" },
+            { email: "ian.ronska@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 19. Figma (FA)
     {
         name: "Figma",
         acronym: "FA",
-        description: "Design colaborativo.",
-        ownerEmail: "gabriel.ida@grupo-3c.com", ownerName: "Gabriel Pires Ida", // "Pires"
+        description: "Design de interface colaborativo.",
+        ownerEmail: "gabriel.ida@grupo-3c.com", ownerName: "Gabriel Pires Ida",
         subOwnerEmail: null, subOwnerName: null,
-        criticality: "Média", isCritical: false, // "Não" critico
-        accesses: []
+        criticality: "Média", isCritical: false,
+        accesses: [
+            { email: "gabriel.ida@grupo-3c.com", level: "ACTIVE" },
+            { email: "guilherme.pimpao@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 20. Meta (MT)
+    {
+        name: "Meta",
+        acronym: "MT",
+        description: "Gerenciador de Negócios (Business Manager).",
+        ownerEmail: "maria.schimanski@grupo-3c.com", ownerName: "Maria Schimanski",
+        subOwnerEmail: "rebeca.costa@grupo-3c.com", subOwnerName: "Rebeca Costa",
+        criticality: "Média", isCritical: false,
+        accesses: [
+            { email: "maria.schimanski@grupo-3c.com", level: "ACTIVE" },
+            { email: "rebeca.costa@grupo-3c.com", level: "ACTIVE" },
+            { email: "rafael.schimanski@grupo-3c.com", level: "ACTIVE" },
+            { email: "junior.andrade@grupo-3c.com", level: "ACTIVE" }
+        ]
+    },
+    // 21. Acessos Engenharia (AE)
+    {
+        name: "Acessos Engenharia",
+        acronym: "AE",
+        description: "Grupos de acesso globais para Engenharia e Suporte.",
+        ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
+        subOwnerEmail: null, subOwnerName: null,
+        criticality: "Alta", isCritical: true,
+        accesses: [
+            { email: "carlos.marques@grupo-3c.com", level: "ACTIVE" },
+            { email: "bruno.levi@grupo-3c.com", level: "ACTIVE" },
+            { email: "thiago.marcondes@grupo-3c.com", level: "ACTIVE" },
+            { email: "alexander.reis@grupo-3c.com", level: "ACTIVE" }
+        ]
     }
 ];
 
@@ -347,7 +458,19 @@ async function main() {
             });
             console.log(`➕ Ferramenta Criada: ${t.name}`);
         } else {
-            console.log(`ℹ️ Ferramenta Existente: ${t.name} (Pulando criação)`);
+            tool = await prisma.tool.update({
+                where: { id: tool.id },
+                data: {
+                    // Atualiza dados para garantir conformidade com a lista
+                    acronym: t.acronym || undefined,
+                    description: t.description || null,
+                    ownerId: owner?.id,
+                    subOwnerId: subOwner?.id,
+                    criticality: t.criticality || null,
+                    isCritical: t.isCritical || false
+                }
+            });
+            console.log(`🔄 Ferramenta Atualizada: ${t.name}`);
         }
 
         // 4. Cria Acessos (Se não existirem)

@@ -96,39 +96,17 @@ slackApp.action('open_extraordinary', async ({ ack, body, client }) => {
       view: {
         type: 'modal',
         callback_id: 'submit_extraordinary_access',
-        title: { type: 'plain_text', text: 'Acesso Extraordinário' },
+        title: { type: 'plain_text', text: 'Solicitar Acesso' },
         blocks: [
-          { type: 'section', text: { type: 'mrkdwn', text: 'Utilize este formulário para solicitar acessos temporários ou elevação de permissão.' } },
+          { type: 'section', text: { type: 'mrkdwn', text: '*Formulário de Acesso*\nPreencha os dados abaixo para solicitar acesso a uma ferramenta.' } },
           { type: 'divider' },
           { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: "plain_text", text: "Ex: AWS, GitHub, Jira" } } },
-          { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Nível de Acesso Desejado' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: "plain_text", text: "Ex: Admin, Leitura" } } },
-          {
-            type: 'input',
-            block_id: 'blk_duration_val',
-            optional: true,
-            label: { type: 'plain_text', text: 'Duração (Opcional)' },
-            element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: 24' } }
-          },
-          {
-            type: 'section',
-            block_id: 'blk_duration_unit',
-            text: { type: 'mrkdwn', text: 'Unidade' },
-            accessory: {
-              type: 'static_select',
-              action_id: 'unit_select',
-              placeholder: { type: 'plain_text', text: 'Selecione...' },
-              options: [
-                { text: { type: 'plain_text', text: 'Horas' }, value: 'horas' },
-                { text: { type: 'plain_text', text: 'Dias' }, value: 'dias' },
-                { text: { type: 'plain_text', text: 'Semanas' }, value: 'semanas' }
-              ]
-            }
-          },
-          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp', placeholder: { type: "plain_text", text: "Motivo da solicitação..." } } }
+          { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Nível de Acesso' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: "plain_text", text: "Ex: Admin, Leitura" } } },
+          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp', placeholder: { type: "plain_text", text: "Motivo..." } } }
         ],
         submit: {
           type: 'plain_text',
-          text: 'Enviar Solicitação'
+          text: 'Enviar'
         }
       }
     });
@@ -137,35 +115,92 @@ slackApp.action('open_extraordinary', async ({ ack, body, client }) => {
   }
 });
 
-// 2. Gestão de Pessoas (Link para Web)
+// 2. Gestão de Pessoas (Menu Intermediário)
 slackApp.action('open_people_management', async ({ ack, body, client }) => {
   await ack();
   try {
     // @ts-ignore
-    const userId = body.user.id;
-    await client.chat.postMessage({
-      channel: userId,
-      text: "👥 *Gestão de Pessoas*\n\nPara gerenciar colaboradores, departamentos e hierarquias, acesse a plataforma web:\n👉 https://theris-front.onrender.com (ou seu link interno)"
+    const triggerId = body.trigger_id;
+    await client.views.push({
+      trigger_id: triggerId,
+      view: {
+        type: 'modal',
+        title: { type: 'plain_text', text: 'Gestão de Pessoas' },
+        blocks: [
+          { type: 'section', text: { type: 'mrkdwn', text: '🔧 *Opções de Gestão de Pessoas*\nSelecione uma ação administrativa:' } },
+          { type: 'divider' },
+          {
+            type: 'actions',
+            elements: [
+              { type: 'button', text: { type: 'plain_text', text: '👥 Ver Equipe' }, action_id: 'open_team_view' },
+              { type: 'button', text: { type: 'plain_text', text: '🔄 Mudança Cargo' }, action_id: 'req_change_role' },
+              { type: 'button', text: { type: 'plain_text', text: '👤 Designar Gestor' }, action_id: 'designate_manager' }
+            ]
+          },
+          {
+            type: 'actions',
+            elements: [
+              { type: 'button', text: { type: 'plain_text', text: '🛡️ Designar Substituto' }, action_id: 'designate_deputy' },
+              { type: 'button', text: { type: 'plain_text', text: '📊 Organograma' }, url: 'https://theris-os.web.app/org-chart' }
+            ]
+          },
+          { type: 'divider' },
+          { type: 'context', elements: [{ type: 'mrkdwn', text: 'Para gestão completa (admissão/demissão), utilize o Portal Web.' }] }
+        ]
+      }
     });
   } catch (error) {
     console.error(error);
   }
 });
 
-// 3. Gestão de Ferramentas (Link para Web)
+// 3. Gestão de Ferramentas (Menu Intermediário)
 slackApp.action('open_tool_management', async ({ ack, body, client }) => {
   await ack();
   try {
     // @ts-ignore
-    const userId = body.user.id;
-    await client.chat.postMessage({
-      channel: userId,
-      text: "🛠 *Gestão de Ferramentas*\n\nPara visualizar o catálogo, editar owners ou configurar acessos, utilize a plataforma web:\n👉 https://theris-front.onrender.com"
+    const triggerId = body.trigger_id;
+    await client.views.push({
+      trigger_id: triggerId,
+      view: {
+        type: 'modal',
+        title: { type: 'plain_text', text: 'Gestão de Ferramentas' },
+        blocks: [
+          { type: 'section', text: { type: 'mrkdwn', text: '🛠 *Opções de Ferramentas*\nGerencie acessos e configurações do catálogo.' } },
+          { type: 'divider' },
+          {
+            type: 'actions',
+            elements: [
+              { type: 'button', text: { type: 'plain_text', text: '➕ Solicitar Acesso' }, style: 'primary', action_id: 'open_extraordinary' },
+              { type: 'button', text: { type: 'plain_text', text: '🔑 Meus Acessos' }, action_id: 'view_my_access' }
+            ]
+          },
+          {
+            type: 'actions',
+            elements: [
+              { type: 'button', text: { type: 'plain_text', text: '📝 Editar Tool (Owner/Crit)' }, action_id: 'edit_tool_meta' },
+              { type: 'button', text: { type: 'plain_text', text: '📜 Listar Usuários' }, action_id: 'list_tool_users' }
+            ]
+          },
+          { type: 'divider' },
+          { type: 'context', elements: [{ type: 'mrkdwn', text: 'Para cadastrar novas ferramentas ou auditoria em massa, acesse a Web.' }] }
+        ]
+      }
     });
   } catch (error) {
     console.error(error);
   }
 });
+
+// HANDLERS PLACEHOLDER
+slackApp.action('open_team_view', async ({ ack, body, client }) => { await ack(); await client.chat.postMessage({ channel: body.user.id, text: "ℹ️ Funcionalidade 'Ver Equipe' em desenvolvimento no Slack. Use a Web." }); });
+slackApp.action('req_change_role', async ({ ack, body, client }) => { await ack(); await client.chat.postMessage({ channel: body.user.id, text: "ℹ️ Funcionalidade 'Mudança de Cargo' em desenvolvimento no Slack. Use a Web." }); });
+slackApp.action('designate_manager', async ({ ack, body, client }) => { await ack(); await client.chat.postMessage({ channel: body.user.id, text: "ℹ️ Funcionalidade 'Designar Gestor' em desenvolvimento. Use a Web." }); });
+slackApp.action('designate_deputy', async ({ ack, body, client }) => { await ack(); await client.chat.postMessage({ channel: body.user.id, text: "ℹ️ Funcionalidade 'Designar Substituto' em desenvolvimento. Use a Web." }); });
+slackApp.action('view_my_access', async ({ ack, body, client }) => { await ack(); await client.chat.postMessage({ channel: body.user.id, text: "ℹ️ Funcionalidade 'Meus Acessos' em desenvolvimento. Consulte seu perfil na Web." }); });
+slackApp.action('edit_tool_meta', async ({ ack, body, client }) => { await ack(); await client.chat.postMessage({ channel: body.user.id, text: "ℹ️ Edição de Metadados de Ferramentas via Slack requer permissão Admin. Acesse a Web." }); });
+slackApp.action('list_tool_users', async ({ ack, body, client }) => { await ack(); await client.chat.postMessage({ channel: body.user.id, text: "ℹ️ Listagem de Usuários via Slack em desenvolvimento." }); });
+
 
 // ============================================================
 // 2. PROCESSAMENTO (HANDLERS DE VIEW)
@@ -201,33 +236,6 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
         slackEmail = normalizeEmail(rawEmail); // NORMALIZA O EMAIL DO SLACK
         console.log(`🔍 Slack Info: ID=${slackId}, Raw=${rawEmail}, Normalized=${slackEmail}`);
 
-        if (slackEmail) {
-          console.log(`🔍 Hex: ${Buffer.from(slackEmail).toString('hex')}`);
-        }
-
-        // --- EXTREME DEBUG START ---
-        if (slackEmail && slackEmail.includes('luan.silva')) {
-          try {
-            // 1. Get DB Host (Masked)
-            const dbUrl = (process.env.DATABASE_URL || '').split('@')[1] || 'UNKNOWN_HOST';
-            debugMsg += `\n\n*DEBUG INFO:*\nDB Host: \`${dbUrl}\``;
-
-            // 2. Check by ID
-            const manualId = 'fa15b9e0-e9e0-4a1a-b705-947bfd633295';
-            const byId = await prisma.user.findFirst({ where: { id: manualId } });
-
-            if (byId) {
-              debugMsg += `\nUser Found by ID: YES`;
-              debugMsg += `\nEmail in DB: \`${byId.email}\``;
-            } else {
-              debugMsg += `\nUser Found by ID: NO`;
-              const allCount = await prisma.user.count();
-              debugMsg += `\nTotal Users in DB: ${allCount}`;
-            }
-          } catch (err: any) { debugMsg += `\nDebug Error: ${err.message}`; }
-        }
-        // --- EXTREME DEBUG END ---
-
         // Usando findFirst para evitar erros de unique constraint se houver sujeira no banco
         const userDb = await prisma.user.findFirst({ where: { email: slackEmail } });
         if (userDb) {
@@ -245,8 +253,6 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
     if (!requesterId) {
       // Se não achou, NÃO usa fallback. Retorna erro para o usuário corrigir seu cadastro.
       let errorMsg = `❌ *Erro de Identificação*: Não encontrei seu e-mail (${slackEmail || 'desconhecido'}) no sistema Theris.\n\n*Dica:* O sistema normaliza emails para o padrão \`nome.sobrenome@grupo-3c.com\`. Verifique se você já realizou o primeiro login na plataforma Web.`;
-
-      if (debugMsg) errorMsg += debugMsg;
 
       await client.chat.postMessage({
         channel: slackId,
