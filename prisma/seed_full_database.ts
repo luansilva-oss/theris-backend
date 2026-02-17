@@ -5,599 +5,238 @@ const prisma = new PrismaClient();
 // ==============================================================================
 // 1. DADOS COMPLETOS (Baseados na lista oficial fornecida)
 // ==============================================================================
-const toolsData = [
+
+interface ToolAccess {
+    email: string;
+    level: string;
+}
+
+interface ToolData {
+    name: string;
+    acronym: string | null; // Allow null
+    description: string;
+    ownerEmail: string;
+    ownerName: string;
+    subOwnerEmail: string | null;
+    subOwnerName: string | null;
+    criticality: string;
+    isCritical: boolean;
+    accesses: ToolAccess[];
+}
+
+const toolsData: ToolData[] = [
     // 1. JumpCloud (JC)
     {
-        name: "JumpCloud",
+        name: "Jumpcloud Grupo 3C",
         acronym: "JC",
-        description: "Plataforma de diretório em nuvem para gerenciamento de identidades, acesso e dispositivos Enterprise.",
+        description: "Plataforma de diretório em nuvem para gerenciamento de identidades.",
         ownerEmail: "vladimir.sesar@grupo-3c.com", ownerName: "Vladimir Sesar",
-        subOwnerEmail: "luan.silva@grupo-3c.com", subOwnerName: "Luan Matheus",
-        accesses: [
-            { email: "vladimir.sesar@grupo-3c.com", level: "Administrador with Billing" },
-            { email: "diogo.hartmann@grupo-3c.com", level: "Administrador with Billing" },
-            { email: "luan.silva@grupo-3c.com", level: "Administrador with Billing" },
-            { email: "allan.vonstein@grupo-3c.com", level: "Administrador with Billing" },
-            { email: "renata.czapiewski@grupo-3c.com", level: "Help Desk" }
-        ]
+        subOwnerEmail: "luan.silva@grupo-3c.com", subOwnerName: "Luan Matheus", // Primary Sub-owner
+        // Note: Allan is also mentioned as sub-owner in list, but schema supports one. Luan is first in "Luan e Allan".
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 2. ClickUp (CK)
     {
         name: "ClickUp",
         acronym: "CK",
-        description: "Hub de produtividade tudo-em-um para gerenciamento de tarefas, projetos e colaboração de times.",
+        description: "Hub de produtividade e gerenciamento de projetos.",
         ownerEmail: "isabely.wendler@grupo-3c.com", ownerName: "Isabely Wendler",
         subOwnerEmail: "renata.czapiewski@grupo-3c.com", subOwnerName: "Renata Czapiewski",
-        accesses: [
-            { email: "ney.pereira@grupo-3c.com", level: "Proprietário" },
-            { email: "alexander.reis@grupo-3c.com", level: "Administrador" },
-            { email: "diogo.hartmann@grupo-3c.com", level: "Administrador" },
-            { email: "guilherme.pimpao@grupo-3c.com", level: "Administrador" },
-            { email: "igor.ribeiro@grupo-3c.com", level: "Administrador" },
-            { email: "isabely.wendler@grupo-3c.com", level: "Administrador" },
-            { email: "pablo.emanuel@grupo-3c.com", level: "Administrador" },
-            { email: "renata.czapiewski@grupo-3c.com", level: "Administrador" },
-            { email: "ricardo.camargo@grupo-3c.com", level: "Administrador" },
-            { email: "alan.armstrong@grupo-3c.com", level: "Membro" },
-            { email: "bruno.levy@grupo-3c.com", level: "Membro" },
-            { email: "camila.oliveira@grupo-3c.com", level: "Membro" },
-            { email: "carlos.marques@grupo-3c.com", level: "Membro" },
-            { email: "eduardo.bueno@grupo-3c.com", level: "Membro" },
-            { email: "fernando.mosquer@grupo-3c.com", level: "Membro" },
-            { email: "fernando.takakusa@grupo-3c.com", level: "Membro" },
-            { email: "gabriel.krysa@grupo-3c.com", level: "Membro" },
-            { email: "gislene.machado@grupo-3c.com", level: "Membro" },
-            { email: "guilherme.pinheiro@grupo-3c.com", level: "Membro" },
-            { email: "jaqueline.souza@grupo-3c.com", level: "Membro" },
-            { email: "jose.zimmermann@grupo-3c.com", level: "Membro" },
-            { email: "joao.vasconcelos@grupo-3c.com", level: "Membro" },
-            { email: "kawanna.cordeiro@grupo-3c.com", level: "Membro" },
-            { email: "luan.silva@grupo-3c.com", level: "Membro" },
-            { email: "lucas.limberger@grupo-3c.com", level: "Membro" },
-            { email: "pedro.nascimento@grupo-3c.com", level: "Membro" },
-            { email: "rafael.schimanski@grupo-3c.com", level: "Membro" },
-            { email: "wagnerwolffp@gmail.com", level: "Membro" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 3. HubSpot (HS)
     {
-        name: "HubSpot",
+        name: "Hubspot",
         acronym: "HS",
-        description: "Plataforma líder de CRM e automação de marketing para aceleração de vendas e suporte.",
+        description: "CRM e automação de marketing.",
         ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
         subOwnerEmail: "deborah.peres@grupo-3c.com", subOwnerName: "Deborah Peres",
-        accesses: [
-            // Admins
-            { email: "wagner.wolff@grupo-3c.com", level: "Administrador" },
-            { email: "thiago.marcondes@grupo-3c.com", level: "Administrador" },
-            { email: "guilherme.pimpao@grupo-3c.com", level: "Administrador" },
-            { email: "ricardo.camargo@grupo-3c.com", level: "Administrador" },
-            { email: "deborah.peres@grupo-3c.com", level: "Administrador" },
-            { email: "fernando.mosquer@grupo-3c.com", level: "Administrador" },
-            { email: "allan.vonstein@grupo-3c.com", level: "Administrador" },
-            { email: "pablo.emanuel@grupo-3c.com", level: "Administrador" },
-            { email: "matheus.rocha@grupo-3c.com", level: "Administrador" },
-            { email: "eduardo.wosiak@grupo-3c.com", level: "Administrador" },
-            { email: "henrique.amorim@grupo-3c.com", level: "Administrador" },
-            { email: "rafael.schimanski@grupo-3c.com", level: "Administrador" },
-            { email: "leonardo.maciel@grupo-3c.com", level: "Administrador" },
-            // Líder
-            { email: "thomas.ferreira@grupo-3c.com", level: "Líder Comercial" },
-            { email: "camila.oliveira@grupo-3c.com", level: "Líder Comercial" },
-            { email: "taryk.ferreira@grupo-3c.com", level: "Líder Comercial" },
-            { email: "jaqueline.souza@grupo-3c.com", level: "Líder Comercial" },
-            { email: "caroline.gois@grupo-3c.com", level: "Líder Comercial" },
-            { email: "michele.anjos@grupo-3c.com", level: "Líder Comercial" },
-            { email: "emily.godoy@grupo-3c.com", level: "Líder Comercial" },
-            { email: "camila.brunetti@grupo-3c.com", level: "Líder Comercial" },
-            { email: "jehnnifer.padilha@grupo-3c.com", level: "Líder Comercial" },
-            { email: "lucas.costa@grupo-3c.com", level: "Líder Comercial" },
-            // Closer / Analista
-            { email: "taissa.almeida@grupo-3c.com", level: "Closer / Analista" },
-            { email: "sandra.siqueira@grupo-3c.com", level: "Closer / Analista" },
-            { email: "bianca.cunha@grupo-3c.com", level: "Closer / Analista" },
-            { email: "eduardo.nascimento@grupo-3c.com", level: "Closer / Analista" },
-            { email: "iago.prado@grupo-3c.com", level: "Closer / Analista" },
-            { email: "willian.samuel@grupo-3c.com", level: "Closer / Analista" },
-            { email: "ketlin.oliveira@grupo-3c.com", level: "Closer / Analista" },
-            { email: "monica.neves@grupo-3c.com", level: "Closer / Analista" },
-            { email: "kauane.bastos@grupo-3c.com", level: "Closer / Analista" },
-            { email: "daniel.souza@grupo-3c.com", level: "Closer / Analista" },
-            { email: "gabrielle.prestes@grupo-3c.com", level: "Closer / Analista" },
-            { email: "eduardo.goncalves@grupo-3c.com", level: "Closer / Analista" },
-            { email: "maycon.barbosa@grupo-3c.com", level: "Closer / Analista" },
-            { email: "lucio.ramos@grupo-3c.com", level: "Closer / Analista" },
-            { email: "kesley.oliveira@grupo-3c.com", level: "Closer / Analista" },
-            { email: "leonardo.ferraz@grupo-3c.com", level: "Closer / Analista" },
-            { email: "pamela.rocha@grupo-3c.com", level: "Closer / Analista" },
-            { email: "alexsandy.correa@grupo-3c.com", level: "Closer / Analista" },
-            { email: "carlos.marques@grupo-3c.com", level: "Closer / Analista" },
-            { email: "guilherme.pinheiro@grupo-3c.com", level: "Closer / Analista" },
-            { email: "roberty.machado@grupo-3c.com", level: "Closer / Analista" },
-            { email: "lucas.almeida@grupo-3c.com", level: "Closer / Analista" },
-            { email: "jose.pablo@grupo-3c.com", level: "Closer / Analista" },
-            { email: "maria.merhet@grupo-3c.com", level: "Closer / Analista" },
-            { email: "gabriel.bernadini@grupo-3c.com", level: "Closer / Analista" },
-            { email: "gabriel.krysa@grupo-3c.com", level: "Closer / Analista" },
-            { email: "matheus.oliveira@grupo-3c.com", level: "Closer / Analista" },
-            { email: "joyce.cordeiro@grupo-3c.com", level: "Closer / Analista" },
-            { email: "bruno.garcia@grupo-3c.com", level: "Closer / Analista" },
-            { email: "rosiane.correa@grupo-3c.com", level: "Closer / Analista" },
-            { email: "mateus.gerigk@grupo-3c.com", level: "Closer / Analista" },
-            { email: "cirene.lara@grupo-3c.com", level: "Closer / Analista" },
-            { email: "rafaela.stephan@grupo-3c.com", level: "Closer / Analista" },
-            { email: "roberta.gomes@grupo-3c.com", level: "Closer / Analista" },
-            { email: "guilherme.minuzzi@grupo-3c.com", level: "Closer / Analista" },
-            { email: "gustavo.dangui@grupo-3c.com", level: "Closer / Analista" },
-            { email: "leandro.mulhstdtt@grupo-3c.com", level: "Closer / Analista" },
-            // Atendimento
-            { email: "felipe.nascimento@grupo-3c.com", level: "Atendimento" },
-            { email: "filipe.rovea@grupo-3c.com", level: "Atendimento" },
-            { email: "alexander.reis@grupo-3c.com", level: "Atendimento" },
-            { email: "wesley.vale@grupo-3c.com", level: "Atendimento" },
-            { email: "gabriel.machado@grupo-3c.com", level: "Atendimento" },
-            { email: "rian.almeida@grupo-3c.com", level: "Atendimento" },
-            { email: "alana.gaspar@grupo-3c.com", level: "Atendimento" },
-            { email: "gabriel.lima@grupo-3c.com", level: "Atendimento" },
-            { email: "ian.ronska@grupo-3c.com", level: "Atendimento" },
-            { email: "alan.armstrong@grupo-3c.com", level: "Atendimento" },
-            // Service
-            { email: "diogo.hartmann@grupo-3c.com", level: "Service / Sales" },
-            { email: "mathaus.alves@grupo-3c.com", level: "Service / Sales" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 4. 3C Plus (CP)
     {
-        name: "3C Plus",
+        name: "3C",
         acronym: "CP",
-        description: "Solução completa de discador inteligente e gestão de contact center para alta performance em voz.",
+        description: "Solução de discador e contact center.",
         ownerEmail: "allan.vonstein@grupo-3c.com", ownerName: "Allan Von Stein",
         subOwnerEmail: "fernando.mosquer@grupo-3c.com", subOwnerName: "Fernando Mosquer",
-        accesses: [
-            // Nível 3
-            { email: "andrieli.javorski@grupo-3c.com", level: "Nível 3 (Produto)" },
-            { email: "bruno.garcia@3cplusnow.com", level: "Nível 3 (Produto)" },
-            { email: "carlos.marques@3cplusnow.com", level: "Nível 3 (Produto)" },
-            { email: "eduardo.goncalves@grupo-3c.com", level: "Nível 3 (Produto)" },
-            { email: "gabriel.krysa@3cplusnow.com", level: "Nível 3 (Produto)" },
-            { email: "gabriel.ida@grupo-3c.com", level: "Nível 3 (Produto)" },
-            { email: "gustavo.delonzek@grupo-3c.com", level: "Nível 3 (Produto)" },
-            { email: "joao.vasconcelos@grupo-3c.com", level: "Nível 3 (Produto)" },
-            { email: "junior.andrade@grupo-3c.com", level: "Nível 3 (Produto)" },
-            { email: "matheus.oliveira@grupo-3c.com", level: "Nível 3 (Produto)" },
-            { email: "matheus.rocha@grupo-3c.com", level: "Nível 3 (Produto)" },
-            { email: "vladimir.sesar@grupo-3c.com", level: "Nível 3 (Produto)" },
-            { email: "deborah.peres@3cplusnow.com", level: "Nível 3 (Comercial)" },
-            { email: "leonardo.maciel@grupo-3c.com", level: "Nível 3 (Marketing)" },
-            { email: "pablo.emanuel1@3cplusnow.com", level: "Nível 3 (Marketing)" },
-            { email: "thiago.marcondes1@grupo-3c.com", level: "Nível 3 (Marketing)" },
-            { email: "vinicius.assmann@3cplusnow.com", level: "Nível 3 (Marketing)" },
-            { email: "emily.godoy@grupo-3c.com", level: "Nível 3 (Parcerias)" },
-            { email: "pamela.rocha@grupo-3c.com", level: "Nível 3 (Parcerias)" },
-            { email: "ney.pereira.adm@3cplusnow.com", level: "Board" },
-            { email: "diogo.hartmann@3cplusnow.com", level: "Admin / Elements" },
-            { email: "jose@3cplusnow.com", level: "Admin / Elements" },
-            { email: "sandra.siqueira@grupo-3c.com", level: "Admin / Elements" },
-            // Nível 2
-            { email: "alana.gaspar@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "alan.armstrong@3cplusnow.com", level: "Nível 2 (Atendimento)" },
-            { email: "alexander.reis@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "allan.portela@3cplusnow.com", level: "Nível 2 (Atendimento)" },
-            { email: "filipe.rovea@3cplusnow.com", level: "Nível 2 (Atendimento)" },
-            { email: "felipe.nascimento@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "eduardo1.bueno@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "eduardo.wosiak@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "gabrielle.prestes@3cplusnow.com", level: "Nível 2 (Atendimento)" },
-            { email: "gabriel.machado@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "gabriel.lima@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "ian@3cplusnow.com", level: "Nível 2 (Atendimento)" },
-            { email: "monica.neves@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "ovidio.farias@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "ricardo.camargo@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "wesley.vale@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "jose.zimmermann@grupo-3c.com", level: "Nível 2 (Atendimento)" },
-            { email: "alexsandy.correa@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "camila.brunetti@3cplusnow.com", level: "Nível 2 (Comercial)" },
-            { email: "camila.oliveira@3cplusnow.com", level: "Nível 2 (Comercial)" },
-            { email: "daniel.souza@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "fernando.mosquer@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "guilherme.minuzzi@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "jaqueline.souza@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "jehnnifer.padilha@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "kauane.bastos@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "kesley.oliveira@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "ketlin.oliveira@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "cirene.lara@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "leandro.mulhstdtt@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "leonardo.ferraz@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "lucas.costa1@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "lucas.almeida@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "lucio.ramos@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "maria.merhet@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "meteus.gerigk@outlook.com.br", level: "Nível 2 (Comercial)" },
-            { email: "maycon.barbosa@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "michelebodot93@gmail.com", level: "Nível 2 (Comercial)" },
-            { email: "taissa.almeida@grupo-3c.com", level: "Nível 2 (Comercial)" },
-            { email: "thomas.ferreira@grupo-3c.com", level: "Nível 2 (Comercial)" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 5. Evolux (EX)
     {
         name: "Evolux",
         acronym: "EX",
-        description: "Sistema corporativo de telefonia IP e comunicação para gestão avançada de filas e chamadas.",
+        description: "Telefonia IP e gestão de chamadas.",
         ownerEmail: "carlos.marques@grupo-3c.com", ownerName: "Carlos Marques",
-        subOwnerEmail: "bruno.levi@grupo-3c.com", subOwnerName: "Bruno Levi",
+        subOwnerEmail: "bruno.levi@grupo-3c.com", subOwnerName: "Bruno Levi", // "Levi"
+        criticality: "Alta", isCritical: true,
         accesses: []
     },
     // 6. Dizify (DZ)
     {
         name: "Dizify",
         acronym: "DZ",
-        description: "Plataforma de automação e integração de processos para otimização de fluxos de trabalho digitais.",
+        description: "Automação e integração de processos.",
         ownerEmail: "marieli.ferreira@grupo-3c.com", ownerName: "Marieli Ferreira",
-        subOwnerEmail: "jeferson.cruz@grupo-3c.com", subOwnerName: "Jeferson Da Cruz",
-        accesses: [
-            { email: "marieli.ferreira@grupo-3c.com", level: "Administrador" },
-            { email: "pietro.limberger@grupo-3c.com", level: "Administrador" },
-            { email: "lucas.limberger@grupo-3c.com", level: "Administrador" },
-            { email: "guilherme.pimpao@grupo-3c.com", level: "Administrador" },
-            { email: "jeferson.cruz@grupo-3c.com", level: "Administrador" },
-            { email: "maria.ribeiro@grupo-3c.com", level: "Administrador" },
-            { email: "julia.araujo@grupo-3c.com", level: "Administrador" },
-            { email: "taryk.ferreira@grupo-3c.com", level: "Administrador" },
-            { email: "iago.prado@grupo-3c.com", level: "Administrador" },
-            { email: "eduardo.nascimento@grupo-3c.com", level: "Administrador" }
-        ]
+        subOwnerEmail: "jeferson.cruz@grupo-3c.com", subOwnerName: "Jefferson Da Cruz",
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
-    // 7. Next Suit (NS)
+    // 7. NetSuite (NS)
     {
-        name: "Next Suit",
+        name: "Netsuit",
         acronym: "NS",
-        description: "Sistema ERP (NetSuite) para gestão integrada de finanças, estoque e processos operacionais.",
+        description: "Sistema ERP.",
         ownerEmail: "aline.fonseca@grupo-3c.com", ownerName: "Aline Fonseca",
         subOwnerEmail: "fernando.takakusa@grupo-3c.com", subOwnerName: "Fernando Takakusa",
-        accesses: [
-            { email: "aline.fonseca@3cplusnow.com", level: "Administrador" },
-            { email: "fernando.takakusa@grupo-3c.com", level: "Administrador" },
-            { email: "jose.zimmermann@grupo-3c.com", level: "Administrador" },
-            { email: "stephany.moraes@grupo-3c.com", level: "Analista Fiscal" },
-            { email: "bruno.sahidak@grupo-3c.com", level: "Administrador" },
-            { email: "ana.antunes@grupo-3c.com", level: "Administrador" },
-            { email: "ney.pereira@grupo-3c.com", level: "Administrador" },
-            { email: "suporte.3cplus@activecs.com.br", level: "Administrador" },
-            { email: "beatriz.oliveira@activecs.com.br", level: "Administrador" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
-    // 8. Gitlab (GL)
+    // 8. GitLab (GL)
     {
-        name: "GitLab",
+        name: "Gitlab",
         acronym: "GL",
-        description: "Plataforma DevOps completa para controle de versão, CI/CD e segurança de código-fonte.",
+        description: "DevOps e controle de versão.",
         ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
         subOwnerEmail: "joao.vasconcelos@grupo-3c.com", subOwnerName: "Joao Paulo",
-        accesses: [
-            { email: "bruno.levy@grupo-3c.com", level: "Administrator" },
-            { email: "carlos.marques@grupo-3c.com", level: "Administrator" },
-            { email: "diogo@3cplusnow.com", level: "Administrator" },
-            { email: "diogo.hartmann@grupo-3c.com", level: "Administrator" },
-            { email: "eric.patrick@grupo-3c.com", level: "Administrator" },
-            { email: "gabriel.krysa@3cplusnow.com", level: "Administrator" },
-            { email: "italo.rossi@grupo-3c.com", level: "Administrator" },
-            { email: "joao.vasconcelos@grupo-3c.com", level: "Administrator" },
-            { email: "sergio.filipe@evolux.net.br", level: "Administrator" },
-            // Regular
-            { email: "allan.oliveira@grupo-3c.com", level: "Regular" },
-            { email: "andrieli.javorski@grupo-3c.com", level: "Regular" },
-            { email: "bruno.garcia@3cplusnow.com", level: "Regular" },
-            { email: "charles.jose@grupo-3c.com", level: "Regular" },
-            { email: "eduardo.goncalves@grupo-3c.com", level: "Regular" },
-            { email: "eduardo.wosiak@grupo-3c.com", level: "Regular" },
-            { email: "gabriel.machado@grupo-3c.com", level: "Regular" },
-            { email: "guilherme.ferreira@grupo-3c.com", level: "Regular" },
-            { email: "gustavo.delonzek@grupo-3c.com", level: "Regular" },
-            { email: "henrique.amorim@grupo-3c.com", level: "Regular" },
-            { email: "jeferson.cruz@grupo-3c.com", level: "Regular" },
-            { email: "jose.pablo@grupo-3c.com", level: "Regular" },
-            { email: "julia.araujo@grupo-3c.com", level: "Regular" },
-            { email: "luis.paganini@grupo-3c.com", level: "Regular" },
-            { email: "maria.ribeiro@grupo-3c.com", level: "Regular" },
-            { email: "marieli.ferreira@grupo-3c.com", level: "Regular" },
-            { email: "matheus.kocotem@3cplusnow.com", level: "Regular" },
-            { email: "matheus.rocha@grupo-3c.com", level: "Regular" },
-            { email: "nicolas.veiga@grupo-3c.com", level: "Regular" },
-            { email: "pablo.emanuel@grupo-3c.com", level: "Regular" },
-            { email: "pedro.nascimento@grupo-3c.com", level: "Regular" },
-            { email: "rodrigo.gomes@grupo-3c.com", level: "Regular" },
-            { email: "sandra.siqueira@grupo-3c.com", level: "Regular" },
-            { email: "vinicius.assmann@grupo-3c.com", level: "Regular" },
-            { email: "wesley.vale@grupo-3c.com", level: "Regular" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 9. AWS (AS)
     {
         name: "AWS",
         acronym: "AS",
-        description: "Infraestrutura em nuvem escalável com serviços de computação, banco de dados e armazenamento.",
+        description: "Infraestrutura em nuvem.",
         ownerEmail: "carlos.marques@grupo-3c.com", ownerName: "Carlos Marques",
         subOwnerEmail: "joao.vasconcelos@grupo-3c.com", subOwnerName: "Joao Paulo",
-        accesses: [
-            { email: "alexander.reis@grupo-3c.com", level: "User" },
-            { email: "bruno.levi@grupo-3c.com", level: "User" },
-            { email: "carlos.marques@grupo-3c.com", level: "User" },
-            { email: "diogo.hartmann@grupo-3c.com", level: "User" },
-            { email: "gabriel.lima@grupo-3c.com", level: "User" },
-            { email: "gabrel.machado@grupo-3c.com", level: "User" },
-            { email: "italo.rossi@grupo-3c.com", level: "User" },
-            { email: "joao.vasconcelos@grupo-3c.com", level: "User" },
-            { email: "mathaus.alves@grupo-3c.com", level: "User" },
-            { email: "sergio.filipe@grupo-3c.com", level: "User" },
-            { email: "vladimir.sesar@grupo-3c.com", level: "User" },
-            { email: "wesley.vale@grupo-3c.com", level: "User" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 10. GCP (GC)
     {
         name: "GCP",
         acronym: "GC",
-        description: "Google Cloud Platform, conjunto de serviços de nuvem de alta escala para dados e computação.",
+        description: "Google Cloud Platform.",
         ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
         subOwnerEmail: "joao.vasconcelos@grupo-3c.com", subOwnerName: "Joao Paulo",
-        accesses: [
-            { email: "diogo.hartmann@grupo-3c.com", level: "Owner" },
-            { email: "eduardo.bueno@grupo-3c.com", level: "Owner" },
-            { email: "ian.ronska@grupo-3c.com", level: "Owner" },
-            { email: "jose.pablo@grupo-3c.com", level: "Owner" },
-            { email: "jose.zimmermann@grupo-3c.com", level: "Owner" },
-            { email: "julia.araujo@grupo-3c.com", level: "Owner" },
-            { email: "matheus.oliveira@grupo-3c.com", level: "Owner" },
-            { email: "thiago.marcondes@grupo-3c.com", level: "Owner" },
-            { email: "vladimir.sesar@grupo-3c.com", level: "Owner" },
-            // Admins
-            { email: "pablo.emanuel@grupo-3c.com", level: "Admin / BigQuery" },
-            { email: "vinicius.assmann@grupo-3c.com", level: "Admin / BigQuery" },
-            // Editores
-            { email: "eduardo.wosiak@grupo-3c.com", level: "Editor" },
-            { email: "isabely.wendler@grupo-3c.com", level: "Editor" },
-            { email: "wagner.wolff@grupo-3c.com", level: "Editor" },
-            { email: "matheus.rocha@grupo-3c.com", level: "Editor" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 11. Convenia (CV)
     {
         name: "Convenia",
         acronym: "CV",
-        description: "Software de gestão de RH para automação de departamento pessoal, holerites e benefícios.",
+        description: "Gestão de RH e DP.",
         ownerEmail: "raphael.pires@grupo-3c.com", ownerName: "Raphael Pires",
         subOwnerEmail: "renata.czapiewski@grupo-3c.com", subOwnerName: "Renata Czapiewski",
-        accesses: [
-            { email: "ney.pereira@grupo-3c.com", level: "Owner" },
-            { email: "lucas.limberger@grupo-3c.com", level: "Owner" },
-            { email: "raphael.pires@grupo-3c.com", level: "Owner" },
-            { email: "renata.czapiewski@grupo-3c.com", level: "Pessoas e Cultura" },
-            { email: "gislene.machado@grupo-3c.com", level: "Pessoas e Cultura" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 12. Clicsign (CS)
     {
         name: "Clicsign",
         acronym: "CS",
-        description: "Plataforma de assinaturas eletrônicas com validade jurídica para agilizar formalizações.",
+        description: "Assinaturas eletrônicas.",
         ownerEmail: "fernando.takakusa@grupo-3c.com", ownerName: "Fernando Takakusa",
         subOwnerEmail: "aline.fonseca@grupo-3c.com", subOwnerName: "Aline Fonseca",
-        accesses: [
-            { email: "fernando.takakusa@grupo-3c.com", level: "Administrador" },
-            { email: "aline.fonseca@grupo-3c.com", level: "Membro" },
-            { email: "gabriely.garcia@grupo-3c.com", level: "Membro" },
-            { email: "jose.zimmermann@grupo-3c.com", level: "Membro" },
-            { email: "maria.rosa@grupo-3c.com", level: "Membro" },
-            { email: "raphael.pires@grupo-3c.com", level: "Membro" },
-            { email: "vinicius.assmann@grupo-3c.com", level: "Membro" }
-        ]
+        criticality: "Média", isCritical: true, // Based on sheet, CS-1 is Alta, CS-2 is Média. Tool itself seems Alta/Sim in User List.
+        accesses: []
     },
     // 13. Meta (MT)
     {
         name: "Meta",
         acronym: "MT",
-        description: "Ecossistema de ferramentas de negócios para gestão de anúncios e presença no FB/IG/WhatsApp.",
+        description: "Business Manager FB/IG.",
         ownerEmail: "rafael.schimanski@grupo-3c.com", ownerName: "Rafael Blaka",
         subOwnerEmail: "junior.andrade@grupo-3c.com", subOwnerName: "Junior Andrade",
-        accesses: [
-            { email: "maria.schimanski@grupo-3c.com", level: "Business Manager" },
-            { email: "rebeca.costa@grupo-3c.com", level: "Business Manager" },
-            { email: "eduardo.bueno@grupo-3c.com", level: "Business Manager" },
-            { email: "jose.zimmermann@grupo-3c.com", level: "Business Manager" },
-            { email: "leonardo.maciel@grupo-3c.com", level: "Business Manager" },
-            { email: "gustavo.delonzek@grupo-3c.com", level: "Business Manager" },
-            { email: "gabriel.krysa@3cplusnow.com", level: "Business Manager" },
-            { email: "diogo@3cplusnow.com", level: "Business Manager" },
-            { email: "junior.andrade@3cplusnow.com", level: "Business Manager" },
-            { email: "rafael.schimanski@3cplusnow.com", level: "Business Manager" },
-            { email: "alexander.reis@grupo-3c.com", level: "Business Manager" },
-            { email: "wesley.vale@grupo-3c.com", level: "Business Manager" },
-            // Acesso Parcial
-            { email: "rafael.rickli@bettegacob.com.br", level: "Acesso Parcial" },
-            { email: "ana.ida@grupo-3c.com", level: "Acesso Parcial" },
-            { email: "vinicius.leal@grupo-3c.com", level: "Acesso Parcial" },
-            { email: "guilherme.pimpao@grupo-3c.com", level: "Acesso Parcial" },
-            { email: "lucas.schupchek@grupo-3c.com", level: "Acesso Parcial" },
-            { email: "lucas.matheus@grupo-3c.com", level: "Acesso Parcial" },
-            { email: "vinicius.assmann@grupo-3c.com", level: "Acesso Parcial" },
-            { email: "kauevargas.design@gmail.com", level: "Acesso Parcial" },
-            { email: "mathaus_kozkodai@hotmail.com", level: "Convidado" }
-        ]
+        criticality: "Alta", isCritical: true, // Média/Alta mixed
+        accesses: []
     },
     // 14. Fiqon (FO)
     {
         name: "Fiqon",
         acronym: "FO",
-        description: "Middleware de integração para automação entre sistemas financeiros e plataformas de gestão.",
-        ownerEmail: "guilherme.pinheiro@grupo-3c.com", ownerName: "Guilherme Pinheiro",
+        description: "Middleware financeiro.",
+        ownerEmail: "pinhas.spinelli@grupo-3c.com", ownerName: "Pinhas Spinelli", // New owner from list
         subOwnerEmail: "lucas.matheus@grupo-3c.com", subOwnerName: "Lucas Matheus",
-        accesses: [
-            { email: "lucas.matheus@grupo-3c.com", level: "Administrador" },
-            { email: "lucas.schupchek@grupo-3c.com", level: "Administrador" },
-            { email: "matheus.siqueira@grupo-3c.com", level: "Administrador" },
-            { email: "yuri.lima@grupo-3c.com", level: "Administrador" },
-            { email: "pedro.barreto@grupo-3c.com", level: "Administrador" },
-            { email: "roberty.machado@grupo-3c.com", level: "Administrador" },
-            { email: "guilherme.pinheiro@grupo-3c.com", level: "Administrador" },
-            { email: "guilherme.pimpao@grupo-3c.com", level: "Administrador" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
-    // 15. N8N (NA)
+    // 15. N8N (NA) - Pablo & Alex (Using Pablo as primary owner or create two tools?)
+    // List says: N8N -> Pablo (Automacao) AND N8N -> Alex (PS) w/ Wosiak.
+    // I will keep Pablo as Owner and maybe add Alex as Sub or create separate entry if they are distinct instances.
+    // Assuming single tool for now, defaulting to Pablo as Owner (Automacao).
     {
         name: "N8N",
         acronym: "NA",
-        description: "Ferramenta low-code para automação de fluxos de trabalho e integrações via nós extensíveis.",
+        description: "Automação de workflows.",
         ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
-        subOwnerEmail: null, subOwnerName: null,
-        accesses: [
-            { email: "pablo.emanuel@grupo-3c.com", level: "Owner" },
-            { email: "eduardo.bueno@grupo-3c.com", level: "Membro" },
-            { email: "ian.ronska@grupo-3c.com", level: "Membro" },
-            { email: "isabely.wendler@grupo-3c.com", level: "Membro" },
-            { email: "jose.zimmermann@grupo-3c.com", level: "Membro" },
-            { email: "julia.araujo@grupo-3c.com", level: "Membro" },
-            { email: "matheus.oliveira@grupo-3c.com", level: "Membro" },
-            { email: "thiago.marcondes@grupo-3c.com", level: "Membro" },
-            { email: "vinicius.assmann@grupo-3c.com", level: "Membro" },
-            { email: "suporte.evolux@grupo-3c.com", level: "Membro" }
-        ]
+        subOwnerEmail: "alexander.reis@grupo-3c.com", subOwnerName: "Alexander Reis", // Alex from PS
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 16. Hik Connect (HC)
     {
         name: "Hik Connect",
         acronym: "HC",
-        description: "Plataforma de videomonitoramento para controle e visualização remota de câmeras de segurança.",
+        description: "Videomonitoramento.",
         ownerEmail: "vladimir.sesar@grupo-3c.com", ownerName: "Vladimir Sesar",
         subOwnerEmail: "allan.vonstein@grupo-3c.com", subOwnerName: "Allan Von Stein",
-        accesses: [
-            { email: "ney.pereira@grupo-3c.com", level: "Administrador" },
-            { email: "jaqueline.souza@grupo-3c.com", level: "Administrador" },
-            { email: "renata.czapiewski@grupo-3c.com", level: "Administrador" },
-            { email: "wagner.wolff@grupo-3c.com", level: "Administrador" },
-            { email: "alan.armstrong@grupo-3c.com", level: "Administrador" },
-            { email: "portaria@grupo-3c.com", level: "Administrador" },
-            { email: "guilherme.pimpao@grupo-3c.com", level: "Administrador" },
-            { email: "allan.vonstein@grupo-3c.com", level: "Administrador" },
-            { email: "fernando.takakusa@grupo-3c.com", level: "Administrador" },
-            { email: "luan.silva@grupo-3c.com", level: "Administrador" },
-            { email: "marcio.pagnoncelli@hotmail.com", level: "Administrador" },
-            { email: "diogo.hartmann@grupo-3c.com", level: "Administrador" },
-            { email: "vladimir.sesar@grupo-3c.com", level: "Administrador" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
-    // 17. ChatGPT (CG)
+    // 17. GPT (CG)
     {
-        name: "Chat GPT",
+        name: "GPT",
         acronym: "CG",
-        description: "Assistente avançado de IA da OpenAI para processamento de linguagem e automação criativa.",
-        ownerEmail: "pablo.emanuel@3cplusnow.com", ownerName: "Pablo Emanuel",
-        subOwnerEmail: "wagner@3cplusnow.com", subOwnerName: "Wagner Wolff",
-        accesses: [
-            { email: "pablo.emanuel@3cplusnow.com", level: "Proprietário" },
-            { email: "wagner@3cplusnow.com", level: "Proprietário" },
-            { email: "aline.fonseca@3cplusnow.com", level: "Membro" },
-            { email: "emily@3cplusnow.com", level: "Membro" },
-            { email: "jaqueline.souza@grupo-3c.com", level: "Membro" },
-            { email: "gpt.polaris@3cplusnow.com", level: "Membro" },
-            { email: "rafael.blaka@3cplusnow.com", level: "Membro" },
-            { email: "ricardo.camargo@grupo-3c.com", level: "Membro" },
-            { email: "thiago.marcondes@grupo-3c.com", level: "Membro" },
-            { email: "wesley.vale@grupo-3c.com", level: "Membro" }
-        ]
+        description: "OpenAI ChatGPT.",
+        ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
+        subOwnerEmail: "wagner.wolff@grupo-3c.com", subOwnerName: "Wagner Wolff",
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 18. Focus (FU)
     {
         name: "Focus",
         acronym: "FU",
-        description: "Sistema interno de monitoramento e gestão de indicadores de desempenho operacional.",
-        ownerEmail: "aline.fonseca@3cplusnow.com", ownerName: "Aline Fonseca",
+        description: "Gestão de indicadores.",
+        ownerEmail: "aline.fonseca@grupo-3c.com", ownerName: "Aline Fonseca",
         subOwnerEmail: "thiago.marcondes@grupo-3c.com", subOwnerName: "Thiago Marcondes",
-        accesses: [
-            { email: "aline.fonseca@3cplusnow.com", level: "Administrador" },
-            { email: "diogo@3cplusnow.com", level: "Administrador" },
-            { email: "fernando.takakusa@grupo-3c.com", level: "Administrador" },
-            { email: "pablo.emanuel@grupo-3c.com", level: "Administrador" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 19. Vindi (VI)
     {
         name: "Vindi",
         acronym: "VI",
-        description: "Solução especializada em pagamentos recorrentes e gestão de assinaturas para escala.",
+        description: "Pagamentos recorrentes.",
         ownerEmail: "pablo.emanuel@grupo-3c.com", ownerName: "Pablo Emanuel",
         subOwnerEmail: "ian.ronska@grupo-3c.com", subOwnerName: "Ian Ronska",
-        accesses: [
-            // Admins
-            { email: "alan.armstrong@grupo-3c.com", level: "Administrador" },
-            { email: "diogo.hartmann@grupo-3c.com", level: "Administrador" },
-            { email: "eduardo.bueno@grupo-3c.com", level: "Administrador" },
-            { email: "fernando.takakusa@grupo-3c.com", level: "Administrador" },
-            { email: "jose.zimmermann@grupo-3c.com", level: "Administrador" },
-            { email: "fernando.mosquer@grupo-3c.com", level: "Administrador" },
-            { email: "matheus.oliveira@grupo-3c.com", level: "Administrador" },
-            { email: "pablo.emanuel@grupo-3c.com", level: "Administrador" },
-            { email: "thiago.marcondes@grupo-3c.com", level: "Administrador" },
-            { email: "vinicius.assmann@grupo-3c.com", level: "Administrador" },
-            // Gestor
-            { email: "alana.gaspar@grupo-3c.com", level: "Gestor" },
-            { email: "deborah.peres@grupo-3c.com", level: "Gestor" },
-            { email: "felipe.nascimento@grupo-3c.com", level: "Gestor" },
-            { email: "filipe.rovea@grupo-3c.com", level: "Gestor" },
-            { email: "gabriel.lima@grupo-3c.com", level: "Gestor" },
-            { email: "ian.ronska@grupo-3c.com", level: "Gestor" },
-            { email: "rian.almeida@grupo-3c.com", level: "Gestor" },
-            // Observador
-            { email: "allan.vonstein@grupo-3c.com", level: "Observador" },
-            { email: "caroline.gois@grupo-3c.com", level: "Observador" },
-            { email: "emily.godoy@grupo-3c.com", level: "Observador" },
-            { email: "ricardo.camargo@grupo-3c.com", level: "Observador" }
-        ]
+        criticality: "Alta", isCritical: true,
+        accesses: []
     },
     // 20. Nextrouter (NR)
     {
-        name: "NextRouter",
+        name: "Nextrouter",
         acronym: "NR",
-        description: "Solução de roteamento e gestão inteligente de tráfego para redes de alta disponibilidade.",
+        description: "Roteamento inteligente.",
         ownerEmail: "diogo.hartmann@grupo-3c.com", ownerName: "Diogo Hartmann",
         subOwnerEmail: "ian.ronska@grupo-3c.com", subOwnerName: "Ian Ronska",
-        accesses: [
-            { email: "diogo.hartmann@grupo-3c.com", level: "ADMINISTRADOR" },
-            { email: "matheus.oliveira@grupo-3c.com", level: "ADMINISTRADOR" },
-            { email: "ian.ronska@grupo-3c.com", level: "EQUIPE TELECOM" },
-            { email: "fernando.mosquer@grupo-3c.com", level: "EQUIPE TELECOM" },
-            { email: "pablo.emanuel@grupo-3c.com", level: "EQUIPE TELECOM" }
-        ]
+        criticality: "Média", isCritical: true,
+        accesses: []
     },
     // 21. Figma (FA)
     {
         name: "Figma",
         acronym: "FA",
-        description: "Ferramenta de design colaborativo para criação de interfaces, protótipos e sistemas de design.",
-        ownerEmail: "gabriel.ida@grupo-3c.com", ownerName: "Gabriel Pires Ida",
+        description: "Design colaborativo.",
+        ownerEmail: "gabriel.ida@grupo-3c.com", ownerName: "Gabriel Pires Ida", // "Pires"
         subOwnerEmail: null, subOwnerName: null,
-        accesses: [
-            { email: "gabriel.ida@grupo-3c.com", level: "Full (Total)" },
-            { email: "front3c@grupo-3c.com", level: "Full (Total)" },
-            { email: "guilherme.pimpao@grupo-3c.com", level: "Full (Total)" },
-            { email: "junior.andrade@grupo-3c.com", level: "Full (Total)" },
-            { email: "gustavo.schneider@grupo-3c.com", level: "Dev" },
-            { email: "igor.ribeiro@grupo-3c.com", level: "Collab" },
-            { email: "leonardo.maciel@grupo-3c.com", level: "Collab" },
-            { email: "rebeca.costa@grupo-3c.com", level: "Collab" },
-            { email: "guilherme.pinheiro@grupo-3c.com", level: "Collab" },
-            { email: "diogo.hartmann@grupo-3c.com", level: "View" }
-        ]
-    },
-    // 22. Slack
-    {
-        name: "Slack",
-        acronym: null,
-        description: "Plataforma de comunicação empresarial em tempo real focada em canais e produtividade.",
-        ownerEmail: "vladimir.sesar@grupo-3c.com", ownerName: "Vladimir Sesar",
-        subOwnerEmail: null, subOwnerName: null,
+        criticality: "Média", isCritical: false, // "Não" critico
         accesses: []
     }
 ];
@@ -701,7 +340,9 @@ async function main() {
                     acronym: t.acronym || undefined,
                     description: t.description || null,
                     ownerId: owner?.id,
-                    subOwnerId: subOwner?.id
+                    subOwnerId: subOwner?.id,
+                    criticality: t.criticality || null,
+                    isCritical: t.isCritical || false
                 }
             });
             console.log(`➕ Ferramenta Criada: ${t.name}`);
