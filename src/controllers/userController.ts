@@ -23,6 +23,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
         jobTitle: true,
         department: true,
         systemProfile: true,
+        managerId: true,
         manager: {
           select: {
             name: true
@@ -40,7 +41,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
 
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, jobTitle, department, systemProfile } = req.body;
+  const { name, jobTitle, department, systemProfile, managerId } = req.body;
   const rawEmail = req.body.email;
   const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
   const requesterId = req.headers['x-requester-id'] as string;
@@ -71,6 +72,7 @@ export const updateUser = async (req: Request, res: Response) => {
         email,
         jobTitle,
         department,
+        managerId,
         systemProfile: (isSuperAdmin || isGestor) ? systemProfile : undefined
       }
     });

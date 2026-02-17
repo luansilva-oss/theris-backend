@@ -16,6 +16,7 @@ import { EditAccessModal } from './components/EditAccessModal';
 import { ManageStructureModal } from './components/ManageStructureModal';
 import { ManageLevelModal } from './components/ManageLevelModal';
 import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus } from 'lucide-react';
+import OrgChart from './components/OrgChart';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -26,7 +27,8 @@ interface User {
   email: string;
   jobTitle?: string;
   department?: string;
-  systemProfile: string; // Adicionado para RBAC
+  systemProfile: string;
+  managerId?: string | null;
   manager?: { name: string };
   myDeputy?: User;
 }
@@ -41,6 +43,9 @@ interface Tool {
   toolGroupId?: string;
   toolGroup?: { id: string; name: string };
   availableAccessLevels?: string[];
+  accessLevelDescriptions?: any;
+  criticality?: string;
+  isCritical?: boolean;
   accesses?: {
     id: string; // ID do registro de acesso
     user: User;
@@ -346,6 +351,29 @@ export default function App() {
     return grouped;
   };
 
+  const handleManagerChange = async (userId: string, newManagerId: string | null) => {
+    try {
+      const res = await fetch(`${API_URL}/api/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-requester-id': currentUser?.id || ''
+        },
+        body: JSON.stringify({ managerId: newManagerId })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Erro ao reatribuir gestor.");
+        loadData(); // Reverte visualmente se falhar
+      } else {
+        loadData();
+      }
+    } catch (e) {
+      alert("Erro de conexão ao alterar hierarquia.");
+      loadData();
+    }
+  };
+
   // --- RENDER ---
 
   if (!isLoggedIn) return (
@@ -555,9 +583,9 @@ export default function App() {
             </div>
           )}
 
-          {/* GESTÃO DE PESSOAS MODERNA (AGRUPADA POR DEPARTAMENTO) */}
+          {/* GESTÃO DE PESSOAS INTERATIVA (ORG CHART) */}
           {activeTab === 'PEOPLE' && (
-            <div className="fade-in">
+            <div className="fade-in" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
                   <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
@@ -567,114 +595,29 @@ export default function App() {
                       className="btn-mini"
                       style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'rgba(167, 139, 250, 0.1)', color: '#a78bfa', border: '1px solid rgba(167, 139, 250, 0.2)' }}
                     >
-                      <Settings size={14} /> Gerenciar Estrutura
+                      <Settings size={14} /> Estrutura
                     </button>
                   )}
                 </div>
-                <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Colaboradores Ativos</div>
+                <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+                  <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Colaboradores</div>
+                  <div style={{ height: 20, width: 1, background: '#27272a' }}></div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }}></div>
+                    <span style={{ fontSize: 10, color: '#a1a1aa' }}>Gestores</span>
+                  </div>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {Object.entries(getGroupedPeople())
-                  .sort(([a], [b]) => a.localeCompare(b))
-                  .map(([dept, roles]) => (
-                    <div key={dept} className="card-base" style={{ padding: 0, overflow: 'hidden', border: '1px solid #27272a' }}>
-                      {/* HEADER DEPARTAMENTO */}
-                      <div
-                        onClick={() => setExpandedDept(expandedDept === dept ? null : dept)}
-                        style={{
-                          padding: '16px 24px',
-                          background: '#18181b',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <Building size={20} color="#a78bfa" />
-                          <span style={{ fontWeight: 700, color: 'white', fontSize: 16 }}>{dept}</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <span style={{ fontSize: 11, color: '#a1a1aa', background: '#27272a', padding: '2px 8px', borderRadius: 4 }}>
-                            {Object.values(roles).flat().length} Pessoas
-                          </span>
-                          {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
-                            <button
-                              className="btn-icon"
-                              style={{ padding: 4 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedStructureDept(dept);
-                                setIsManageStructureOpen(true);
-                              }}
-                              title="Editar Estrutura"
-                            >
-                              <Settings size={14} color="#71717a" />
-                            </button>
-                          )}
-                          {expandedDept === dept ? <ChevronDown size={18} color="#a1a1aa" /> : <ChevronRight size={18} color="#52525b" />}
-                        </div>
-                      </div>
-
-                      {/* LISTA DE CARGOS NO DEPARTAMENTO */}
-                      {expandedDept === dept && (
-                        <div style={{ background: '#09090b', padding: '8px 24px 24px 24px' }}>
-                          {Object.entries(roles)
-                            .sort(([a], [b]) => a.localeCompare(b))
-                            .map(([role, users]) => (
-                              <div key={role} style={{ marginTop: 16 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, borderLeft: '2px solid #3f3f46', paddingLeft: 12 }}>
-                                  <Briefcase size={14} color="#71717a" />
-                                  <span style={{ fontSize: 13, fontWeight: 600, color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5 }}>{role}</span>
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-                                  {users.map(u => (
-                                    <div key={u.id} style={{ background: '#18181b', padding: 12, borderRadius: 8, border: '1px solid #27272a', display: 'flex', alignItems: 'center', gap: 12 }}>
-                                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
-                                        {u.name.charAt(0)}
-                                      </div>
-                                      <div style={{ flex: 1, overflow: 'hidden' }}>
-                                        <div style={{ color: 'white', fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
-                                        <div style={{ color: '#52525b', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</div>
-                                      </div>
-                                      {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
-                                        <div style={{ display: 'flex', gap: 4 }}>
-                                          <button
-                                            className="btn-icon"
-                                            style={{ padding: '6px' }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setSelectedUser(u);
-                                              setIsEditUserModalOpen(true);
-                                            }}
-                                          >
-                                            <Edit2 size={14} color="#a1a1aa" />
-                                          </button>
-                                          <button
-                                            className="btn-icon"
-                                            style={{ padding: '6px' }}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleDeleteUser(u);
-                                            }}
-                                          >
-                                            <Trash2 size={14} color="#b91c1c" />
-                                          </button>
-                                        </div>
-                                      )}
-                                      {u.manager && (
-                                        <div title={`Gestor: ${u.manager.name}`} style={{ width: 8, height: 8, borderRadius: '50%', background: '#a78bfa' }}></div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <OrgChart
+                  users={allUsers}
+                  onEditUser={(user) => {
+                    setSelectedUser(user);
+                    setIsEditUserModalOpen(true);
+                  }}
+                  onManagerChange={handleManagerChange}
+                />
               </div>
             </div>
           )}
@@ -1043,6 +986,7 @@ export default function App() {
           user={selectedUser}
           onUpdate={loadData}
           currentUser={{ id: currentUser?.id || '', systemProfile }}
+          allUsers={allUsers}
         />
       )}
 
@@ -1056,8 +1000,8 @@ export default function App() {
         isOpen={isEditAccessModalOpen}
         onClose={() => setIsEditAccessModalOpen(false)}
         access={selectedAccess}
+        toolId={selectedTool?.id || ''}
         onUpdate={loadData}
-        allUsers={allUsers}
       />
 
       {/* RENDERIZAR O MODAL DE ESTRUTURA */}
@@ -1079,7 +1023,7 @@ export default function App() {
             setIsManageLevelModalOpen(false);
             setSelectedLevelName(null);
           }}
-          tool={selectedTool}
+          tool={selectedTool as any}
           levelName={selectedLevelName}
           onUpdate={loadData}
         />
