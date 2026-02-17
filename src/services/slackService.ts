@@ -85,18 +85,6 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
 // ============================================================
 
 // Helper: Salvar Solicitação
-// Função de Normalização (Mesma do AuthController para garantir match)
-const normalizeEmail = (email: string): string => {
-  if (!email) return '';
-  const [localPart, domain] = email.toLowerCase().split('@');
-  const parts = localPart.split('.');
-  // Se tiver mais de 2 partes (ex: nome.nome.sobrenome), pega apenas a primeira e a última
-  const normalizedLocal = parts.length > 2
-    ? `${parts[0]}.${parts[parts.length - 1]}`
-    : localPart;
-  return `${normalizedLocal}@grupo-3c.com`;
-};
-
 // Helper: Salvar Solicitação
 async function saveRequest(body: any, client: any, dbType: string, details: any, reason: string, msgSuccess: string, isExtraordinary = true) {
   try {
@@ -107,17 +95,16 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
     // Tenta achar o usuário no banco pelo email do Slack
     try {
       const info = await client.users.info({ user: slackId });
-      const rawEmail = info.user?.profile?.email;
+      slackEmail = info.user?.profile?.email;
 
-      if (rawEmail) {
-        slackEmail = normalizeEmail(rawEmail); // NORMALIZA O EMAIL DO SLACK
-        console.log(`🔍 Slack Info: ID=${slackId}, Raw=${rawEmail}, Normalized=${slackEmail}`);
+      console.log(`🔍 Slack Info: ID=${slackId}, Email=${slackEmail}`);
 
+      if (slackEmail) {
         const userDb = await prisma.user.findUnique({ where: { email: slackEmail } });
         if (userDb) {
           requesterId = userDb.id;
         } else {
-          console.warn(`⚠️ E-mail normalizado (${slackEmail}) não encontrado no banco.`);
+          console.warn(`⚠️ E-mail do Slack (${slackEmail}) não encontrado no banco de dados do Theris.`);
         }
       } else {
         console.warn(`⚠️ Não foi possível obter o e-mail do usuário Slack (ID: ${slackId}).`);
@@ -130,7 +117,7 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
       // Se não achou, NÃO usa fallback. Retorna erro para o usuário corrigir seu cadastro.
       await client.chat.postMessage({
         channel: slackId,
-        text: `❌ *Erro de Identificação*: Não encontrei seu e-mail (${slackEmail || 'desconhecido'}) no sistema Theris.\n\n*Dica:* O sistema normaliza emails para o padrão \`nome.sobrenome@grupo-3c.com\`. Verifique se você já realizou o primeiro login na plataforma Web.`
+        text: `❌ *Erro de Identificação*: Não encontrei seu e-mail (${slackEmail || 'desconhecido'}) no sistema Theris.\nPor favor, verifique se seu cadastro no Theris está com o mesmo e-mail do Slack.`
       });
       return;
     }
