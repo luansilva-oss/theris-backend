@@ -86,11 +86,6 @@ model Tool {
   availableAccessLevels String[] @default(["Admin", "User", "Viewer"]) // Níveis disponíveis para esta ferramenta
   accessLevelDescriptions Json? // Mapeamento { "Admin": "Descrição...", "User": "..." }
 
-  // --- MUDANÇA 3: Novos campos de governança ---
-  criticality         String?  // Alta, Média, Baixa
-  isCritical          Boolean  @default(false)
-  // ---------------------------------------------
-
   createdAt           DateTime @default(now())
 }
 

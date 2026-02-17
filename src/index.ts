@@ -47,33 +47,6 @@ app.post('/api/auth/verify-mfa', verifyMfa);
 // Roda este link no navegador para resetar o catálogo de ferramentas
 app.get('/api/admin/reset-tools', resetCatalog);
 
-// DEBUG ROUTE (Temporary)
-app.get('/api/debug/user/:email', async (req: Request, res: Response) => {
-  const { email } = req.params;
-  try {
-    const user = await prisma.user.findFirst({ where: { email } });
-    const count = await prisma.user.count();
-    const all = await prisma.user.findMany({ select: { email: true } });
-
-    // Check for "almost match"
-    const exactMatch = all.find(u => u.email === email);
-    const lowerMatch = all.find(u => u.email.toLowerCase() === email.toLowerCase());
-
-    res.json({
-      query: email,
-      hexQuery: Buffer.from(email).toString('hex'),
-      found: !!user,
-      user,
-      totalUsers: count,
-      exactMatchInList: exactMatch ? { email: exactMatch.email, hex: Buffer.from(exactMatch.email).toString('hex') } : null,
-      lowerMatchInList: lowerMatch ? { email: lowerMatch.email, hex: Buffer.from(lowerMatch.email).toString('hex') } : null,
-      dbUrl: process.env.DATABASE_URL?.replace(/:[^:@]+@/, ':***@') // Mask password
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // ============================================================
 // --- ROTAS DE DADOS ---
 // ============================================================
