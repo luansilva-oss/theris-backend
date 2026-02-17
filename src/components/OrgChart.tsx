@@ -11,6 +11,7 @@ import {
     Controls,
     ConnectionMode,
     Node,
+    BackgroundVariant,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
@@ -36,7 +37,8 @@ const nodeHeight = 100;
 
 const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
     const isHorizontal = direction === 'LR';
-    dagreGraph.setGraph({ rankdir: direction, nodesep: 50, ranksep: 100 });
+    // nodesep: espaçamento entre irmãos, ranksep: espaçamento entre níveis
+    dagreGraph.setGraph({ rankdir: direction, nodesep: 140, ranksep: 200, marginx: 50, marginy: 50 });
 
     nodes.forEach((node) => {
         dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
@@ -73,7 +75,7 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
         const flowNodes: any[] = [];
         const flowEdges: any[] = [];
 
-        // Mapear níveis de profundidade (opcional para coloração)
+        // Mapear níveis de profundidade
         const levels: Record<string, number> = {};
         const calculateLevel = (uid: string): number => {
             if (levels[uid] !== undefined) return levels[uid];
@@ -86,7 +88,13 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
             return levels[uid];
         };
 
-        users.forEach(user => {
+        const sortedUsers = [...users].sort((a, b) => {
+            const levelA = calculateLevel(a.id);
+            const levelB = calculateLevel(b.id);
+            return levelA - levelB;
+        });
+
+        sortedUsers.forEach(user => {
             const level = calculateLevel(user.id);
             flowNodes.push({
                 id: user.id,
@@ -97,7 +105,7 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
                     level,
                     onEdit: onEditUser,
                 },
-                position: { x: 0, y: 0 }, // Dagre calculará o real
+                position: { x: 0, y: 0 },
             });
 
             if (user.managerId) {
@@ -106,7 +114,8 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
                     source: user.managerId,
                     target: user.id,
                     type: 'smoothstep',
-                    style: { stroke: '#cbd5e1', strokeWidth: 2 },
+                    animated: false,
+                    style: { stroke: '#3f3f46', strokeWidth: 2 },
                 });
             }
         });
@@ -119,18 +128,15 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
         setEdges(initialElements.edges);
     }, [initialElements, setNodes, setEdges]);
 
-    // Handler para reatribuição de gestor via conexão manual se desejado
     const onConnect = useCallback(
         (params: Connection) => {
             if (params.source === params.target) return;
 
-            // Remover arestas antigas para o target (um subordinates só tem um manager)
             setEdges((eds) => {
                 const otherEdges = eds.filter((e) => e.target !== params.target);
-                return addEdge({ ...params, type: 'smoothstep', style: { stroke: '#cbd5e1', strokeWidth: 2 } }, otherEdges);
+                return addEdge({ ...params, type: 'smoothstep', style: { stroke: '#a78bfa', strokeWidth: 2 } }, otherEdges);
             });
 
-            // Notificar backend
             if (params.target && params.source) {
                 onManagerChange(params.target, params.source);
             }
@@ -139,7 +145,7 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
     );
 
     return (
-        <div style={{ width: '100%', height: 'calc(100vh - 180px)', background: '#f8fafc', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+        <div style={{ width: '100%', height: 'calc(100vh - 200px)', background: '#09090b', borderRadius: '16px', overflow: 'hidden', border: '1px solid #1f1f22' }}>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -149,20 +155,43 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
                 nodeTypes={nodeTypes}
                 connectionMode={ConnectionMode.Loose}
                 fitView
+                fitViewOptions={{ padding: 0.2 }}
+                minZoom={0.1}
+                maxZoom={1.5}
+                defaultEdgeOptions={{
+                    type: 'smoothstep',
+                    style: { stroke: '#3f3f46', strokeWidth: 2 },
+                }}
             >
-                <Background gap={20} color="#e2e8f0" />
-                <Controls />
-                <Panel position="top-right" style={{ background: 'white', padding: '8px', borderRadius: '8px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}>
-                    <div className="flex flex-col gap-2">
-                        <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">Legenda</div>
-                        <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <div style={{ width: 12, height: 4, background: '#fbbf24' }}></div> C-Level / Gestores
+                <Background gap={24} color="#18181b" variant={BackgroundVariant.Dots} />
+                <Controls style={{ background: '#18181b', border: '1px solid #27272a', padding: 4, borderRadius: 8 }} />
+
+                <Panel position="top-right" style={{
+                    background: 'rgba(24, 24, 27, 0.8)',
+                    backdropFilter: 'blur(8px)',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: '1px solid #27272a',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
+                    color: 'white'
+                }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: 1 }}>Legenda da Estrutura</div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ width: 12, height: 12, borderRadius: 3, background: '#fbbf24', boxShadow: '0 0 10px rgba(251, 191, 36, 0.3)' }}></div>
+                            <span style={{ fontSize: 12, color: '#e4e4e7', fontWeight: 500 }}>Gestores e C-Level</span>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <div style={{ width: 12, height: 4, background: '#8b5cf6' }}></div> Membros
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div style={{ width: 12, height: 12, borderRadius: 3, background: '#7c3aed', boxShadow: '0 0 10px rgba(124, 58, 237, 0.3)' }}></div>
+                            <span style={{ fontSize: 12, color: '#e4e4e7', fontWeight: 500 }}>Corpo Técnico / Outros</span>
                         </div>
-                        <div className="mt-2 text-[10px] text-gray-400 max-w-[150px]">
-                            Dica: Conecte o círculo inferior de um líder ao círculo superior de um liderado para reatribuir gestor.
+
+                        <div style={{ marginTop: 8, padding: '8px', background: 'rgba(167, 139, 250, 0.05)', borderRadius: '6px', border: '1px solid rgba(167, 139, 250, 0.1)' }}>
+                            <div style={{ fontSize: 10, color: '#a1a1aa', lineHeight: 1.4 }}>
+                                💡 <strong>Dica:</strong> Para mudar de gestor, arraste a linha da base de um nome até o topo de outro.
+                            </div>
                         </div>
                     </div>
                 </Panel>
