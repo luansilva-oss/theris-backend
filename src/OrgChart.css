@@ -1,0 +1,18 @@
+.react-flow__attribution {
+    display: none !important;
+}
+
+.react-flow__controls button {
+    background: transparent !important;
+    border-bottom: 1px solid #4c1d95 !important;
+    color: #a78bfa !important;
+    fill: #a78bfa !important;
+}
+
+.react-flow__controls button:last-child {
+    border-bottom: none !important;
+}
+
+.react-flow__controls button:hover {
+    background: rgba(124, 58, 237, 0.2) !important;
+}
