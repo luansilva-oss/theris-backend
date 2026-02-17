@@ -72,21 +72,9 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
     // ROTA A: FERRAMENTAS / ACESSOS
     if (['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'].includes(safeType) || isExtraordinary) {
-      try {
-        const toolName = detailsObj.tool || detailsObj.toolName || (detailsObj.info ? detailsObj.info.split(': ')[1] : null);
-        if (toolName) {
-          const route = await findToolApprover(toolName, safeRequesterId);
-          approverId = route.approverId;
-          currentApproverRole = route.role;
-          status = route.status;
-        } else {
-          status = 'PENDENTE_SI';
-          currentApproverRole = 'SI_ANALYST';
-        }
-      } catch (error) {
-        status = 'PENDENTE_SI';
-        currentApproverRole = 'SI_ANALYST';
-      }
+      // REGRA DE NEGÓCIO: TODA SOLICITAÇÃO DE FERRAMENTA VAI PARA SI PRIMEIRO
+      status = 'PENDENTE_SI';
+      currentApproverRole = 'SI_ANALYST';
     }
     // ROTA B: GESTÃO DE PESSOAS / DEPUTY
     else if (['DEPUTY_DESIGNATION'].includes(safeType)) {
@@ -171,8 +159,64 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
+    // --- REGRA DE NEGÓCIO: NÃO PODE APROVAR A PRÓPRIA SOLICITAÇÃO ---
+    if (approverId && approverId === request.requesterId) {
+      return res.status(403).json({ error: 'Você não pode aprovar ou reprovar sua própria solicitação. Solicite a outro administrador.' });
+    }
+    // ---------------------------------------------------------------
+
     const safeStatus = String(status);
-    const newApiStatus = safeStatus === 'APROVAR' ? 'APROVADO' : 'REPROVADO'; // Normaliza
+    let newApiStatus = safeStatus === 'APROVAR' ? 'APROVADO' : 'REPROVADO'; // Normaliza
+
+    // --- WORKFLOW DE APROVAÇÃO (SI -> OWNER) ---
+    // Apenas se for aprovação (Reprovação mata o fluxo na hora)
+    if (newApiStatus === 'APROVADO') {
+      // Se estiver pendente de SI, verificar se precisa ir para o Owner
+      if (request.status === 'PENDENTE_SI') {
+        const currentDetails = JSON.parse(request.details || '{}');
+        const toolName = currentDetails.tool || currentDetails.toolName;
+
+        if (toolName) {
+          const tool = await prisma.tool.findFirst({
+            where: {
+              OR: [
+                { name: { contains: toolName, mode: 'insensitive' } },
+                { name: { equals: toolName } }
+              ]
+            },
+            include: { owner: true, subOwner: true }
+          });
+
+          if (tool) {
+            // Define quem deve aprovar (Owner ou Sub)
+            // Se o requerente for o Owner, tenta o Sub. Se for o Sub, tenta o Owner.
+            let nextApproverId = tool.ownerId;
+
+            if (request.requesterId === tool.ownerId && tool.subOwnerId) {
+              nextApproverId = tool.subOwnerId;
+            }
+
+            // Se achou um aprovador e NÃO É o próprio solicitante
+            if (nextApproverId && nextApproverId !== request.requesterId) {
+              // Mudar status para PENDENTE_OWNER em vez de APROVADO
+              await prisma.request.update({
+                where: { id },
+                data: {
+                  status: 'PENDENTE_OWNER',
+                  currentApproverRole: 'TOOL_OWNER',
+                  approverId: nextApproverId, // Define quem é OBRIGADO a aprovar
+                  updatedAt: new Date(),
+                  adminNote: adminNote ? adminNote + " (Aprovado por SI, aguardando Owner)" : "Aprovado por SI, aguardando Owner"
+                }
+              });
+
+              return res.json({ message: "Aprovado por SI. Encaminhado para o Owner da ferramenta." });
+            }
+          }
+        }
+      }
+    }
+    // -------------------------------------------
 
     // Atualiza JSON de detalhes
     const currentDetails = JSON.parse(request.details || '{}');

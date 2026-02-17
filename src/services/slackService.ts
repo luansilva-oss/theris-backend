@@ -18,43 +18,101 @@ const slackApp = new App({
 // ============================================================
 // 1. MENU PRINCIPAL (/theris) - ACESSO EXTRAORDINÁRIO APENAS
 // ============================================================
+// ============================================================
+// 1. MENU PRINCIPAL (/theris) - INTERFACE CENTRAL
+// ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
-  // ACK IMEDIATO: O Slack exige resposta em <3s
-  try {
-    await ack();
-  } catch (error) {
-    console.error("Erro ao enviar ack para o Slack:", error);
-    return; // Se falhar o ack, provavelmente já expirou ou erro de rede
-  }
+  await ack();
 
   try {
     await client.views.open({
       trigger_id: body.trigger_id,
       view: {
         type: 'modal',
-        callback_id: 'submit_extraordinary_access', // Callback único
         title: { type: 'plain_text', text: 'Theris OS' },
         blocks: [
-          { type: 'section', text: { type: 'mrkdwn', text: '👋 *Acesso Extraordinário*\nUtilize este canal para solicitar acessos que você não possui ou elevar seu nível de permissão temporariamente.' } },
-
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `👋 *Olá, <@${body.user_id}>!* \nBem-vindo ao *Theris OS*. O que você deseja fazer hoje?`
+            }
+          },
           { type: 'divider' },
+          {
+            type: 'section',
+            text: { type: 'mrkdwn', text: '*🔐 Acessos e Permissões*' },
+          },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: 'Solicitar Acesso Extraordinário' },
+                style: 'primary',
+                action_id: 'open_extraordinary'
+              }
+            ]
+          },
+          { type: 'divider' },
+          {
+            type: 'section',
+            text: { type: 'mrkdwn', text: '*⚙️ Gestão Administrativa*' },
+          },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: 'Gestão de Pessoas' },
+                action_id: 'open_people_management'
+              },
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: 'Gestão de Ferramentas' },
+                action_id: 'open_tool_management'
+              }
+            ]
+          }
+        ]
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erro Menu Principal:', error);
+  }
+});
 
+// --- ACTION HANDLERS ---
+
+// 1. Acesso Extraordinário (Abre o formulário antigo)
+slackApp.action('open_extraordinary', async ({ ack, body, client }) => {
+  await ack();
+  try {
+    // @ts-ignore
+    const triggerId = body.trigger_id;
+
+    await client.views.push({
+      trigger_id: triggerId,
+      view: {
+        type: 'modal',
+        callback_id: 'submit_extraordinary_access',
+        title: { type: 'plain_text', text: 'Acesso Extraordinário' },
+        blocks: [
+          { type: 'section', text: { type: 'mrkdwn', text: 'Utilize este formulário para solicitar acessos temporários ou elevação de permissão.' } },
+          { type: 'divider' },
           { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da Ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: "plain_text", text: "Ex: AWS, GitHub, Jira" } } },
-
-          { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Nível de Acesso Desejado' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: "plain_text", text: "Ex: Admin, Leitura, Write" } } },
-
-          // Campos de Duração (Opcional)
+          { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Nível de Acesso Desejado' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: "plain_text", text: "Ex: Admin, Leitura" } } },
           {
             type: 'input',
             block_id: 'blk_duration_val',
             optional: true,
-            label: { type: 'plain_text', text: 'Tempo de Duração (Opcional/Temporário)' },
+            label: { type: 'plain_text', text: 'Duração (Opcional)' },
             element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: 24' } }
           },
           {
             type: 'section',
             block_id: 'blk_duration_unit',
-            text: { type: 'mrkdwn', text: 'Unidade de Tempo' },
+            text: { type: 'mrkdwn', text: 'Unidade' },
             accessory: {
               type: 'static_select',
               action_id: 'unit_select',
@@ -66,17 +124,46 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
               ]
             }
           },
-
-          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp', placeholder: { type: "plain_text", text: "Explique por que precisa deste acesso..." } } }
+          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp', placeholder: { type: "plain_text", text: "Motivo da solicitação..." } } }
         ],
         submit: {
           type: 'plain_text',
-          text: 'Solicitar Acesso'
+          text: 'Enviar Solicitação'
         }
       }
     });
   } catch (error) {
-    console.error('❌ Erro Menu Principal:', error);
+    console.error('Erro ao abrir modal extraordinário:', error);
+  }
+});
+
+// 2. Gestão de Pessoas (Link para Web)
+slackApp.action('open_people_management', async ({ ack, body, client }) => {
+  await ack();
+  try {
+    // @ts-ignore
+    const userId = body.user.id;
+    await client.chat.postMessage({
+      channel: userId,
+      text: "👥 *Gestão de Pessoas*\n\nPara gerenciar colaboradores, departamentos e hierarquias, acesse a plataforma web:\n👉 https://theris-front.onrender.com (ou seu link interno)"
+    });
+  } catch (error) {
+    console.error(error);
+  }
+});
+
+// 3. Gestão de Ferramentas (Link para Web)
+slackApp.action('open_tool_management', async ({ ack, body, client }) => {
+  await ack();
+  try {
+    // @ts-ignore
+    const userId = body.user.id;
+    await client.chat.postMessage({
+      channel: userId,
+      text: "🛠 *Gestão de Ferramentas*\n\nPara visualizar o catálogo, editar owners ou configurar acessos, utilize a plataforma web:\n👉 https://theris-front.onrender.com"
+    });
+  } catch (error) {
+    console.error(error);
   }
 });
 
@@ -103,6 +190,7 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
     const slackId = body.user.id;
     let requesterId = '';
     let slackEmail = '';
+    let debugMsg = '';
 
     // Tenta achar o usuário no banco pelo email do Slack
     try {
@@ -113,7 +201,35 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
         slackEmail = normalizeEmail(rawEmail); // NORMALIZA O EMAIL DO SLACK
         console.log(`🔍 Slack Info: ID=${slackId}, Raw=${rawEmail}, Normalized=${slackEmail}`);
 
-        const userDb = await prisma.user.findUnique({ where: { email: slackEmail } });
+        if (slackEmail) {
+          console.log(`🔍 Hex: ${Buffer.from(slackEmail).toString('hex')}`);
+        }
+
+        // --- EXTREME DEBUG START ---
+        if (slackEmail && slackEmail.includes('luan.silva')) {
+          try {
+            // 1. Get DB Host (Masked)
+            const dbUrl = (process.env.DATABASE_URL || '').split('@')[1] || 'UNKNOWN_HOST';
+            debugMsg += `\n\n*DEBUG INFO:*\nDB Host: \`${dbUrl}\``;
+
+            // 2. Check by ID
+            const manualId = 'fa15b9e0-e9e0-4a1a-b705-947bfd633295';
+            const byId = await prisma.user.findFirst({ where: { id: manualId } });
+
+            if (byId) {
+              debugMsg += `\nUser Found by ID: YES`;
+              debugMsg += `\nEmail in DB: \`${byId.email}\``;
+            } else {
+              debugMsg += `\nUser Found by ID: NO`;
+              const allCount = await prisma.user.count();
+              debugMsg += `\nTotal Users in DB: ${allCount}`;
+            }
+          } catch (err: any) { debugMsg += `\nDebug Error: ${err.message}`; }
+        }
+        // --- EXTREME DEBUG END ---
+
+        // Usando findFirst para evitar erros de unique constraint se houver sujeira no banco
+        const userDb = await prisma.user.findFirst({ where: { email: slackEmail } });
         if (userDb) {
           requesterId = userDb.id;
         } else {
@@ -128,9 +244,13 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
 
     if (!requesterId) {
       // Se não achou, NÃO usa fallback. Retorna erro para o usuário corrigir seu cadastro.
+      let errorMsg = `❌ *Erro de Identificação*: Não encontrei seu e-mail (${slackEmail || 'desconhecido'}) no sistema Theris.\n\n*Dica:* O sistema normaliza emails para o padrão \`nome.sobrenome@grupo-3c.com\`. Verifique se você já realizou o primeiro login na plataforma Web.`;
+
+      if (debugMsg) errorMsg += debugMsg;
+
       await client.chat.postMessage({
         channel: slackId,
-        text: `❌ *Erro de Identificação*: Não encontrei seu e-mail (${slackEmail || 'desconhecido'}) no sistema Theris.\n\n*Dica:* O sistema normaliza emails para o padrão \`nome.sobrenome@grupo-3c.com\`. Verifique se você já realizou o primeiro login na plataforma Web.`
+        text: errorMsg
       });
       return;
     }
