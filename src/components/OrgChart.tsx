@@ -15,8 +15,9 @@ import {
     MiniMap,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import '../OrgChart.css'; // Adding for potential custom global styles
 import dagre from 'dagre';
-import { ChevronRight, ChevronDown, LayoutGrid, LayoutList } from 'lucide-react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 
 import PersonNode from './PersonNode';
 
@@ -71,7 +72,7 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
 export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChartProps) {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-    const [direction, setDirection] = React.useState<'TB' | 'LR'>('TB');
+    const [direction] = React.useState<'TB' | 'LR'>('TB');
     const [isLegendCollapsed, setIsLegendCollapsed] = React.useState(false);
 
     // Transformar usuários em nós e arestas para o React Flow
@@ -170,38 +171,19 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
                 <Background gap={28} color="#2e1065" variant={BackgroundVariant.Dots} style={{ opacity: 0.4 }} />
 
                 <Panel position="bottom-left" style={{ margin: 15 }}>
-                    <Controls style={{
-                        background: '#1e1b4b',
-                        border: '1px solid #4338ca',
-                        padding: 4,
-                        borderRadius: 10,
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)'
-                    }} />
-                </Panel>
-
-                <Panel position="top-left" style={{ margin: 15 }}>
-                    <button
-                        onClick={() => setDirection(direction === 'TB' ? 'LR' : 'TB')}
+                    <Controls
+                        showInteractive={false}
                         style={{
-                            background: '#2e1065',
+                            background: '#1e1b4b',
                             border: '1px solid #7c3aed',
-                            color: 'white',
-                            padding: '10px 14px',
-                            borderRadius: '10px',
-                            cursor: 'pointer',
+                            padding: 4,
+                            borderRadius: 10,
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
                             display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
-                            transition: 'all 0.2s'
+                            flexDirection: 'column',
+                            gap: 4
                         }}
-                        className="hover:scale-105 active:scale-95"
-                    >
-                        {direction === 'TB' ? <LayoutList size={16} /> : <LayoutGrid size={16} />}
-                        Layout {direction === 'TB' ? 'Vertical' : 'Horizontal'}
-                    </button>
+                    />
                 </Panel>
 
                 <Panel position="top-right" style={{
