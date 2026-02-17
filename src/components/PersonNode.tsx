@@ -16,40 +16,47 @@ export interface PersonNodeData {
 const PersonNode = ({ data }: NodeProps<any>) => {
     const { name, email, jobTitle, department, isRoot, level, onEdit } = data as PersonNodeData;
 
-    // Esquema de cores dark premium baseado na hierarquia
+    // Esquema de cores dark premium baseado no departamento
     const getColors = () => {
+        const dept = department?.toLowerCase() || '';
+
         if (isRoot) return {
-            bg: 'rgba(251, 191, 36, 0.1)',
+            bg: 'rgba(251, 191, 36, 0.15)',
             border: '#fbbf24',
             accent: '#fbbf24',
             text: '#fbbf24',
-            gradient: 'linear-gradient(135deg, #18181b 0%, #2e1065 100%)'
+            gradient: 'linear-gradient(135deg, #18181b 0%, #422006 100%)'
         };
 
-        // Cores por departamento para facilitar identificação visual
-        if (department?.toLowerCase().includes('comercial')) return {
-            bg: 'rgba(16, 185, 129, 0.1)',
-            border: '#10b981',
-            accent: '#10b981',
-            text: '#34d399',
+        if (dept.includes('comercial') || dept.includes('vendas')) return {
+            bg: 'rgba(16, 185, 129, 0.15)', border: '#10b981', accent: '#10b981', text: '#34d399',
             gradient: 'linear-gradient(135deg, #18181b 0%, #064e3b 100%)'
         };
 
-        if (department?.toLowerCase().includes('produto') || department?.toLowerCase().includes('tecnologia')) return {
-            bg: 'rgba(59, 130, 246, 0.1)',
-            border: '#3b82f6',
-            accent: '#3b82f6',
-            text: '#60a5fa',
+        if (dept.includes('produto') || dept.includes('tecnologia') || dept.includes('it')) return {
+            bg: 'rgba(59, 130, 246, 0.15)', border: '#3b82f6', accent: '#3b82f6', text: '#60a5fa',
             gradient: 'linear-gradient(135deg, #18181b 0%, #172554 100%)'
         };
 
-        // Padrão (Roxo Theris)
-        return {
-            bg: 'rgba(167, 139, 250, 0.1)',
-            border: '#7c3aed',
-            accent: '#a78bfa',
-            text: '#a78bfa',
+        if (dept.includes('pessoas') || dept.includes('rh') || dept.includes('performance')) return {
+            bg: 'rgba(244, 114, 182, 0.15)', border: '#f472b6', accent: '#f472b6', text: '#fb923c',
+            gradient: 'linear-gradient(135deg, #18181b 0%, #831843 100%)'
+        };
+
+        if (dept.includes('financeiro') || dept.includes('contabil')) return {
+            bg: 'rgba(139, 92, 246, 0.15)', border: '#8b5cf6', accent: '#8b5cf6', text: '#a78bfa',
             gradient: 'linear-gradient(135deg, #18181b 0%, #2e1065 100%)'
+        };
+
+        if (dept.includes('marketing') || dept.includes('growth')) return {
+            bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', accent: '#ef4444', text: '#fca5a5',
+            gradient: 'linear-gradient(135deg, #18181b 0%, #7f1d1d 100%)'
+        };
+
+        // Padrão: Lilás Escuro/Dark Lilac
+        return {
+            bg: 'rgba(167, 139, 250, 0.1)', border: '#4c1d95', accent: '#7c3aed', text: '#a78bfa',
+            gradient: 'linear-gradient(135deg, #0f172a 0%, #2e1065 100%)'
         };
     };
 
