@@ -70,35 +70,19 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     let currentApproverRole = 'MANAGER';
     let status = 'PENDENTE_GESTOR';
 
-    // ROTA A: FERRAMENTAS / ACESSOS
+    // ROTA A: FERRAMENTAS / ACESSOS / EXTRAORDINÁRIO
     if (['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'].includes(safeType) || isExtraordinary) {
-      try {
-        const toolName = detailsObj.tool || detailsObj.toolName || (detailsObj.info ? detailsObj.info.split(': ')[1] : null);
-        if (toolName) {
-          const route = await findToolApprover(toolName, safeRequesterId);
-          approverId = route.approverId;
-          currentApproverRole = route.role;
-          status = route.status;
-        } else {
-          status = 'PENDENTE_SI';
-          currentApproverRole = 'SI_ANALYST';
-        }
-      } catch (error) {
-        status = 'PENDENTE_SI';
-        currentApproverRole = 'SI_ANALYST';
-      }
+      status = 'PENDENTE_SI';
+      currentApproverRole = 'SI_ANALYST';
+      approverId = null;
     }
     // ROTA B: GESTÃO DE PESSOAS / DEPUTY
-    else if (['DEPUTY_DESIGNATION'].includes(safeType)) {
+    else if (['DEPUTY_DESIGNATION', 'CHANGE_ROLE', 'HIRING', 'FIRING', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'].includes(safeType)) {
       status = 'PENDENTE_SI';
       currentApproverRole = 'SI_ANALYST';
+      approverId = null;
     }
-    // ROTA C: RH (Admissão, Promoção, Demissão)
-    else if (['ADMISSAO', 'DEMISSAO', 'PROMOCAO', 'MUDANCA_AREA', 'HIRING', 'FIRING', 'CHANGE_ROLE'].includes(safeType)) {
-      status = 'PENDENTE_SI';
-      currentApproverRole = 'SI_ANALYST';
-    }
-    // ROTA D: GENÉRICA
+    // ROTA C: GENÉRICA
     else {
       const requester = await prisma.user.findUnique({
         where: { id: safeRequesterId },
@@ -106,9 +90,11 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       });
       if (requester?.manager) {
         approverId = requester.manager.id;
+        status = 'PENDENTE_GESTOR';
+        currentApproverRole = 'MANAGER';
       } else {
-        status = 'PENDENTE_RH';
-        currentApproverRole = 'HR_ANALYST';
+        status = 'PENDENTE_SI';
+        currentApproverRole = 'SI_ANALYST';
       }
     }
 
@@ -172,40 +158,97 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
     const safeStatus = String(status);
-    const newApiStatus = safeStatus === 'APROVAR' ? 'APROVADO' : 'REPROVADO'; // Normaliza
+    const action = safeStatus === 'APROVAR' ? 'APROVADO' : 'REPROVADO';
 
-    // Atualiza JSON de detalhes
-    const currentDetails = JSON.parse(request.details || '{}');
-    const updatedDetails = {
-      ...currentDetails,
-      adminNote: adminNote || 'Sem observações.'
-    };
-
-    // Dados a atualizar no banco (Auditoria)
-    const updateData: any = {
-      status: newApiStatus,
-      updatedAt: new Date(),
-      details: JSON.stringify(updatedDetails),
-      adminNote: adminNote
-    };
-
-    // Salva QUEM clicou no botão (Auditável)
-    if (approverId) {
-      updateData.approverId = approverId;
+    // REGRA DE NEGÓCIO: BLOQUEAR AUTO-APROVAÇÃO
+    if (approverId === request.requesterId) {
+      return res.status(403).json({ error: 'Você não pode aprovar ou reprovar sua própria solicitação.' });
     }
+
+    // Se for reprovado, encerra imediatamente
+    if (action === 'REPROVADO') {
+      const updated = await prisma.request.update({
+        where: { id },
+        data: {
+          status: 'REPROVADO',
+          adminNote: adminNote || 'Solicitação reprovada.',
+          approverId: approverId,
+          updatedAt: new Date()
+        }
+      });
+      if (request.requester.email) {
+        sendSlackNotification(request.requester.email, 'REPROVADO', adminNote || 'Reprovado pelo administrador.');
+      }
+      return res.json(updated);
+    }
+
+    // LÓGICA DE TRANSIÇÃO (SI -> OWNER)
+    if (request.status === 'PENDENTE_SI') {
+      // 1. Tentar encontrar a ferramenta e o owner
+      const currentDetails = JSON.parse(request.details || '{}');
+      const toolName = currentDetails.tool || currentDetails.toolName || (currentDetails.info ? currentDetails.info.split(': ')[1] : null);
+
+      if (toolName) {
+        const tool = await prisma.tool.findFirst({
+          where: {
+            OR: [
+              { name: { contains: toolName, mode: 'insensitive' } },
+              { acronym: { equals: toolName, mode: 'insensitive' } }
+            ]
+          },
+          include: { owner: true, subOwner: true }
+        });
+
+        // Se encontrou a ferramenta e o owner não é o requerente
+        if (tool) {
+          let nextApproverId = null;
+          let nextRole = null;
+
+          if (tool.ownerId && tool.ownerId !== request.requesterId) {
+            nextApproverId = tool.ownerId;
+            nextRole = 'TOOL_OWNER';
+          } else if (tool.subOwnerId && tool.subOwnerId !== request.requesterId) {
+            nextApproverId = tool.subOwnerId;
+            nextRole = 'TOOL_SUB_OWNER';
+          }
+
+          if (nextApproverId) {
+            const updated = await prisma.request.update({
+              where: { id },
+              data: {
+                status: 'PENDENTE_OWNER',
+                currentApproverRole: nextRole,
+                approverId: nextApproverId,
+                adminNote: `Aprovado por SI. Aguardando aprovação do Owner (${tool.owner?.name || tool.subOwner?.name}).`,
+                updatedAt: new Date()
+              }
+            });
+            return res.json(updated);
+          }
+        }
+      }
+    }
+
+    // APROVAÇÃO FINAL
+    const updatedDetails = {
+      ...JSON.parse(request.details || '{}'),
+      adminNote: adminNote || 'Aprovação final concedida.'
+    };
 
     const updatedRequest = await prisma.request.update({
       where: { id },
-      data: updateData
+      data: {
+        status: 'APROVADO',
+        adminNote: adminNote || 'Aprovado.',
+        approverId: approverId,
+        details: JSON.stringify(updatedDetails),
+        updatedAt: new Date()
+      }
     });
 
     // Notificação Slack
     if (request.requester.email) {
-      sendSlackNotification(
-        request.requester.email,
-        newApiStatus,
-        adminNote || 'Processado pelo administrador.'
-      );
+      sendSlackNotification(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada e executada.');
     }
 
     // =========================================================
