@@ -7,9 +7,10 @@ interface User {
     id: string;
     name: string;
     email: string;
-    jobTitle: string;
-    department: string;
+    jobTitle?: string;
+    department?: string;
     systemProfile: string;
+    managerId?: string | null;
 }
 
 interface Department {
@@ -28,10 +29,11 @@ interface Props {
     onClose: () => void;
     user: User;
     onUpdate: () => void;
-    currentUser: { id: string, systemProfile: string }; // Para validação e headers
+    currentUser: { id: string, systemProfile: string };
+    allUsers: User[]; // Adicionado para selecionar gestor
 }
 
-export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate, currentUser }) => {
+export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers }) => {
     if (!isOpen) return null;
 
     const [name, setName] = useState(user.name);
@@ -39,6 +41,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
     const [jobTitle, setJobTitle] = useState(user.jobTitle);
     const [department, setDepartment] = useState(user.department);
     const [systemProfile, setSystemProfile] = useState(user.systemProfile || 'VIEWER');
+    const [managerId, setManagerId] = useState<string | null>(user.managerId || null);
     const [isSaving, setIsSaving] = useState(false);
 
     const [availableDepts, setAvailableDepts] = useState<Department[]>([]);
@@ -50,6 +53,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
         setJobTitle(user.jobTitle);
         setDepartment(user.department);
         setSystemProfile(user.systemProfile || 'VIEWER');
+        setManagerId(user.managerId || null);
         loadStructure();
     }, [user]);
 
@@ -73,7 +77,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                     'Content-Type': 'application/json',
                     'x-requester-id': currentUser.id
                 },
-                body: JSON.stringify({ name, email, jobTitle, department, systemProfile })
+                body: JSON.stringify({ name, email, jobTitle, department, systemProfile, managerId })
             });
 
             if (res.ok) {
@@ -170,6 +174,27 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                         {profileOptions.map(opt => (
                             <option key={opt.value} value={opt.value} style={{ background: '#18181b' }}>{opt.label}</option>
                         ))}
+                    </select>
+                </div>
+
+                <div className="form-group">
+                    <label>Gestor Imediato</label>
+                    <select
+                        className="form-input"
+                        value={managerId || ''}
+                        onChange={(e) => setManagerId(e.target.value || null)}
+                        style={{ width: '100%', fontSize: 13 }}
+                    >
+                        <option value="">Sem Gestor (Root)</option>
+                        {allUsers
+                            .filter(u => u.id !== user.id) // Não pode ser gestor de si mesmo
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map(u => (
+                                <option key={u.id} value={u.id}>
+                                    {u.name} ({u.jobTitle || 'Sem Cargo'})
+                                </option>
+                            ))
+                        }
                     </select>
                 </div>
 

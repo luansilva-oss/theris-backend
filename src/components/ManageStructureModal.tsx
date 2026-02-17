@@ -18,8 +18,8 @@ interface User {
     id: string;
     name: string;
     email: string;
-    department: string;
-    jobTitle: string;
+    department?: string;
+    jobTitle?: string;
 }
 
 interface Props {
