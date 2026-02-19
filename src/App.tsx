@@ -611,6 +611,7 @@ export default function App() {
                     setSelectedUser(user);
                     setIsEditUserModalOpen(true);
                   }}
+                  onDeleteUser={['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? handleDeleteUser : undefined}
                 />
               </div>
             </div>
