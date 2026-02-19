@@ -16,8 +16,6 @@ const slackApp = new App({
 });
 
 // ============================================================
-// 1. MENU PRINCIPAL (/theris) - RESTAURADO COM CLICKUP
-// ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
   // ACK IMEDIATO: O Slack exige resposta em <3s
   await ack();
@@ -72,6 +70,77 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
     });
   } catch (error) {
     console.error('❌ Erro Menu Principal:', error);
+  }
+});
+
+// ============================================================
+// 1.1 COMANDO /infra (NOVO)
+// ============================================================
+slackApp.command('/infra', async ({ ack, body, client }) => {
+  await ack();
+  try {
+    await client.views.open({
+      trigger_id: body.trigger_id,
+      view: {
+        type: 'modal',
+        callback_id: 'submit_infra',
+        title: { type: 'plain_text', text: 'Suporte de Infra' },
+        submit: { type: 'plain_text', text: 'Enviar Pedido' },
+        close: { type: 'plain_text', text: 'Cancelar' },
+        blocks: [
+          {
+            type: 'section',
+            text: { type: 'mrkdwn', text: '🚀 *Solicitação de Hardware ou Suporte de TI*\nDescreva o que você precisa abaixo.' }
+          },
+          { type: 'divider' },
+          {
+            type: 'input',
+            block_id: 'blk_infra_type',
+            label: { type: 'plain_text', text: 'Tipo de Solicitação' },
+            element: {
+              type: 'static_select',
+              action_id: 'inp',
+              placeholder: { type: 'plain_text', text: 'Selecione...' },
+              options: [
+                { text: { type: 'plain_text', text: '💻 Hardware (Monitor, Teclado, Mouse, etc)' }, value: 'HARDWARE' },
+                { text: { type: 'plain_text', text: '🛠️ Problema no PC (Lento, Travando, Bug)' }, value: 'SOFTWARE_PROBLEM' },
+                { text: { type: 'plain_text', text: '🌐 Internet / Rede / VPN' }, value: 'NETWORK' },
+                { text: { type: 'plain_text', text: '❓ Outros Suportes' }, value: 'OTHER' }
+              ]
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'blk_infra_desc',
+            label: { type: 'plain_text', text: 'Descrição Detalhada' },
+            element: {
+              type: 'plain_text_input',
+              multiline: true,
+              action_id: 'inp',
+              placeholder: { type: 'plain_text', text: 'Ex: Meu mouse parou de funcionar / Preciso de um segundo monitor.' }
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'blk_infra_urgency',
+            label: { type: 'plain_text', text: 'Urgência' },
+            element: {
+              type: 'static_select',
+              action_id: 'inp',
+              placeholder: { type: 'plain_text', text: 'Selecione...' },
+              options: [
+                { text: { type: 'plain_text', text: '🟢 Baixa (Não impede o trabalho)' }, value: 'LOW' },
+                { text: { type: 'plain_text', text: '🟡 Média (Incomoda mas consigo trabalhar)' }, value: 'MEDIUM' },
+                { text: { type: 'plain_text', text: '🟠 Alta (Prejudica muito a produtividade)' }, value: 'HIGH' },
+                { text: { type: 'plain_text', text: '🔴 Crítica (Estou parado/Não consigo trabalhar)' }, value: 'CRITICAL' }
+              ]
+            }
+          }
+        ]
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erro /infra:', error);
   }
 });
 
@@ -365,6 +434,23 @@ slackApp.view('submit_deputy', async ({ ack, body, view, client }) => {
     dept: v.blk_dept.inp.value
   };
   await saveRequest(body, client, 'DEPUTY_DESIGNATION', details, v.blk_reason.inp.value!, `✅ Indicação de *${name}* como seu Substituto (Deputy) enviada para aprovação do time de S.I.`);
+});
+
+slackApp.view('submit_infra', async ({ ack, body, view, client }) => {
+  await ack();
+  const v = view.state.values;
+  const type = v.blk_infra_type.inp.selected_option?.value;
+  const desc = v.blk_infra_desc.inp.value;
+  const urgency = v.blk_infra_urgency.inp.selected_option?.value;
+
+  const details = {
+    info: `Suporte de Infra: ${type}`,
+    requestType: type,
+    description: desc,
+    urgency: urgency
+  };
+
+  await saveRequest(body, client, 'INFRA_SUPPORT', details, `Urgência: ${urgency}\n${desc}`, `✅ Sua solicitação de infraestrutura foi enviada com sucesso ao time de suporte.`);
 });
 
 // ============================================================

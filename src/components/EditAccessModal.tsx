@@ -7,9 +7,10 @@ interface EditAccessModalProps {
     access: any;
     toolId: string;
     onUpdate: () => void;
+    showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
-export const EditAccessModal = ({ isOpen, onClose, access, toolId, onUpdate }: EditAccessModalProps) => {
+export const EditAccessModal = ({ isOpen, onClose, access, toolId, onUpdate, showToast }: EditAccessModalProps) => {
     const [duration, setDuration] = useState('');
     const [unit, setUnit] = useState('horas');
     const [isExtraordinary, setIsExtraordinary] = useState(true);
@@ -39,14 +40,15 @@ export const EditAccessModal = ({ isOpen, onClose, access, toolId, onUpdate }: E
             });
 
             if (res.ok) {
+                showToast("Acesso atualizado com sucesso!", "success");
                 onUpdate();
                 onClose();
             } else {
-                alert("Erro ao atualizar acesso.");
+                showToast("Erro ao atualizar acesso.", "error");
             }
         } catch (e) {
             console.error(e);
-            alert("Erro de conexão.");
+            showToast("Erro de conexão.", "error");
         }
         setLoading(false);
     };

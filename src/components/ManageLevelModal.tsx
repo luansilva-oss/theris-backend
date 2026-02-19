@@ -15,9 +15,11 @@ interface Props {
     tool: any;
     levelName: string;
     onUpdate: () => void;
+    showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
+    customConfirm: (config: { title: string; message: string; onConfirm: () => void; isDestructive?: boolean; confirmLabel?: string }) => void;
 }
 
-export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }: Props) => {
+export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, showToast, customConfirm }: Props) => {
     if (!isOpen) return null;
 
     const [name, setName] = useState(levelName);
@@ -80,14 +82,15 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
             });
 
             if (res.ok) {
+                showToast("Informações do nível salvas!", "success");
                 onUpdate();
                 onClose(); // Always close on success
             } else {
                 const data = await res.json();
-                alert(data.error || "Erro ao salvar.");
+                showToast(data.error || "Erro ao salvar.", "error");
             }
         } catch (e) {
-            alert("Erro de conexão.");
+            showToast("Erro de conexão.", "error");
         }
         setIsSaving(false);
     };
@@ -95,26 +98,44 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
 
     const addUser = async (userId: string) => {
         try {
-            await fetch(`${API_URL}/api/tools/${tool.id}/access`, {
+            const res = await fetch(`${API_URL}/api/tools/${tool.id}/access`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, level: levelName }) // Use current levelName
+                body: JSON.stringify({ userId, level: levelName })
             });
-            onUpdate();
-            setSearchTerm('');
+
+            if (res.ok) {
+                onUpdate();
+                setSearchTerm('');
+                showToast("Colaborador sincronizado!", "success");
+            } else {
+                showToast("Erro ao adicionar usuário.", "error");
+            }
         } catch (e) {
-            alert("Erro ao adicionar usuário.");
+            showToast("Erro ao adicionar usuário.", "error");
         }
     };
 
     const removeUser = async (userId: string) => {
-        if (!confirm("Remover usuário deste nível?")) return;
-        try {
-            await fetch(`${API_URL}/api/tools/${tool.id}/access/${userId}`, { method: 'DELETE' });
-            onUpdate();
-        } catch (e) {
-            alert("Erro ao remover usuário.");
-        }
+        customConfirm({
+            title: "Remover Acesso?",
+            message: "Tem certeza que deseja remover este usuário deste nível de acesso?",
+            isDestructive: true,
+            confirmLabel: "Remover",
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/tools/${tool.id}/access/${userId}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        onUpdate();
+                        showToast("Acesso removido.", "info");
+                    } else {
+                        showToast("Erro ao remover usuário.", "error");
+                    }
+                } catch (e) {
+                    showToast("Erro ao remover usuário.", "error");
+                }
+            }
+        });
     };
 
     const filteredUsers = allUsers.filter(u =>
@@ -139,14 +160,15 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }:
             });
 
             if (res.ok) {
+                showToast("Nível de acesso removido.", "success");
                 onUpdate();
                 onClose();
             } else {
                 const data = await res.json();
-                alert(data.error || "Erro ao excluir nível.");
+                showToast(data.error || "Erro ao excluir nível.", "error");
             }
         } catch (e) {
-            alert("Erro ao excluir nível.");
+            showToast("Erro ao excluir nível.", "error");
         }
     };
 

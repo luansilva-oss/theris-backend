@@ -31,9 +31,10 @@ interface Props {
     onUpdate: () => void;
     currentUser: { id: string, systemProfile: string };
     allUsers: User[]; // Adicionado para selecionar gestor
+    showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
-export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers }) => {
+export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers, showToast }) => {
     if (!isOpen) return null;
 
     const [name, setName] = useState(user.name);
@@ -81,15 +82,16 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
             });
 
             if (res.ok) {
+                showToast("Dados do colaborador atualizados!", "success");
                 onUpdate();
                 onClose();
             } else {
                 const err = await res.json();
-                alert(err.error || "Erro ao salvar alterações.");
+                showToast(err.error || "Erro ao salvar alterações.", "error");
             }
         } catch (error) {
             console.error(error);
-            alert("Erro de rede ao salvar.");
+            showToast("Erro de rede ao salvar.", "error");
         }
         setIsSaving(false);
     };

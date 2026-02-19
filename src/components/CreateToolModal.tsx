@@ -12,9 +12,10 @@ interface Props {
     isOpen: boolean;
     onClose: () => void;
     onCreated: () => void;
+    showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
-export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated }) => {
+export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated, showToast }) => {
     if (!isOpen) return null;
 
     const [name, setName] = useState('');
@@ -43,7 +44,7 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
     }, []);
 
     const handleCreate = async () => {
-        if (!name.trim()) return alert("Nome é obrigatório.");
+        if (!name.trim()) return showToast("Nome é obrigatório.", "warning");
         setIsSaving(true);
         try {
             const res = await fetch(`${API_URL}/api/tools`, {
@@ -60,12 +61,13 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
                 })
             });
             if (res.ok) {
+                showToast("Ferramenta criada com sucesso!", "success");
                 onCreated();
                 onClose();
             } else {
-                alert("Erro ao criar.");
+                showToast("Erro ao criar ferramenta.", "error");
             }
-        } catch (e) { alert("Erro de rede."); }
+        } catch (e) { showToast("Erro de rede.", "error"); }
         setIsSaving(false);
     };
 
@@ -93,7 +95,8 @@ export const CreateToolModal: React.FC<Props> = ({ isOpen, onClose, onCreated })
             setGroupId(group.id);
             setNewGroupMode(false);
             setNewGroupName('');
-        } catch (e) { alert("Erro ao criar grupo."); }
+            showToast("Grupo criado com sucesso!", "success");
+        } catch (e) { showToast("Erro ao criar grupo.", "error"); }
     };
 
     return (

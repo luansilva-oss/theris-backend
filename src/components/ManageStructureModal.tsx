@@ -28,9 +28,11 @@ interface Props {
     onUpdate: () => void;
     initialDepartment: string | null;
     allUsers: User[];
+    showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
+    customConfirm: (config: { title: string; message: string; onConfirm: () => void; isDestructive?: boolean; confirmLabel?: string }) => void;
 }
 
-export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdate, initialDepartment, allUsers }) => {
+export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdate, initialDepartment, allUsers, showToast, customConfirm }) => {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [roles, setRoles] = useState<Role[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -98,47 +100,67 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
     const handleCreateDept = async () => {
         if (!newDeptName) return;
         try {
-            await fetch(`${API_URL}/api/structure/departments`, {
+            const res = await fetch(`${API_URL}/api/structure/departments`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newDeptName })
             });
-            setNewDeptName('');
-            loadData();
-            onUpdate();
-        } catch (e) { alert("Erro ao criar departamento."); }
+            if (res.ok) {
+                setNewDeptName('');
+                loadData();
+                onUpdate();
+                showToast("Departamento criado!", "success");
+            } else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao criar departamento.", "error");
+            }
+        } catch (e) { showToast("Erro ao criar departamento.", "error"); }
     };
 
     const handleUpdateDeptName = async () => {
         if (!currentDept || !editedDeptName) return;
         try {
-            await fetch(`${API_URL}/api/structure/departments/${currentDept.id}`, {
+            const res = await fetch(`${API_URL}/api/structure/departments/${currentDept.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: editedDeptName })
             });
-            setIsEditingDeptName(false);
-            loadData();
-            onUpdate();
-        } catch (e) { alert("Erro ao atualizar nome."); }
+            if (res.ok) {
+                setIsEditingDeptName(false);
+                loadData();
+                onUpdate();
+                showToast("Nome atualizado!", "success");
+            } else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao atualizar.", "error");
+            }
+        } catch (e) { showToast("Erro ao atualizar nome.", "error"); }
     };
 
     const handleDeleteDept = async (id: string) => {
-        if (!confirm("Excluir este departamento?")) return;
-        try {
-            const res = await fetch(`${API_URL}/api/structure/departments/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                if (viewMode === 'DEPARTMENT') {
-                    setViewMode('GLOBAL');
-                    setCurrentDept(null);
-                }
-                loadData();
-                onUpdate();
-            } else {
-                const err = await res.json();
-                alert(err.error || "Erro ao excluir.");
+        customConfirm({
+            title: "Excluir Departamento?",
+            message: "Excluir este departamento? Os cargos vinculados também serão removidos.",
+            isDestructive: true,
+            confirmLabel: "Sim, Excluir",
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/structure/departments/${id}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        if (viewMode === 'DEPARTMENT') {
+                            setViewMode('GLOBAL');
+                            setCurrentDept(null);
+                        }
+                        loadData();
+                        onUpdate();
+                        showToast("Departamento excluído.", "success");
+                    } else {
+                        const err = await res.json();
+                        showToast(err.error || "Erro ao excluir.", "error");
+                    }
+                } catch (e) { showToast("Erro ao excluir.", "error"); }
             }
-        } catch (e) { alert("Erro ao excluir."); }
+        });
     };
 
     // --- ROLES ---
@@ -146,38 +168,63 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
     const handleCreateRole = async () => {
         if (!newRoleName || !currentDept) return;
         try {
-            await fetch(`${API_URL}/api/structure/roles`, {
+            const res = await fetch(`${API_URL}/api/structure/roles`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newRoleName, departmentId: currentDept.id })
             });
-            setNewRoleName('');
-            loadData();
-            onUpdate();
-        } catch (e) { alert("Erro ao criar cargo."); }
+            if (res.ok) {
+                setNewRoleName('');
+                loadData();
+                onUpdate();
+                showToast("Cargo criado!", "success");
+            } else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao criar cargo.", "error");
+            }
+        } catch (e) { showToast("Erro ao criar cargo.", "error"); }
     };
 
     const handleUpdateRole = async (id: string) => {
         if (!currentDept) return;
         try {
-            await fetch(`${API_URL}/api/structure/roles/${id}`, {
+            const res = await fetch(`${API_URL}/api/structure/roles/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: editingRoleName, departmentId: currentDept.id })
             });
-            setEditingRoleId(null);
-            loadData();
-            onUpdate();
-        } catch (e) { alert("Erro ao atualizar cargo."); }
+            if (res.ok) {
+                setEditingRoleId(null);
+                loadData();
+                onUpdate();
+                showToast("Cargo atualizado!", "success");
+            } else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao atualizar cargo.", "error");
+            }
+        } catch (e) { showToast("Erro ao atualizar cargo.", "error"); }
     };
 
     const handleDeleteRole = async (id: string) => {
-        if (!confirm("Excluir este cargo?")) return;
-        try {
-            await fetch(`${API_URL}/api/structure/roles/${id}`, { method: 'DELETE' });
-            loadData();
-            onUpdate();
-        } catch (e) { alert("Erro ao excluir."); }
+        customConfirm({
+            title: "Excluir Cargo?",
+            message: "Tem certeza que deseja excluir este cargo?",
+            isDestructive: true,
+            confirmLabel: "Excluir",
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/structure/roles/${id}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        loadData();
+                        onUpdate();
+                        showToast("Cargo excluído!", "success");
+                    } else {
+                        const data = await res.json();
+                        showToast(data.error || "Erro ao excluir.", "error");
+                    }
+                } catch (e) { showToast("Erro ao excluir.", "error"); }
+            }
+        });
     };
 
     // --- USER ASSIGNMENT ---
@@ -188,7 +235,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
             const user = allUsers.find(u => u.id === userId);
             if (!user) return;
 
-            await fetch(`${API_URL}/api/users/${userId}`, {
+            const res = await fetch(`${API_URL}/api/users/${userId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -200,27 +247,46 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                 })
             });
 
-            setIsUserPickerOpen(false);
-            onUpdate();
-        } catch (e) { alert("Erro ao adicionar usuário."); }
+            if (res.ok) {
+                setIsUserPickerOpen(false);
+                onUpdate();
+                showToast("Colaborador adicionado!", "success");
+            } else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao adicionar usuário.", "error");
+            }
+        } catch (e) { showToast("Erro ao adicionar usuário.", "error"); }
     };
 
     const handleRemoveUserFromRole = async (user: User) => {
-        if (!confirm(`Remover ${user.name} deste cargo?`)) return;
-        try {
-            await fetch(`${API_URL}/api/users/${user.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: user.name,
-                    email: user.email,
-                    systemProfile: (user as any).systemProfile || 'VIEWER',
-                    jobTitle: '',
-                    department: user.department
-                })
-            });
-            onUpdate();
-        } catch (e) { alert("Erro ao remover usuário."); }
+        customConfirm({
+            title: "Remover do Cargo?",
+            message: `Remover ${user.name} deste cargo?`,
+            confirmLabel: "Remover",
+            isDestructive: true,
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/users/${user.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: user.name,
+                            email: user.email,
+                            systemProfile: (user as any).systemProfile || 'VIEWER',
+                            jobTitle: '',
+                            department: user.department
+                        })
+                    });
+                    if (res.ok) {
+                        onUpdate();
+                        showToast("Colaborador removido do cargo.", "info");
+                    } else {
+                        const data = await res.json();
+                        showToast(data.error || "Erro ao remover usuário.", "error");
+                    }
+                } catch (e) { showToast("Erro ao remover usuário.", "error"); }
+            }
+        });
     };
 
     const pickerUsers = allUsers.filter(u =>

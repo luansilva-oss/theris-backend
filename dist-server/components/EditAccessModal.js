@@ -4,7 +4,7 @@ exports.EditAccessModal = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
-const EditAccessModal = ({ isOpen, onClose, access, toolId, onUpdate }) => {
+const EditAccessModal = ({ isOpen, onClose, access, toolId, onUpdate, showToast }) => {
     const [duration, setDuration] = (0, react_1.useState)('');
     const [unit, setUnit] = (0, react_1.useState)('horas');
     const [isExtraordinary, setIsExtraordinary] = (0, react_1.useState)(true);
@@ -31,16 +31,17 @@ const EditAccessModal = ({ isOpen, onClose, access, toolId, onUpdate }) => {
                 })
             });
             if (res.ok) {
+                showToast("Acesso atualizado com sucesso!", "success");
                 onUpdate();
                 onClose();
             }
             else {
-                alert("Erro ao atualizar acesso.");
+                showToast("Erro ao atualizar acesso.", "error");
             }
         }
         catch (e) {
             console.error(e);
-            alert("Erro de conexão.");
+            showToast("Erro de conexão.", "error");
         }
         setLoading(false);
     };
