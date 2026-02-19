@@ -29,15 +29,14 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
         if (isOpen) {
             loadData();
             if (initialDepartment) {
-                // We'll set the mode after data loads or in a separate effect?
-                // Better to wait for load. default behavior below.
+                // We'll set the mode after data loads
             }
             else {
                 setViewMode('GLOBAL');
                 setCurrentDept(null);
             }
         }
-    }, [isOpen, initialDepartment]); // Add initialDepartment dependency
+    }, [isOpen, initialDepartment]);
     const loadData = async () => {
         setIsLoading(true);
         try {
@@ -46,7 +45,6 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
                 const data = await res.json();
                 setDepartments(data.departments);
                 setRoles(data.roles);
-                // Auto-enter department mode if initialDepartment matches
                 if (initialDepartment) {
                     const dept = data.departments.find((d) => d.name === initialDepartment);
                     if (dept) {
@@ -56,7 +54,6 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
                     }
                 }
                 else if (currentDept) {
-                    // Refresh current dept object if already in view
                     const refreshed = data.departments.find((d) => d.id === currentDept.id);
                     if (refreshed)
                         setCurrentDept(refreshed);
@@ -177,30 +174,6 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
         if (!targetRole || !currentDept)
             return;
         try {
-            // We update the user's jobTitle and department
-            const res = await fetch(`${API_URL}/api/users/${userId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    jobTitle: targetRole.name,
-                    department: currentDept.name,
-                    // Preserve other fields? Ideally GET first or the backend handles partial. 
-                    // Our backend user update might overwrite. 
-                    // Let's assume we need to send at least valid data or the backend handles partials.
-                    // Checking EditUserModal, it sends multiple fields. 
-                    // To be safe, let's just send the structural changes.
-                    // If the backend requires all fields, we might have issues. 
-                    // Assume typical REST patch behavior or that we accept minimal payload.
-                    // Looking at userController.updateUser, it uses req.body directly. 
-                    // It expects { name, email, jobTitle, department, systemProfile }. 
-                    // If we omit name/email, they might become undefined or null if not handled.
-                })
-            });
-            // Wait! The userController sets attributes based on `req.body`. 
-            // `data: { name, email, ... }`
-            // If name is undefined, it updates name to undefined? 
-            // We should probably fetch the user first to be safe, OR fix the controller to use undefined check.
-            // Since we can't easily change controller now without risk, let's fetch user first.
             const user = allUsers.find(u => u.id === userId);
             if (!user)
                 return;
@@ -210,15 +183,13 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
                 body: JSON.stringify({
                     name: user.name,
                     email: user.email,
-                    systemProfile: user.systemProfile || 'VIEWER', // Safe fallback
+                    systemProfile: user.systemProfile || 'VIEWER',
                     jobTitle: targetRole.name,
                     department: currentDept.name
                 })
             });
             setIsUserPickerOpen(false);
-            onUpdate(); // Triggers app reload which reloads 'allUsers' prop
-            // We also need to reload 'allUsers' in parent? 
-            // Yes, onUpdate calls loadData in App.tsx which setsAllUsers.
+            onUpdate();
         }
         catch (e) {
             alert("Erro ao adicionar usuário.");
@@ -235,11 +206,8 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
                     name: user.name,
                     email: user.email,
                     systemProfile: user.systemProfile || 'VIEWER',
-                    jobTitle: '', // Clear job title
-                    // Keep department? Usually if no job, maybe no dept? Or keep dept?
-                    // Let's keep department for now, or clear both?
-                    // Usually "removing from role" implies stripping the assignment.
-                    department: user.department // Keep department or clear? Let's keep dept for now.
+                    jobTitle: '',
+                    department: user.department
                 })
             });
             onUpdate();
@@ -248,9 +216,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
             alert("Erro ao remover usuário.");
         }
     };
-    // Filter users for the picker
     const pickerUsers = allUsers.filter(u => u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) &&
-        // Filter out users already in this specific role?
         u.jobTitle !== targetRole?.name);
     if (!isOpen)
         return null;
@@ -271,7 +237,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
                     // DEPARTMENT VIEW
                     currentDept && ((0, jsx_runtime_1.jsxs)("div", { style: { padding: 24, flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }, children: [(0, jsx_runtime_1.jsxs)("button", { onClick: () => { setViewMode('GLOBAL'); setCurrentDept(null); }, style: { background: 'transparent', border: 'none', color: '#a1a1aa', display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer', width: 'fit-content' }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.ChevronDown, { size: 14, style: { transform: 'rotate(90deg)' } }), " Voltar para Lista"] }), (0, jsx_runtime_1.jsxs)("div", { style: { background: '#18181b', padding: 20, borderRadius: 8, border: '1px solid #27272a' }, children: [(0, jsx_runtime_1.jsx)("div", { style: { fontSize: 12, color: '#71717a', textTransform: 'uppercase', marginBottom: 8, fontWeight: 700 }, children: "Nome do Departamento" }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 10, alignItems: 'center' }, children: [isEditingDeptName ? ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", value: editedDeptName, onChange: e => setEditedDeptName(e.target.value), style: { flex: 1, fontSize: 18, fontWeight: 600 }, autoFocus: true }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: handleUpdateDeptName, children: (0, jsx_runtime_1.jsx)(lucide_react_1.Check, { size: 20, color: "#4ade80" }) })] })) : ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsx)("h1", { style: { margin: 0, fontSize: 24, color: 'white' }, children: currentDept.name }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => setIsEditingDeptName(true), children: (0, jsx_runtime_1.jsx)(lucide_react_1.Edit2, { size: 16, color: "#71717a" }) })] })), (0, jsx_runtime_1.jsx)("div", { style: { flex: 1 } }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => handleDeleteDept(currentDept.id), title: "Excluir Departamento", children: (0, jsx_runtime_1.jsx)(lucide_react_1.Trash2, { size: 18, color: "#b91c1c" }) })] })] }), (0, jsx_runtime_1.jsxs)("div", { children: [(0, jsx_runtime_1.jsx)("h3", { style: { color: '#e4e4e7', marginBottom: 15 }, children: "Cargos e Colaboradores" }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8, marginBottom: 20 }, children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", placeholder: "Novo Cargo...", value: newRoleName, onChange: e => setNewRoleName(e.target.value), style: { flex: 1 } }), (0, jsx_runtime_1.jsxs)("button", { className: "btn-mini", onClick: handleCreateRole, style: { background: '#27272a', border: '1px solid #3f3f46' }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Plus, { size: 14 }), " Adicionar Cargo"] })] }), (0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '400px', overflowY: 'auto', paddingRight: 8 }, children: roles.filter(r => r.departmentId === currentDept.id).map(role => {
                                             const roleUsers = allUsers.filter(u => u.jobTitle === role.name && u.department === currentDept.name);
-                                            return ((0, jsx_runtime_1.jsxs)("div", { style: { border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden' }, children: [(0, jsx_runtime_1.jsxs)("div", { style: { background: '#27272a', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: [editingRoleId === role.id ? ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8, flex: 1 }, children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", value: editingRoleName, onChange: e => setEditingRoleName(e.target.value), style: { height: 30, fontSize: 13 } }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => handleUpdateRole(role.id), children: (0, jsx_runtime_1.jsx)(lucide_react_1.Check, { size: 14, color: "#4ade80" }) })] })) : ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 8 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Briefcase, { size: 14, color: "#a1a1aa" }), (0, jsx_runtime_1.jsx)("span", { style: { fontWeight: 600, color: '#e4e4e7', fontSize: 14 }, children: role.name }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => { setEditingRoleId(role.id); setEditingRoleName(role.name); }, children: (0, jsx_runtime_1.jsx)(lucide_react_1.Edit2, { size: 12, color: "#52525b" }) })] })), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8 }, children: [(0, jsx_runtime_1.jsxs)("button", { className: "btn-mini", onClick: () => {
+                                            return ((0, jsx_runtime_1.jsxs)("div", { style: { border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden', flexShrink: 0, display: 'flex', flexDirection: 'column' }, children: [(0, jsx_runtime_1.jsxs)("div", { style: { background: '#27272a', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: [editingRoleId === role.id ? ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8, flex: 1 }, children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", value: editingRoleName, onChange: e => setEditingRoleName(e.target.value), style: { height: 30, fontSize: 13 } }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => handleUpdateRole(role.id), children: (0, jsx_runtime_1.jsx)(lucide_react_1.Check, { size: 14, color: "#4ade80" }) })] })) : ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 8 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Briefcase, { size: 14, color: "#a1a1aa" }), (0, jsx_runtime_1.jsx)("span", { style: { fontWeight: 600, color: '#e4e4e7', fontSize: 14 }, children: role.name }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => { setEditingRoleId(role.id); setEditingRoleName(role.name); }, children: (0, jsx_runtime_1.jsx)(lucide_react_1.Edit2, { size: 12, color: "#52525b" }) })] })), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8 }, children: [(0, jsx_runtime_1.jsxs)("button", { className: "btn-mini", onClick: () => {
                                                                             setTargetRole(role);
                                                                             setUserSearchTerm('');
                                                                             setIsUserPickerOpen(true);
@@ -283,13 +249,14 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
                                                             gap: 8,
                                                             minHeight: '48px',
                                                             maxHeight: '200px',
-                                                            overflowY: 'auto'
+                                                            overflowY: 'auto',
+                                                            alignItems: 'flex-start', // Garante que itens não estiquem
+                                                            alignContent: 'flex-start' // Garante que linhas fiquem no topo
                                                         }, children: roleUsers.length === 0 ? ((0, jsx_runtime_1.jsx)("span", { style: { fontSize: 12, color: '#52525b', fontStyle: 'italic' }, children: "Ningu\u00E9m neste cargo ainda." })) : (roleUsers.map(u => ((0, jsx_runtime_1.jsxs)("div", { style: {
-                                                                display: 'flex', alignItems: 'center', gap: 6,
+                                                                display: 'inline-flex', alignItems: 'center', gap: 6, // Trocado para inline-flex
                                                                 background: '#09090b', padding: '6px 12px', borderRadius: 20,
                                                                 border: '1px solid #27272a', fontSize: 12, color: '#d4d4d8',
-                                                                flexShrink: 0,
-                                                                height: 'fit-content'
+                                                                flexShrink: 0
                                                             }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.User, { size: 10, color: "#a1a1aa" }), (0, jsx_runtime_1.jsx)("span", { style: { whiteSpace: 'nowrap' }, children: u.name }), (0, jsx_runtime_1.jsx)("button", { onClick: () => handleRemoveUserFromRole(u), style: {
                                                                         background: 'transparent', border: 'none',
                                                                         cursor: 'pointer', display: 'flex', padding: 0, marginLeft: 4
