@@ -3,7 +3,8 @@ import {
   LayoutDashboard, Server, FileText, LogOut, Bird,
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
   Search, Bell, Lock, Layers, ChevronDown, ChevronRight,
-  Users, Building, Briefcase // Ícone para Gestão de Pessoas
+  Users, Building, Briefcase, // Ícone para Gestão de Pessoas
+  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
