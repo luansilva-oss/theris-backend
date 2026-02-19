@@ -22,6 +22,7 @@ const getAllUsers = async (req, res) => {
                 jobTitle: true,
                 department: true,
                 systemProfile: true,
+                managerId: true,
                 manager: {
                     select: {
                         name: true
@@ -39,7 +40,7 @@ const getAllUsers = async (req, res) => {
 exports.getAllUsers = getAllUsers;
 const updateUser = async (req, res) => {
     const { id } = req.params;
-    const { name, jobTitle, department, systemProfile } = req.body;
+    const { name, jobTitle, department, systemProfile, managerId } = req.body;
     const rawEmail = req.body.email;
     const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
     const requesterId = req.headers['x-requester-id'];
@@ -66,6 +67,7 @@ const updateUser = async (req, res) => {
                 email,
                 jobTitle,
                 department,
+                managerId,
                 systemProfile: (isSuperAdmin || isGestor) ? systemProfile : undefined
             }
         });
