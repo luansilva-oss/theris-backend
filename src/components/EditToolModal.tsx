@@ -26,7 +26,14 @@ interface Tool {
     toolGroup?: ToolGroup;
     availableAccessLevels?: string[];
     description?: string;
-    accesses: { user: User; status: string }[];
+    accesses?: {
+        id?: string;
+        user: User;
+        status: string;
+        isExtraordinary?: boolean;
+        duration?: number;
+        unit?: string;
+    }[];
 }
 
 interface Props {

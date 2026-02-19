@@ -16,7 +16,7 @@ import { EditAccessModal } from './components/EditAccessModal';
 import { ManageStructureModal } from './components/ManageStructureModal';
 import { ManageLevelModal } from './components/ManageLevelModal';
 import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus } from 'lucide-react';
-import OrgChart from './components/OrgChart';
+import PersonnelListView from './components/PersonnelListView';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -83,14 +83,14 @@ export default function App() {
   const [mfaCode, setMfaCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('theris_activeTab') || 'DASHBOARD');
+  const [activeTab, setActiveTab] = useState<string>(() => localStorage.getItem('theris_activeTab') || 'DASHBOARD');
 
   // DADOS
   const [tools, setTools] = useState<Tool[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]); // Lista de colaboradores
   const [departments, setDepartments] = useState<any[]>([]); // Lista mestra de departamentos
-  const [selectedDepartment, setSelectedDepartment] = useState<string>('Todos');
+  const [roles, setRoles] = useState<any[]>([]); // Lista mestra de cargos
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
@@ -180,6 +180,7 @@ export default function App() {
         if (resDepts.ok) {
           const structData = await resDepts.json();
           setDepartments(structData.departments || []);
+          setRoles(structData.roles || []);
         }
       }
 
@@ -584,51 +585,15 @@ export default function App() {
             </div>
           )}
 
-          {/* GESTÃO DE PESSOAS INTERATIVA (ORG CHART) */}
+          {/* GESTÃO DE PESSOAS INTERATIVA (LISTA EM CASCATA) */}
           {activeTab === 'PEOPLE' && (
             <div className="fade-in" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
                   <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
-                  {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
-                    <button
-                      onClick={() => setIsManageStructureOpen(true)}
-                      className="btn-mini"
-                      style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'rgba(167, 139, 250, 0.1)', color: '#a78bfa', border: '1px solid rgba(167, 139, 250, 0.2)' }}
-                    >
-                      <Settings size={14} /> Estrutura
-                    </button>
-                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Building size={16} color="#71717a" />
-                    <select
-                      value={selectedDepartment}
-                      onChange={(e) => setSelectedDepartment(e.target.value)}
-                      style={{
-                        background: '#18181b',
-                        color: 'white',
-                        border: '1px solid #27272a',
-                        borderRadius: '6px',
-                        padding: '4px 8px',
-                        fontSize: '12px',
-                        cursor: 'pointer',
-                        outline: 'none'
-                      }}
-                    >
-                      <option value="Todos">Todos os Departamentos</option>
-                      {departments.map((dept) => (
-                        <option key={dept.id} value={dept.name}>{dept.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ height: 20, width: 1, background: '#27272a' }}></div>
-                  <div style={{ fontSize: 12, color: '#71717a' }}>
-                    {selectedDepartment === 'Todos'
-                      ? allUsers.length
-                      : allUsers.filter(u => u.department === selectedDepartment).length} Colaboradores
-                  </div>
+                  <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Colaboradores</div>
                   <div style={{ height: 20, width: 1, background: '#27272a' }}></div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }}></div>
@@ -637,14 +602,15 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ flex: 1, minHeight: 0 }}>
-                <OrgChart
-                  users={selectedDepartment === 'Todos' ? allUsers : allUsers.filter(u => u.department === selectedDepartment)}
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                <PersonnelListView
+                  users={allUsers}
+                  departments={departments}
+                  roles={roles}
                   onEditUser={(user) => {
                     setSelectedUser(user);
                     setIsEditUserModalOpen(true);
                   }}
-                  onManagerChange={handleManagerChange}
                 />
               </div>
             </div>
