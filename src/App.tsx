@@ -281,7 +281,7 @@ export default function App() {
     const apiStatus = modalAction === 'aprovar' ? 'APROVAR' : 'REPROVAR';
 
     try {
-      await fetch(`${API_URL}/api/solicitacoes/${modalTargetId}`, {
+      const res = await fetch(`${API_URL}/api/solicitacoes/${modalTargetId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -290,9 +290,15 @@ export default function App() {
           adminNote: note
         })
       });
-      loadData();
-      setModalOpen(false);
-      setModalTargetId(null);
+
+      if (res.ok) {
+        loadData();
+        setModalOpen(false);
+        setModalTargetId(null);
+      } else {
+        const data = await res.json();
+        alert(data.error || "Erro ao processar solicitação.");
+      }
     } catch (e) {
       alert("Erro de conexão ao processar solicitação.");
     }
