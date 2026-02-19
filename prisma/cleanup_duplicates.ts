@@ -2,7 +2,6 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// A lista blindada dos 135 e-mails reais
 const emailsOficiais = [
     "alan.armstrong@grupo-3c.com", "alana.gaspar@grupo-3c.com", "alessandro.schneider@grupo-3c.com",
     "alexander.reis@grupo-3c.com", "alexsandy.correa@grupo-3c.com", "aline.fonseca@grupo-3c.com",
@@ -50,12 +49,12 @@ const emailsOficiais = [
 ];
 
 async function main() {
-    console.log("🧹 Iniciando a Faxina de Fantasmas...");
+    console.log("🚜 Iniciando a Faxina Extrema de Fantasmas...");
 
     const todosUsuarios = await prisma.user.findMany();
     const emailsOficiaisLower = emailsOficiais.map(e => e.toLowerCase());
 
-    // Quem não está na lista oficial é fantasma
+    // Filtra quem não está na lista oficial
     const fantasmas = todosUsuarios.filter(u => !emailsOficiaisLower.includes(u.email.toLowerCase()));
 
     console.log(`👻 Encontrados ${fantasmas.length} usuários fantasmas.`);
@@ -68,30 +67,30 @@ async function main() {
     let apagados = 0;
 
     for (const fantasma of fantasmas) {
+        console.log(`⏳ Tentando apagar fantasma: ${fantasma.email}...`);
+
         try {
             // 1. Desvincula o fantasma de ser gestor de alguém
-            await prisma.user.updateMany({
-                where: { managerId: fantasma.id },
-                data: { managerId: null }
-            });
+            await prisma.user.updateMany({ where: { managerId: fantasma.id }, data: { managerId: null } });
 
-            // 2. Apaga as "bagagens" (Acessos) para o banco não bloquear
-            await prisma.access.deleteMany({
-                where: { userId: fantasma.id }
-            });
+            // 2. Apaga TODOS os acessos vinculados a ele
+            try { await prisma.access.deleteMany({ where: { userId: fantasma.id } }); } catch (e) { }
 
-            // 3. Opcional: Se a tabela Request existir, descomente a linha abaixo
-            // await prisma.request.deleteMany({ where: { userId: fantasma.id } });
+            // 3. Apaga TODAS as solicitações (Requests) que ele fez ou aprovou
+            try { await prisma.request.deleteMany({ where: { userId: fantasma.id } }); } catch (e) { }
 
-            // 4. Apaga o fantasma
-            await prisma.user.delete({
-                where: { id: fantasma.id }
-            });
+            // 4. Remove ele de Dono/Sub-Dono de qualquer ferramenta
+            // Nota: Vai deixar a ferramenta sem dono (null), você pode ajustar depois no painel
+            try { await prisma.tool.updateMany({ where: { ownerId: fantasma.id }, data: { ownerId: null } }); } catch (e) { }
+            try { await prisma.tool.updateMany({ where: { subOwnerId: fantasma.id }, data: { subOwnerId: null } }); } catch (e) { }
 
-            console.log(`🗑️ Apagado: ${fantasma.email}`);
+            // 5. O Golpe Final: Apaga o usuário
+            await prisma.user.delete({ where: { id: fantasma.id } });
+
+            console.log(`✅ [SUCESSO] Apagado: ${fantasma.email}`);
             apagados++;
         } catch (error: any) {
-            console.error(`❌ Erro ao apagar ${fantasma.email}:`, error.message);
+            console.error(`❌ [FALHA] Não foi possível apagar ${fantasma.email}. Motivo:`, error.message);
         }
     }
 

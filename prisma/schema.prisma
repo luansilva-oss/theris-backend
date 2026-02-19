@@ -120,12 +120,12 @@ model Access {
 model Request {
   id                  String   @id @default(uuid())
   
-  requesterId         String
-  requester           User     @relation("Requester", fields: [requesterId], references: [id])
+  requesterId         String?
+  requester           User?    @relation("Requester", fields: [requesterId], references: [id], onDelete: SetNull)
   
   // --- MUDANÇA 2: Campos para Auditoria ---
   approverId          String?
-  approver            User?    @relation("Approver", fields: [approverId], references: [id])
+  approver            User?    @relation("Approver", fields: [approverId], references: [id], onDelete: SetNull)
   adminNote           String?  // O motivo da aprovação/reprovação
   // ----------------------------------------
 

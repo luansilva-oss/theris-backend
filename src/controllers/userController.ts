@@ -84,6 +84,43 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
+export const deleteUser = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    // 1. Desvincular de gestor
+    await prisma.user.updateMany({
+      where: { managerId: id },
+      data: { managerId: null }
+    });
+
+    // 2. Remover acessos
+    await prisma.access.deleteMany({
+      where: { userId: id }
+    });
+
+    // 4. Remover de ferramentas (owner/subowner)
+    await prisma.tool.updateMany({
+      where: { ownerId: id },
+      data: { ownerId: null }
+    });
+    await prisma.tool.updateMany({
+      where: { subOwnerId: id },
+      data: { subOwnerId: null }
+    });
+
+    // 5. Excluir usuário
+    await prisma.user.delete({
+      where: { id }
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Erro ao excluir usuário:", error);
+    return res.status(500).json({ error: "Erro interno ao excluir colaborador." });
+  }
+};
+
 export const getDepartments = async (req: Request, res: Response) => {
   try {
     const departments = await prisma.department.findMany({

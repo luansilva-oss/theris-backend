@@ -370,50 +370,73 @@ slackApp.view('submit_deputy', async ({ ack, body, view, client }) => {
 // ============================================================
 // 4. NOTIFICAÇÃO ATIVA (CHAMADA PELO BACKEND WEB)
 // ============================================================
-export const sendSlackNotification = async (email: string, status: string, adminNote: string) => {
+
+const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+const PEOPLE_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
+
+export const sendSlackNotification = async (
+  email: string,
+  status: 'APROVADO' | 'REPROVADO',
+  adminNote: string,
+  requestType?: string,
+  ownerName?: string
+) => {
   if (!slackApp) return;
 
   try {
-    // 1. Tenta achar o ID do usuário no Slack pelo e-mail
     const userLookup = await slackApp.client.users.lookupByEmail({ email });
     const slackUserId = userLookup.user?.id;
 
-    if (slackUserId) {
-      // 2. Define a cor e o ícone
-      const isApproved = status === 'APROVADO';
-      const icon = isApproved ? '✅' : '❌';
-      const actionText = isApproved ? 'APROVADA' : 'REPROVADA';
-
-      // 3. Envia a DM Bonita
-      await slackApp.client.chat.postMessage({
-        channel: slackUserId,
-        text: `Sua solicitação foi ${actionText}`, // Fallback text
-        blocks: [
-          {
-            type: "header",
-            text: {
-              type: "plain_text",
-              text: `${icon} Solicitação ${actionText}`,
-              emoji: true
-            }
-          },
-          {
-            type: "section",
-            fields: [
-              { type: "mrkdwn", text: `*Status:*\n${status}` },
-              { type: "mrkdwn", text: `*Justificativa do Gestor:*\n_${adminNote}_` }
-            ]
-          },
-          {
-            type: "context",
-            elements: [{ type: "mrkdwn", text: "Theris OS • Governança de Acessos" }]
-          }
-        ]
-      });
-      console.log(`🔔 Notificação enviada para ${email}`);
-    } else {
+    if (!slackUserId) {
       console.warn(`⚠️ Usuário Slack não encontrado para o email: ${email}`);
+      return;
     }
+
+    const isApproved = status === 'APROVADO';
+    const icon = isApproved ? '✅' : '❌';
+    const actionText = isApproved ? 'APROVADA' : 'REPROVADA';
+
+    const isAccessRequest = requestType && ACCESS_TYPES.includes(requestType);
+
+    // Bloco principal
+    const blocks: any[] = [
+      {
+        type: 'header',
+        text: { type: 'plain_text', text: `${icon} Solicitação ${actionText}`, emoji: true }
+      },
+      {
+        type: 'section',
+        fields: [
+          { type: 'mrkdwn', text: `*Status:*\n${status}` },
+          { type: 'mrkdwn', text: `*Nota do Time de SI:*\n_${adminNote || '—'}_` }
+        ]
+      }
+    ];
+
+    // Bloco de contato — apenas para recusa de Gestão de Acessos
+    if (!isApproved && isAccessRequest) {
+      const contactText = ownerName
+        ? `Para mais detalhes, contate o *Owner da ferramenta: ${ownerName}* ou o *time de Segurança da Informação*.`
+        : `Para mais detalhes, contate o *time de Segurança da Informação*.`;
+
+      blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `ℹ️ ${contactText}` }
+      });
+    }
+
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: 'Theris OS • Governança de Acessos' }]
+    });
+
+    await slackApp.client.chat.postMessage({
+      channel: slackUserId,
+      text: `Sua solicitação foi ${actionText}`,
+      blocks
+    });
+
+    console.log(`🔔 Notificação enviada para ${email} — ${status} [${requestType || 'n/a'}]`);
   } catch (error) {
     console.error('❌ Erro ao enviar notificação Slack:', error);
   }

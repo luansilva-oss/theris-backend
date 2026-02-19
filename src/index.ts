@@ -8,7 +8,7 @@ import path from 'path';
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
-import { getAllUsers, updateUser } from './controllers/userController';
+import { getAllUsers, updateUser, deleteUser } from './controllers/userController';
 // NOVO: Importar o controlador de reset
 import { resetCatalog } from './controllers/adminController';
 import * as structureController from './controllers/structureController';
@@ -81,6 +81,7 @@ app.patch('/api/tools/:toolId/access/:userId', updateToolAccess); // Atualizar d
 // 3. Usuários
 app.get('/api/users', getAllUsers);
 app.put('/api/users/:id', updateUser);
+app.delete('/api/users/:id', deleteUser);
 
 // ============================================================
 // --- INTEGRAÇÃO CONVENIA ---
