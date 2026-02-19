@@ -90,6 +90,7 @@ export default function App() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]); // Lista de colaboradores
   const [departments, setDepartments] = useState<any[]>([]); // Lista mestra de departamentos
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('Todos');
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
@@ -600,7 +601,34 @@ export default function App() {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                  <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Colaboradores</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Building size={16} color="#71717a" />
+                    <select
+                      value={selectedDepartment}
+                      onChange={(e) => setSelectedDepartment(e.target.value)}
+                      style={{
+                        background: '#18181b',
+                        color: 'white',
+                        border: '1px solid #27272a',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        outline: 'none'
+                      }}
+                    >
+                      <option value="Todos">Todos os Departamentos</option>
+                      {departments.map((dept) => (
+                        <option key={dept.id} value={dept.name}>{dept.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ height: 20, width: 1, background: '#27272a' }}></div>
+                  <div style={{ fontSize: 12, color: '#71717a' }}>
+                    {selectedDepartment === 'Todos'
+                      ? allUsers.length
+                      : allUsers.filter(u => u.department === selectedDepartment).length} Colaboradores
+                  </div>
                   <div style={{ height: 20, width: 1, background: '#27272a' }}></div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }}></div>
@@ -611,7 +639,7 @@ export default function App() {
 
               <div style={{ flex: 1, minHeight: 0 }}>
                 <OrgChart
-                  users={allUsers}
+                  users={selectedDepartment === 'Todos' ? allUsers : allUsers.filter(u => u.department === selectedDepartment)}
                   onEditUser={(user) => {
                     setSelectedUser(user);
                     setIsEditUserModalOpen(true);

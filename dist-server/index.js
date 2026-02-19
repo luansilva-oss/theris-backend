@@ -49,11 +49,14 @@ const userController_1 = require("./controllers/userController");
 // NOVO: Importar o controlador de reset
 const adminController_1 = require("./controllers/adminController");
 const structureController = __importStar(require("./controllers/structureController"));
+const structureSync_1 = require("./services/structureSync"); // Import sync service
 // Slack
 const slackService_1 = require("./services/slackService");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const prisma = new client_1.PrismaClient();
+// Auto-sync structure on startup
+(0, structureSync_1.syncStructureFromUsers)();
 // --- CORS ---
 app.use((0, cors_1.default)({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
 // ⚠️ ROTA DO SLACK

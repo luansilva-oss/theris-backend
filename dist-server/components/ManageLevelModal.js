@@ -65,8 +65,7 @@ const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }) => {
             });
             if (res.ok) {
                 onUpdate();
-                if (name !== levelName)
-                    onClose(); // Close if renamed to avoid confusion
+                onClose(); // Always close on success
             }
             else {
                 const data = await res.json();
@@ -77,26 +76,6 @@ const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }) => {
             alert("Erro de conexão.");
         }
         setIsSaving(false);
-    };
-    const handleDeleteLevel = async () => {
-        if (!confirm(`Tem certeza que deseja EXCLUIR o nível "${levelName}"? Isso removerá o acesso de todos os usuários neste nível.`))
-            return;
-        try {
-            const res = await fetch(`${API_URL}/api/tools/${tool.id}/level/${encodeURIComponent(levelName)}`, {
-                method: 'DELETE'
-            });
-            if (res.ok) {
-                onUpdate();
-                onClose();
-            }
-            else {
-                const data = await res.json();
-                alert(data.error || "Erro ao excluir nível.");
-            }
-        }
-        catch (e) {
-            alert("Erro ao excluir nível.");
-        }
     };
     const addUser = async (userId) => {
         try {
@@ -125,7 +104,76 @@ const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }) => {
     };
     const filteredUsers = allUsers.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
         !usersInLevel.some((ul) => ul.id === u.id));
-    return ((0, jsx_runtime_1.jsx)("div", { className: "modal-overlay", children: (0, jsx_runtime_1.jsxs)("div", { className: "modal-content", style: { maxWidth: '600px', width: '90%', height: '80vh', display: 'flex', flexDirection: 'column' }, children: [(0, jsx_runtime_1.jsxs)("div", { className: "modal-header", children: [(0, jsx_runtime_1.jsxs)("h2", { children: ["Gerenciar N\u00EDvel: ", levelName] }), (0, jsx_runtime_1.jsx)("button", { onClick: onClose, className: "btn-icon", children: (0, jsx_runtime_1.jsx)(lucide_react_1.X, { size: 20 }) })] }), (0, jsx_runtime_1.jsxs)("div", { className: "modal-body", style: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }, children: [(0, jsx_runtime_1.jsxs)("div", { className: "card-base", style: { background: '#18181b', border: '1px solid #27272a' }, children: [(0, jsx_runtime_1.jsx)("h4", { style: { color: 'white', marginTop: 0 }, children: "Informa\u00E7\u00F5es do N\u00EDvel" }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", children: [(0, jsx_runtime_1.jsx)("label", { children: "Nome do N\u00EDvel" }), (0, jsx_runtime_1.jsx)("input", { value: name, onChange: e => setName(e.target.value), className: "form-input", style: { width: '100%' } })] }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", style: { marginTop: 12 }, children: [(0, jsx_runtime_1.jsx)("label", { children: "\u00CDcone do N\u00EDvel" }), (0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', gap: 8, marginTop: 4 }, children: ['Shield', 'Crown'].map(ic => ((0, jsx_runtime_1.jsxs)("button", { onClick: () => setIcon(ic), style: {
+    // ... (rest of component state)
+    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = (0, react_1.useState)(false);
+    // ... (rest of methods)
+    const handleDeleteClick = () => {
+        setIsDeleteConfirmOpen(true);
+    };
+    const confirmDelete = async () => {
+        setIsDeleteConfirmOpen(false);
+        try {
+            const res = await fetch(`${API_URL}/api/tools/${tool.id}/level/${encodeURIComponent(levelName)}`, {
+                method: 'DELETE'
+            });
+            if (res.ok) {
+                onUpdate();
+                onClose();
+            }
+            else {
+                const data = await res.json();
+                alert(data.error || "Erro ao excluir nível.");
+            }
+        }
+        catch (e) {
+            alert("Erro ao excluir nível.");
+        }
+    };
+    // ... (render)
+    return ((0, jsx_runtime_1.jsx)("div", { className: "modal-overlay", children: (0, jsx_runtime_1.jsxs)("div", { className: "modal-content", style: { maxWidth: '600px', width: '90%', height: '80vh', display: 'flex', flexDirection: 'column', position: 'relative' }, children: [isDeleteConfirmOpen && ((0, jsx_runtime_1.jsx)("div", { style: {
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: 'rgba(0,0,0,0.85)',
+                        zIndex: 50,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: 8
+                    }, children: (0, jsx_runtime_1.jsxs)("div", { style: {
+                            background: '#18181b',
+                            border: '1px solid #3f3f46',
+                            borderRadius: 12,
+                            padding: 24,
+                            width: '90%',
+                            maxWidth: 400,
+                            textAlign: 'center',
+                            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+                        }, children: [(0, jsx_runtime_1.jsx)("div", { style: {
+                                    width: 48, height: 48,
+                                    background: 'rgba(239, 68, 68, 0.1)',
+                                    borderRadius: '50%',
+                                    color: '#ef4444',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    margin: '0 auto 16px'
+                                }, children: (0, jsx_runtime_1.jsx)(lucide_react_1.Trash2, { size: 24 }) }), (0, jsx_runtime_1.jsx)("h3", { style: { color: '#f4f4f5', margin: '0 0 8px', fontSize: 18 }, children: "Excluir N\u00EDvel?" }), (0, jsx_runtime_1.jsxs)("p", { style: { color: '#a1a1aa', fontSize: 14, margin: '0 0 24px', lineHeight: 1.5 }, children: ["Tem certeza que deseja excluir o n\u00EDvel ", (0, jsx_runtime_1.jsx)("strong", { children: levelName }), "? ", (0, jsx_runtime_1.jsx)("br", {}), "Isso remover\u00E1 o acesso de todos os usu\u00E1rios vinculados a ele."] }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 12 }, children: [(0, jsx_runtime_1.jsx)("button", { onClick: () => setIsDeleteConfirmOpen(false), style: {
+                                            flex: 1,
+                                            background: 'transparent',
+                                            border: '1px solid #3f3f46',
+                                            color: '#e4e4e7',
+                                            padding: '10px',
+                                            borderRadius: 6,
+                                            cursor: 'pointer',
+                                            fontWeight: 500
+                                        }, className: "hover:bg-zinc-800", children: "Cancelar" }), (0, jsx_runtime_1.jsx)("button", { onClick: confirmDelete, style: {
+                                            flex: 1,
+                                            background: '#ef4444',
+                                            border: 'none',
+                                            color: 'white',
+                                            padding: '10px',
+                                            borderRadius: 6,
+                                            cursor: 'pointer',
+                                            fontWeight: 500
+                                        }, className: "hover:bg-red-600", children: "Sim, Excluir" })] })] }) })), (0, jsx_runtime_1.jsxs)("div", { className: "modal-header", children: [(0, jsx_runtime_1.jsxs)("h2", { children: ["Gerenciar N\u00EDvel: ", levelName] }), (0, jsx_runtime_1.jsx)("button", { onClick: onClose, className: "btn-icon", children: (0, jsx_runtime_1.jsx)(lucide_react_1.X, { size: 20 }) })] }), (0, jsx_runtime_1.jsxs)("div", { className: "modal-body", style: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }, children: [(0, jsx_runtime_1.jsxs)("div", { className: "card-base", style: { background: '#18181b', border: '1px solid #27272a' }, children: [(0, jsx_runtime_1.jsx)("h4", { style: { color: 'white', marginTop: 0 }, children: "Informa\u00E7\u00F5es do N\u00EDvel" }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", children: [(0, jsx_runtime_1.jsx)("label", { children: "Nome do N\u00EDvel" }), (0, jsx_runtime_1.jsx)("input", { value: name, onChange: e => setName(e.target.value), className: "form-input", style: { width: '100%' } })] }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", style: { marginTop: 12 }, children: [(0, jsx_runtime_1.jsx)("label", { children: "\u00CDcone do N\u00EDvel" }), (0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', gap: 8, marginTop: 4 }, children: ['Shield', 'Crown'].map(ic => ((0, jsx_runtime_1.jsxs)("button", { onClick: () => setIcon(ic), style: {
                                                     background: icon === ic ? '#3f3f46' : '#27272a',
                                                     border: icon === ic ? '1px solid #a78bfa' : '1px solid #3f3f46',
                                                     borderRadius: 6,
@@ -158,6 +206,6 @@ const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate }) => {
                                                     cursor: 'pointer',
                                                     alignSelf: 'flex-start',
                                                     marginTop: 4
-                                                }, children: showAllUsers ? 'Mostrar menos' : `Mostrar mais (${usersInLevel.length - 5})` }))] })) })] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "modal-footer", style: { borderTop: '1px solid #27272a', padding: '16px 0 0 0', marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: [(0, jsx_runtime_1.jsxs)("button", { onClick: handleDeleteLevel, className: "btn-text", style: { color: '#ef4444', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer' }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Trash2, { size: 14 }), " Excluir N\u00EDvel"] }), (0, jsx_runtime_1.jsxs)("button", { onClick: handleSaveInfo, disabled: isSaving, className: "btn-verify", style: { width: 'auto', padding: '10px 24px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Save, { size: 16 }), isSaving ? 'Salvando...' : 'Salvar Alterações'] })] })] }) }));
+                                                }, children: showAllUsers ? 'Mostrar menos' : `Mostrar mais (${usersInLevel.length - 5})` }))] })) })] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "modal-footer", style: { borderTop: '1px solid #27272a', padding: '16px 0 0 0', marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: [(0, jsx_runtime_1.jsxs)("button", { onClick: handleDeleteClick, className: "btn-text", style: { color: '#ef4444', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer' }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Trash2, { size: 14 }), " Excluir N\u00EDvel"] }), (0, jsx_runtime_1.jsxs)("button", { onClick: handleSaveInfo, disabled: isSaving, className: "btn-verify", style: { width: 'auto', padding: '10px 24px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Save, { size: 16 }), isSaving ? 'Salvando...' : 'Salvar Alterações'] })] })] }) }));
 };
 exports.ManageLevelModal = ManageLevelModal;
