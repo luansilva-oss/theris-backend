@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { MouseEvent } from 'react';
-import { Building2, Briefcase, User as UserIcon, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { Building2, Briefcase, User as UserIcon, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
 
 interface User {
     id: string;
@@ -30,9 +30,13 @@ interface PersonnelListViewProps {
     roles: Role[];
     onEditUser: (user: User) => void;
     onDeleteUser?: (user: User) => void;
+    onEditDepartment: (dept: Department) => void;
+    onDeleteDepartment: (dept: Department) => void;
 }
 
-export const PersonnelListView: React.FC<PersonnelListViewProps> = ({ users, departments, roles, onEditUser, onDeleteUser }) => {
+export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
+    users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment
+}) => {
     const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
     const [expandedRoles, setExpandedRoles] = useState<Record<string, boolean>>({});
 
@@ -53,7 +57,6 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({ users, dep
             {departments.map(dept => (
                 <div key={dept.id} className="dept-section" style={{ border: '1px solid #1f1f22', borderRadius: '12px', overflow: 'hidden', background: '#09090b' }}>
                     <div
-                        onClick={() => toggleDept(dept.id)}
                         style={{
                             padding: '16px 20px',
                             background: '#18181b',
@@ -64,11 +67,37 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({ users, dep
                             borderBottom: expandedDepts[dept.id] ? '1px solid #1f1f22' : 'none'
                         }}
                     >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div
+                            onClick={() => toggleDept(dept.id)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}
+                        >
                             <Building2 size={20} color="#a78bfa" />
                             <span style={{ fontWeight: 600, color: '#f4f4f5', fontSize: '16px' }}>{dept.name}</span>
                         </div>
-                        {expandedDepts[dept.id] ? <ChevronDown size={20} color="#71717a" /> : <ChevronRight size={20} color="#71717a" />}
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onEditDepartment(dept); }}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, transition: '0.2s' }}
+                                    onMouseOver={e => e.currentTarget.style.opacity = '1'}
+                                    onMouseOut={e => e.currentTarget.style.opacity = '0.6'}
+                                >
+                                    <Pencil size={16} color="#71717a" />
+                                </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onDeleteDepartment(dept); }}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, transition: '0.2s' }}
+                                    onMouseOver={e => e.currentTarget.style.opacity = '1'}
+                                    onMouseOut={e => e.currentTarget.style.opacity = '0.6'}
+                                >
+                                    <Trash2 size={16} color="#ef4444" />
+                                </button>
+                            </div>
+                            <div onClick={() => toggleDept(dept.id)}>
+                                {expandedDepts[dept.id] ? <ChevronDown size={20} color="#71717a" /> : <ChevronRight size={20} color="#71717a" />}
+                            </div>
+                        </div>
                     </div>
 
                     {expandedDepts[dept.id] && (

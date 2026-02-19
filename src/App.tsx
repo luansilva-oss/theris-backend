@@ -15,8 +15,9 @@ import { EditUserModal } from './components/EditUserModal';
 import { EditAccessModal } from './components/EditAccessModal';
 import { ManageStructureModal } from './components/ManageStructureModal';
 import { ManageLevelModal } from './components/ManageLevelModal';
-import { Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus } from 'lucide-react';
 import PersonnelListView from './components/PersonnelListView';
+import { EditDepartmentModal } from './components/EditDepartmentModal';
+import { DeleteDepartmentModal } from './components/DeleteDepartmentModal';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -113,6 +114,9 @@ export default function App() {
   const [selectedStructureDept, setSelectedStructureDept] = useState<string | null>(null);
   const [isManageLevelModalOpen, setIsManageLevelModalOpen] = useState(false);
   const [selectedLevelName, setSelectedLevelName] = useState<string | null>(null);
+  const [isEditDeptModalOpen, setIsEditDeptModalOpen] = useState(false);
+  const [isDeleteDeptModalOpen, setIsDeleteDeptModalOpen] = useState(false);
+  const [selectedDeptForAction, setSelectedDeptForAction] = useState<any>(null);
 
   // Stats
   const stats = {
@@ -612,6 +616,14 @@ export default function App() {
                     setIsEditUserModalOpen(true);
                   }}
                   onDeleteUser={['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? handleDeleteUser : undefined}
+                  onEditDepartment={(dept) => {
+                    setSelectedDeptForAction(dept);
+                    setIsEditDeptModalOpen(true);
+                  }}
+                  onDeleteDepartment={(dept) => {
+                    setSelectedDeptForAction(dept);
+                    setIsDeleteDeptModalOpen(true);
+                  }}
                 />
               </div>
             </div>
@@ -1023,6 +1035,22 @@ export default function App() {
           onUpdate={loadData}
         />
       )}
+
+      {/* DEPARTMENT MANAGEMENT MODALS */}
+      <EditDepartmentModal
+        isOpen={isEditDeptModalOpen}
+        onClose={() => setIsEditDeptModalOpen(false)}
+        department={selectedDeptForAction}
+        onUpdated={loadData}
+      />
+      <DeleteDepartmentModal
+        isOpen={isDeleteDeptModalOpen}
+        onClose={() => setIsDeleteDeptModalOpen(false)}
+        department={selectedDeptForAction}
+        allDepartments={departments}
+        userCount={selectedDeptForAction ? allUsers.filter(u => u.department === selectedDeptForAction.name).length : 0}
+        onDeleted={loadData}
+      />
     </div>
   );
 }
