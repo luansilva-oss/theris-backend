@@ -163,9 +163,20 @@ export default function App() {
 
   // Stats
   const stats = {
-    pending: requests.filter(r => r.status.includes('PENDENTE')).length,
-    approved: requests.filter(r => r.status === 'APROVADO').length,
-    total: requests.length,
+    pending: requests.filter(r => {
+      if (!r.status.includes('PENDENTE')) return false;
+      if (systemProfile === 'VIEWER') return r.requester.id === currentUser?.id;
+      return true;
+    }).length,
+    approved: requests.filter(r => {
+      if (r.status !== 'APROVADO') return false;
+      if (systemProfile === 'VIEWER') return r.requester.id === currentUser?.id;
+      return true;
+    }).length,
+    total: requests.filter(r => {
+      if (systemProfile === 'VIEWER') return r.requester.id === currentUser?.id;
+      return true;
+    }).length,
     myReqs: requests.filter(r => r.requester.id === currentUser?.id).length
   };
 
@@ -554,20 +565,22 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand-box"><Bird size={24} color="#7c3aed" /> THERIS OS</div>
         <div className="nav-section">
-          {['SUPER_ADMIN', 'GESTOR', 'ADMIN'].includes(systemProfile) ? (
+          {(['SUPER_ADMIN', 'GESTOR', 'ADMIN', 'APPROVER'].includes(systemProfile)) ? (
             <>
               <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Visão Geral</div>
-              <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => setActiveTab('PEOPLE')}><Users size={18} /> Gestão de Pessoas</div>
-              <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Layers size={18} /> Catálogo</div>
-              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
-            </>
-          ) : systemProfile === 'APPROVER' ? (
-            <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Visão Geral</div>
+              {systemProfile !== 'APPROVER' && (
+                <>
+                  <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => setActiveTab('PEOPLE')}><Users size={18} /> Gestão de Pessoas</div>
+                  <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Layers size={18} /> Catálogo</div>
+                </>
+              )}
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
             </>
           ) : (
-            <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Meu Painel</div>
+            <>
+              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Meu Painel</div>
+              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
+            </>
           )}
         </div>
         <div className="user-mini-profile">
@@ -653,13 +666,21 @@ export default function App() {
               <div className="card-base cell-feed">
                 <div className="card-header"><span className="card-title">Feed Recente</span></div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {requests.slice(0, 5).map(r => (
-                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #27272a' }}>
-                      {r.status === 'APROVADO' ? <CheckCircle size={16} color="#10b981" /> : <Clock size={16} color="#fbbf24" />}
-                      <div style={{ fontSize: 13, color: '#d4d4d8' }}>{JSON.parse(r.details).info || r.type}</div>
-                      <div style={{ marginLeft: 'auto', fontSize: 11, color: '#52525b' }}>{new Date(r.createdAt).toLocaleDateString()}</div>
-                    </div>
-                  ))}
+                  {requests
+                    .filter(r => systemProfile === 'VIEWER' ? r.requester.id === currentUser?.id : true)
+                    .slice(0, 5)
+                    .map(r => (
+                      <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #27272a' }}>
+                        {r.status === 'APROVADO' ? <CheckCircle size={16} color="#10b981" /> :
+                          r.status === 'REPROVADO' ? <XCircle size={16} color="#ef4444" /> :
+                            <Clock size={16} color="#fbbf24" />}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, color: '#d4d4d8' }}>{JSON.parse(r.details).info || r.type}</div>
+                          <div style={{ fontSize: 10, color: '#52525b', fontFamily: 'monospace' }}>#{r.id.split('-')[0].toUpperCase()}</div>
+                        </div>
+                        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#52525b' }}>{new Date(r.createdAt).toLocaleDateString()}</div>
+                      </div>
+                    ))}
                 </div>
               </div>
             </div>
@@ -974,15 +995,27 @@ export default function App() {
           {/* AUDITORIA */}
           {activeTab === 'HISTORY' && (
             <div className="fade-in">
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 15, marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Logs de Auditoria</h2>
+                <div style={{ fontSize: 12, color: '#71717a' }}>
+                  {systemProfile === 'VIEWER' ? 'Seus registros' : 'Total de Registros'}: {
+                    requests.filter(r => {
+                      if (r.status === 'PENDENTE') return false;
+                      if (systemProfile === 'VIEWER') return r.requester.id === currentUser?.id;
+                      return true;
+                    }).length
+                  }
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 15, marginBottom: 20, alignItems: 'center' }}>
                 {/* BUSCA */}
-                <div style={{ position: 'relative', flex: 1, minWidth: '300px' }}>
+                <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
                   <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#71717a' }} />
                   <input
                     type="text"
-                    placeholder="Buscar por nome do solicitante ou ID..."
+                    placeholder={systemProfile === 'VIEWER' ? "Buscar em seus pedidos..." : "Buscar por nome do solicitante ou ID..."}
                     className="input-base"
-                    style={{ paddingLeft: 40, background: '#18181b' }}
+                    style={{ paddingLeft: 40, background: '#18181b', width: '100%' }}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -1037,6 +1070,9 @@ export default function App() {
                   <tbody>
                     {requests
                       .filter(r => {
+                        // 0. Filtro de permissão (O MAIS IMPORTANTE)
+                        if (systemProfile === 'VIEWER' && r.requester.id !== currentUser?.id) return false;
+
                         // 1. Filtro de Status
                         if (statusFilter !== 'ALL') {
                           if (statusFilter === 'PENDENTE') {
@@ -1171,35 +1207,39 @@ export default function App() {
             </div>
           )}
         </div>
-      </main>
+      </main >
 
       <ModalObservacao isOpen={modalOpen} onClose={() => setModalOpen(false)} onConfirm={handleConfirmApprove} titulo={modalAction === 'aprovar' ? 'Confirmar Aprovação' : 'Confirmar Reprovação'} tipo={modalAction} />
 
-      {selectedTool && (
-        <EditToolModal
-          isOpen={isEditModalOpen}
-          onClose={() => setIsEditModalOpen(false)}
-          tool={selectedTool}
-          onUpdate={loadData}
-          showToast={showToast}
-          customConfirm={customConfirm}
-        />
-      )}
+      {
+        selectedTool && (
+          <EditToolModal
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            tool={selectedTool}
+            onUpdate={loadData}
+            showToast={showToast}
+            customConfirm={customConfirm}
+          />
+        )
+      }
 
-      {selectedUser && (
-        <EditUserModal
-          isOpen={isEditUserModalOpen}
-          onClose={() => {
-            setIsEditUserModalOpen(false);
-            setSelectedUser(null);
-          }}
-          user={selectedUser}
-          onUpdate={loadData}
-          currentUser={{ id: currentUser?.id || '', systemProfile }}
-          allUsers={allUsers}
-          showToast={showToast}
-        />
-      )}
+      {
+        selectedUser && (
+          <EditUserModal
+            isOpen={isEditUserModalOpen}
+            onClose={() => {
+              setIsEditUserModalOpen(false);
+              setSelectedUser(null);
+            }}
+            user={selectedUser}
+            onUpdate={loadData}
+            currentUser={{ id: currentUser?.id || '', systemProfile }}
+            allUsers={allUsers}
+            showToast={showToast}
+          />
+        )
+      }
 
       <CreateToolModal
         isOpen={isCreateModalOpen}
@@ -1231,20 +1271,22 @@ export default function App() {
         customConfirm={customConfirm}
       />
 
-      {selectedTool && selectedLevelName && (
-        <ManageLevelModal
-          isOpen={isManageLevelModalOpen}
-          onClose={() => {
-            setIsManageLevelModalOpen(false);
-            setSelectedLevelName(null);
-          }}
-          tool={selectedTool as any}
-          levelName={selectedLevelName}
-          onUpdate={loadData}
-          showToast={showToast}
-          customConfirm={customConfirm}
-        />
-      )}
+      {
+        selectedTool && selectedLevelName && (
+          <ManageLevelModal
+            isOpen={isManageLevelModalOpen}
+            onClose={() => {
+              setIsManageLevelModalOpen(false);
+              setSelectedLevelName(null);
+            }}
+            tool={selectedTool as any}
+            levelName={selectedLevelName}
+            onUpdate={loadData}
+            showToast={showToast}
+            customConfirm={customConfirm}
+          />
+        )
+      }
 
       {/* DEPARTMENT MANAGEMENT MODALS */}
       <EditDepartmentModal
@@ -1254,18 +1296,20 @@ export default function App() {
         onUpdated={loadData}
         showToast={showToast}
       />
-      {isDeleteDeptModalOpen && (
-        <DeleteDepartmentModal
-          isOpen={isDeleteDeptModalOpen}
-          onClose={() => setIsDeleteDeptModalOpen(false)}
-          department={selectedDeptForAction}
-          allDepartments={departments}
-          userCount={selectedDeptForAction ? allUsers.filter(u => u.department === selectedDeptForAction.name).length : 0}
-          onDeleted={loadData}
-          showToast={showToast}
-          customConfirm={customConfirm}
-        />
-      )}
+      {
+        isDeleteDeptModalOpen && (
+          <DeleteDepartmentModal
+            isOpen={isDeleteDeptModalOpen}
+            onClose={() => setIsDeleteDeptModalOpen(false)}
+            department={selectedDeptForAction}
+            allDepartments={departments}
+            userCount={selectedDeptForAction ? allUsers.filter(u => u.department === selectedDeptForAction.name).length : 0}
+            onDeleted={loadData}
+            showToast={showToast}
+            customConfirm={customConfirm}
+          />
+        )
+      }
 
       {/* CUSTOM UI OVERLAYS */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
@@ -1279,6 +1323,6 @@ export default function App() {
         isDestructive={confirmConfig.isDestructive}
         confirmLabel={confirmConfig.confirmLabel}
       />
-    </div>
+    </div >
   );
 }
