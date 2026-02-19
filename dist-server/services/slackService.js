@@ -15,8 +15,6 @@ const slackApp = new bolt_1.App({
     logLevel: bolt_1.LogLevel.ERROR,
 });
 // ============================================================
-// 1. MENU PRINCIPAL (/theris) - RESTAURADO COM CLICKUP
-// ============================================================
 slackApp.command('/theris', async ({ ack, body, client }) => {
     // ACK IMEDIATO: O Slack exige resposta em <3s
     await ack();
@@ -68,6 +66,77 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
     }
     catch (error) {
         console.error('❌ Erro Menu Principal:', error);
+    }
+});
+// ============================================================
+// 1.1 COMANDO /infra (NOVO)
+// ============================================================
+slackApp.command('/infra', async ({ ack, body, client }) => {
+    await ack();
+    try {
+        await client.views.open({
+            trigger_id: body.trigger_id,
+            view: {
+                type: 'modal',
+                callback_id: 'submit_infra',
+                title: { type: 'plain_text', text: 'Suporte de Infra' },
+                submit: { type: 'plain_text', text: 'Enviar Pedido' },
+                close: { type: 'plain_text', text: 'Cancelar' },
+                blocks: [
+                    {
+                        type: 'section',
+                        text: { type: 'mrkdwn', text: '🚀 *Solicitação de Hardware ou Suporte de TI*\nDescreva o que você precisa abaixo.' }
+                    },
+                    { type: 'divider' },
+                    {
+                        type: 'input',
+                        block_id: 'blk_infra_type',
+                        label: { type: 'plain_text', text: 'Tipo de Solicitação' },
+                        element: {
+                            type: 'static_select',
+                            action_id: 'inp',
+                            placeholder: { type: 'plain_text', text: 'Selecione...' },
+                            options: [
+                                { text: { type: 'plain_text', text: '💻 Hardware (Monitor, Teclado, Mouse, etc)' }, value: 'HARDWARE' },
+                                { text: { type: 'plain_text', text: '🛠️ Problema no PC (Lento, Travando, Bug)' }, value: 'SOFTWARE_PROBLEM' },
+                                { text: { type: 'plain_text', text: '🌐 Internet / Rede / VPN' }, value: 'NETWORK' },
+                                { text: { type: 'plain_text', text: '❓ Outros Suportes' }, value: 'OTHER' }
+                            ]
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'blk_infra_desc',
+                        label: { type: 'plain_text', text: 'Descrição Detalhada' },
+                        element: {
+                            type: 'plain_text_input',
+                            multiline: true,
+                            action_id: 'inp',
+                            placeholder: { type: 'plain_text', text: 'Ex: Meu mouse parou de funcionar / Preciso de um segundo monitor.' }
+                        }
+                    },
+                    {
+                        type: 'input',
+                        block_id: 'blk_infra_urgency',
+                        label: { type: 'plain_text', text: 'Urgência' },
+                        element: {
+                            type: 'static_select',
+                            action_id: 'inp',
+                            placeholder: { type: 'plain_text', text: 'Selecione...' },
+                            options: [
+                                { text: { type: 'plain_text', text: '🟢 Baixa (Não impede o trabalho)' }, value: 'LOW' },
+                                { text: { type: 'plain_text', text: '🟡 Média (Incomoda mas consigo trabalhar)' }, value: 'MEDIUM' },
+                                { text: { type: 'plain_text', text: '🟠 Alta (Prejudica muito a produtividade)' }, value: 'HIGH' },
+                                { text: { type: 'plain_text', text: '🔴 Crítica (Estou parado/Não consigo trabalhar)' }, value: 'CRITICAL' }
+                            ]
+                        }
+                    }
+                ]
+            }
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro /infra:', error);
     }
 });
 // ============================================================
@@ -176,14 +245,15 @@ slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
                     { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
                     { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Permissão Necessária (nível de acesso)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
                     // Campos de Duração
+                    { type: 'input', block_id: 'blk_duration_val', label: { type: 'plain_text', text: 'Duração (Quantidade)' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: 48' } } },
                     {
-                        type: 'section',
+                        type: 'input',
                         block_id: 'blk_duration_wrap',
-                        text: { type: 'mrkdwn', text: '*Estimativa de Tempo*' },
-                        accessory: {
+                        label: { type: 'plain_text', text: 'Unidade de Tempo' },
+                        element: {
                             type: 'static_select',
                             action_id: 'unit_select',
-                            placeholder: { type: 'plain_text', text: 'Unidade' },
+                            placeholder: { type: 'plain_text', text: 'Selecione...' },
                             options: [
                                 { text: { type: 'plain_text', text: 'Horas' }, value: 'horas' },
                                 { text: { type: 'plain_text', text: 'Dias' }, value: 'dias' },
@@ -191,7 +261,6 @@ slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
                             ]
                         }
                     },
-                    { type: 'input', block_id: 'blk_duration_val', label: { type: 'plain_text', text: 'Quantidade' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: 48' } } },
                     { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa (Compliance)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
                 ]
             }
@@ -360,52 +429,73 @@ slackApp.view('submit_deputy', async ({ ack, body, view, client }) => {
     };
     await saveRequest(body, client, 'DEPUTY_DESIGNATION', details, v.blk_reason.inp.value, `✅ Indicação de *${name}* como seu Substituto (Deputy) enviada para aprovação do time de S.I.`);
 });
+slackApp.view('submit_infra', async ({ ack, body, view, client }) => {
+    await ack();
+    const v = view.state.values;
+    const type = v.blk_infra_type.inp.selected_option?.value;
+    const desc = v.blk_infra_desc.inp.value;
+    const urgency = v.blk_infra_urgency.inp.selected_option?.value;
+    const details = {
+        info: `Suporte de Infra: ${type}`,
+        requestType: type,
+        description: desc,
+        urgency: urgency
+    };
+    await saveRequest(body, client, 'INFRA_SUPPORT', details, `Urgência: ${urgency}\n${desc}`, `✅ Sua solicitação de infraestrutura foi enviada com sucesso ao time de suporte.`);
+});
 // ============================================================
 // 4. NOTIFICAÇÃO ATIVA (CHAMADA PELO BACKEND WEB)
 // ============================================================
-const sendSlackNotification = async (email, status, adminNote) => {
+const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+const PEOPLE_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
+const sendSlackNotification = async (email, status, adminNote, requestType, ownerName) => {
     if (!slackApp)
         return;
     try {
-        // 1. Tenta achar o ID do usuário no Slack pelo e-mail
         const userLookup = await slackApp.client.users.lookupByEmail({ email });
         const slackUserId = userLookup.user?.id;
-        if (slackUserId) {
-            // 2. Define a cor e o ícone
-            const isApproved = status === 'APROVADO';
-            const icon = isApproved ? '✅' : '❌';
-            const actionText = isApproved ? 'APROVADA' : 'REPROVADA';
-            // 3. Envia a DM Bonita
-            await slackApp.client.chat.postMessage({
-                channel: slackUserId,
-                text: `Sua solicitação foi ${actionText}`, // Fallback text
-                blocks: [
-                    {
-                        type: "header",
-                        text: {
-                            type: "plain_text",
-                            text: `${icon} Solicitação ${actionText}`,
-                            emoji: true
-                        }
-                    },
-                    {
-                        type: "section",
-                        fields: [
-                            { type: "mrkdwn", text: `*Status:*\n${status}` },
-                            { type: "mrkdwn", text: `*Justificativa do Gestor:*\n_${adminNote}_` }
-                        ]
-                    },
-                    {
-                        type: "context",
-                        elements: [{ type: "mrkdwn", text: "Theris OS • Governança de Acessos" }]
-                    }
-                ]
-            });
-            console.log(`🔔 Notificação enviada para ${email}`);
-        }
-        else {
+        if (!slackUserId) {
             console.warn(`⚠️ Usuário Slack não encontrado para o email: ${email}`);
+            return;
         }
+        const isApproved = status === 'APROVADO';
+        const icon = isApproved ? '✅' : '❌';
+        const actionText = isApproved ? 'APROVADA' : 'REPROVADA';
+        const isAccessRequest = requestType && ACCESS_TYPES.includes(requestType);
+        // Bloco principal
+        const blocks = [
+            {
+                type: 'header',
+                text: { type: 'plain_text', text: `${icon} Solicitação ${actionText}`, emoji: true }
+            },
+            {
+                type: 'section',
+                fields: [
+                    { type: 'mrkdwn', text: `*Status:*\n${status}` },
+                    { type: 'mrkdwn', text: `*Nota do Time de SI:*\n_${adminNote || '—'}_` }
+                ]
+            }
+        ];
+        // Bloco de contato — apenas para recusa de Gestão de Acessos
+        if (!isApproved && isAccessRequest) {
+            const contactText = ownerName
+                ? `Para mais detalhes, contate o *Owner da ferramenta: ${ownerName}* ou o *time de Segurança da Informação*.`
+                : `Para mais detalhes, contate o *time de Segurança da Informação*.`;
+            blocks.push({
+                type: 'section',
+                text: { type: 'mrkdwn', text: `ℹ️ ${contactText}` }
+            });
+        }
+        blocks.push({
+            type: 'context',
+            elements: [{ type: 'mrkdwn', text: 'Theris OS • Governança de Acessos' }]
+        });
+        await slackApp.client.chat.postMessage({
+            channel: slackUserId,
+            text: `Sua solicitação foi ${actionText}`,
+            blocks
+        });
+        console.log(`🔔 Notificação enviada para ${email} — ${status} [${requestType || 'n/a'}]`);
     }
     catch (error) {
         console.error('❌ Erro ao enviar notificação Slack:', error);

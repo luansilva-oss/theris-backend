@@ -11,11 +11,12 @@ interface Props {
     onClose: () => void;
     department: Department | null;
     onUpdated: () => void;
+    showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
-export const EditDepartmentModal: React.FC<Props> = ({ isOpen, onClose, department, onUpdated }) => {
+export const EditDepartmentModal: React.FC<Props> = ({ isOpen, onClose, department, onUpdated, showToast }) => {
     const [name, setName] = useState('');
     const [isSaving, setIsSaving] = useState(false);
 
@@ -28,7 +29,7 @@ export const EditDepartmentModal: React.FC<Props> = ({ isOpen, onClose, departme
     if (!isOpen || !department) return null;
 
     const handleSave = async () => {
-        if (!name.trim()) return alert("Nome é obrigatório.");
+        if (!name.trim()) return showToast("Nome é obrigatório.", "warning");
         setIsSaving(true);
         try {
             const res = await fetch(`${API_URL}/api/structure/departments/${department.id}`, {
@@ -37,14 +38,15 @@ export const EditDepartmentModal: React.FC<Props> = ({ isOpen, onClose, departme
                 body: JSON.stringify({ name })
             });
             if (res.ok) {
+                showToast("Departamento atualizado!", "success");
                 onUpdated();
                 onClose();
             } else {
                 const data = await res.json();
-                alert(data.error || "Erro ao atualizar departamento.");
+                showToast(data.error || "Erro ao atualizar departamento.", "error");
             }
         } catch (e) {
-            alert("Erro de conexão.");
+            showToast("Erro de conexão.", "error");
         }
         setIsSaving(false);
     };

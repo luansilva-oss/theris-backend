@@ -5,7 +5,7 @@ const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
-const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers }) => {
+const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers, showToast }) => {
     if (!isOpen)
         return null;
     const [name, setName] = (0, react_1.useState)(user.name);
@@ -51,17 +51,18 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers 
                 body: JSON.stringify({ name, email, jobTitle, department, systemProfile, managerId })
             });
             if (res.ok) {
+                showToast("Dados do colaborador atualizados!", "success");
                 onUpdate();
                 onClose();
             }
             else {
                 const err = await res.json();
-                alert(err.error || "Erro ao salvar alterações.");
+                showToast(err.error || "Erro ao salvar alterações.", "error");
             }
         }
         catch (error) {
             console.error(error);
-            alert("Erro de rede ao salvar.");
+            showToast("Erro de rede ao salvar.", "error");
         }
         setIsSaving(false);
     };

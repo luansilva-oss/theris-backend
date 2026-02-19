@@ -52,7 +52,9 @@ const ModalObservacao = ({ isOpen, onClose, onConfirm, titulo, tipo }) => {
                                 outline: 'none',
                                 fontSize: '14px',
                                 fontFamily: "'Inter', sans-serif"
-                            }, placeholder: tipo === 'reprovar' ? "Digite o motivo da reprovação (Obrigatório)..." : "Alguma observação adicional?...", value: observacao, onChange: (e) => setObservacao(e.target.value), autoFocus: true })] }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: '12px' }, children: [(0, jsx_runtime_1.jsx)("button", { onClick: onClose, style: {
+                            }, placeholder: tipo === 'reprovar' ? "Digite o motivo da reprovação (Obrigatório)..." :
+                                tipo === 'pendente' ? "Descreva o que falta ou por que está pendente..." :
+                                    "Alguma observação adicional?...", value: observacao, onChange: (e) => setObservacao(e.target.value), autoFocus: true })] }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: '12px' }, children: [(0, jsx_runtime_1.jsx)("button", { onClick: onClose, style: {
                                 padding: '8px 16px',
                                 backgroundColor: 'transparent',
                                 color: '#D1D5DB',
@@ -63,7 +65,7 @@ const ModalObservacao = ({ isOpen, onClose, onConfirm, titulo, tipo }) => {
                                 fontSize: '0.875rem'
                             }, onMouseOver: (e) => e.currentTarget.style.backgroundColor = '#374151', onMouseOut: (e) => e.currentTarget.style.backgroundColor = 'transparent', children: "Cancelar" }), (0, jsx_runtime_1.jsx)("button", { onClick: () => onConfirm(observacao), style: {
                                 padding: '8px 16px',
-                                backgroundColor: tipo === 'aprovar' ? '#059669' : '#DC2626', // Verde ou Vermelho
+                                backgroundColor: tipo === 'aprovar' ? '#059669' : tipo === 'reprovar' ? '#DC2626' : '#D97706', // Verde, Vermelho ou Âmbar
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '6px',
@@ -71,6 +73,6 @@ const ModalObservacao = ({ isOpen, onClose, onConfirm, titulo, tipo }) => {
                                 fontWeight: 500,
                                 fontSize: '0.875rem',
                                 transition: 'background-color 0.2s'
-                            }, onMouseOver: (e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#047857' : '#B91C1C', onMouseOut: (e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#059669' : '#DC2626', children: "Confirmar" })] })] }) }));
+                            }, onMouseOver: (e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#047857' : tipo === 'reprovar' ? '#B91C1C' : '#B45309', onMouseOut: (e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#059669' : tipo === 'reprovar' ? '#DC2626' : '#D97706', children: "Confirmar" })] })] }) }));
 };
 exports.ModalObservacao = ModalObservacao;

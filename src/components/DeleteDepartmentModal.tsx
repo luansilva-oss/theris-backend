@@ -13,11 +13,13 @@ interface Props {
     allDepartments: Department[];
     userCount: number;
     onDeleted: () => void;
+    showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
+    customConfirm: (config: { title: string; message: string; onConfirm: () => void; isDestructive?: boolean; confirmLabel?: string }) => void;
 }
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
-export const DeleteDepartmentModal: React.FC<Props> = ({ isOpen, onClose, department, allDepartments, userCount, onDeleted }) => {
+export const DeleteDepartmentModal: React.FC<Props> = ({ isOpen, onClose, department, allDepartments, userCount, onDeleted, showToast, customConfirm }) => {
     const [redirectToId, setRedirectToId] = useState('');
     const [isDeleting, setIsDeleting] = useState(false);
 
@@ -27,30 +29,37 @@ export const DeleteDepartmentModal: React.FC<Props> = ({ isOpen, onClose, depart
 
     const handleDelete = async () => {
         if (userCount > 0 && !redirectToId) {
-            return alert("Por favor, selecione para qual departamento deseja mover os usuários.");
+            return showToast("Selecione um departamento de destino para os usuários.", "warning");
         }
 
-        if (!confirm(`Tem certeza que deseja excluir o departamento "${department.name}"? Esta ação é irreversível.`)) return;
+        customConfirm({
+            title: "Excluir Departamento?",
+            message: `Tem certeza que deseja excluir o departamento "${department.name}"? Esta ação é irreversível.`,
+            isDestructive: true,
+            confirmLabel: "Sim, Excluir",
+            onConfirm: async () => {
+                setIsDeleting(true);
+                try {
+                    const res = await fetch(`${API_URL}/api/structure/departments/${department.id}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ redirectToDepartmentId: redirectToId || null })
+                    });
 
-        setIsDeleting(true);
-        try {
-            const res = await fetch(`${API_URL}/api/structure/departments/${department.id}`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ redirectToDepartmentId: redirectToId || null })
-            });
-
-            if (res.ok) {
-                onDeleted();
-                onClose();
-            } else {
-                const data = await res.json();
-                alert(data.error || "Erro ao excluir departamento.");
+                    if (res.ok) {
+                        showToast("Departamento excluído com sucesso!", "success");
+                        onDeleted();
+                        onClose();
+                    } else {
+                        const data = await res.json();
+                        showToast(data.error || "Erro ao excluir departamento.", "error");
+                    }
+                } catch (e) {
+                    showToast("Erro de conexão.", "error");
+                }
+                setIsDeleting(false);
             }
-        } catch (e) {
-            alert("Erro de conexão.");
-        }
-        setIsDeleting(false);
+        });
     };
 
     return (

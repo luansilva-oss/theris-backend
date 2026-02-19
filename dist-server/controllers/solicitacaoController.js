@@ -168,7 +168,24 @@ const updateSolicitacao = async (req, res) => {
                 }
             });
             if (request.requester.email) {
-                (0, slackService_1.sendSlackNotification)(request.requester.email, 'REPROVADO', adminNote || 'Reprovado pelo administrador.');
+                // Para rejeição de Acesso, busca o nome do Owner da ferramenta
+                let ownerName;
+                const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+                if (ACCESS_TYPES.includes(request.type)) {
+                    try {
+                        const det = JSON.parse(request.details || '{}');
+                        const toolName = det.tool || det.toolName || (det.info ? det.info.split(': ')[1] : null);
+                        if (toolName) {
+                            const tool = await prisma.tool.findFirst({
+                                where: { name: { contains: toolName, mode: 'insensitive' } },
+                                include: { owner: true, subOwner: true }
+                            });
+                            ownerName = tool?.owner?.name || tool?.subOwner?.name || undefined;
+                        }
+                    }
+                    catch (_) { }
+                }
+                (0, slackService_1.sendSlackNotification)(request.requester.email, 'REPROVADO', adminNote || 'Reprovado pelo administrador.', request.type, ownerName);
             }
             return res.json(updated);
         }
@@ -232,7 +249,7 @@ const updateSolicitacao = async (req, res) => {
         });
         // Notificação Slack
         if (request.requester.email) {
-            (0, slackService_1.sendSlackNotification)(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada e executada.');
+            (0, slackService_1.sendSlackNotification)(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada e executada.', request.type);
         }
         // =========================================================
         // 🚀 LÓGICA DE EXECUÇÃO AUTOMÁTICA

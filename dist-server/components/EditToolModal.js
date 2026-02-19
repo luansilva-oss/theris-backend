@@ -5,7 +5,7 @@ const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
-const EditToolModal = ({ isOpen, onClose, tool, onUpdate }) => {
+const EditToolModal = ({ isOpen, onClose, tool, onUpdate, showToast, customConfirm }) => {
     if (!isOpen)
         return null;
     const [activeTab, setActiveTab] = (0, react_1.useState)('IDENTITY');
@@ -46,52 +46,75 @@ const EditToolModal = ({ isOpen, onClose, tool, onUpdate }) => {
     const handleSaveIdentity = async () => {
         setIsSaving(true);
         try {
-            await fetch(`${API_URL}/api/tools/${tool.id}`, {
+            const res = await fetch(`${API_URL}/api/tools/${tool.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name,
                     acronym,
-                    toolGroupId: groupId,
+                    toolGroupId: groupId || null,
                     ownerId: ownerId || null,
                     subOwnerId: subOwnerId || null,
                     description,
-                    availableAccessLevels: accessLevels // Envia níveis também, caso tenha editado
+                    availableAccessLevels: accessLevels
                 })
             });
-            onUpdate();
-            onClose();
+            if (res.ok) {
+                showToast("Informações atualizadas com sucesso!", "success");
+                onUpdate();
+                onClose();
+            }
+            else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao salvar.", "error");
+            }
         }
         catch (e) {
-            alert("Erro ao salvar.");
+            showToast("Erro ao salvar.", "error");
         }
         setIsSaving(false);
     };
     const notifyUserChange = async (userId, level) => {
         try {
-            await fetch(`${API_URL}/api/tools/${tool.id}/access`, {
+            const res = await fetch(`${API_URL}/api/tools/${tool.id}/access`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, level })
             });
-            onUpdate();
+            if (res.ok) {
+                onUpdate();
+                showToast("Acesso atualizado!", "success");
+            }
+            else {
+                showToast("Erro ao atualizar acesso.", "error");
+            }
         }
         catch (e) {
-            alert("Erro ao atualizar acesso.");
+            showToast("Erro ao atualizar acesso.", "error");
         }
     };
     const removeUser = async (userId) => {
-        if (!confirm("Remover acesso?"))
-            return;
-        try {
-            await fetch(`${API_URL}/api/tools/${tool.id}/access/${userId}`, { method: 'DELETE' });
-            onUpdate(); // O pai atualizará a prop 'tool', que atualizará a UI? 
-            // OBS: como 'tool' vem via props, a lista de usuários aqui na modal só atualiza se o pai atualizar e repassar.
-            // Idealmente, a modal devia ter um state local de users ou chamar onUpdate e esperar.
-        }
-        catch (e) {
-            alert("Erro.");
-        }
+        customConfirm({
+            title: "Remover Acesso?",
+            message: "Tem certeza que deseja remover este acesso?",
+            isDestructive: true,
+            confirmLabel: "Remover",
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/tools/${tool.id}/access/${userId}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        onUpdate();
+                        showToast("Acesso removido.", "info");
+                    }
+                    else {
+                        showToast("Erro ao remover.", "error");
+                    }
+                }
+                catch (e) {
+                    showToast("Erro de conexão.", "error");
+                }
+            }
+        });
     };
     const createGroup = async () => {
         if (!newGroupName)
@@ -102,14 +125,20 @@ const EditToolModal = ({ isOpen, onClose, tool, onUpdate }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newGroupName })
             });
-            const group = await res.json();
-            setAvailableGroups([...availableGroups, group]);
-            setGroupId(group.id);
-            setNewGroupMode(false);
-            setNewGroupName('');
+            if (res.ok) {
+                const group = await res.json();
+                setAvailableGroups([...availableGroups, group]);
+                setGroupId(group.id);
+                setNewGroupMode(false);
+                setNewGroupName('');
+                showToast("Grupo criado!", "success");
+            }
+            else {
+                showToast("Erro ao criar grupo.", "error");
+            }
         }
         catch (e) {
-            alert("Erro ao criar grupo.");
+            showToast("Erro ao criar grupo.", "error");
         }
     };
     // Filter users for selection inputs

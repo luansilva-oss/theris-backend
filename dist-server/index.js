@@ -102,6 +102,7 @@ app.patch('/api/tools/:toolId/access/:userId', toolController_1.updateToolAccess
 // 3. Usuários
 app.get('/api/users', userController_1.getAllUsers);
 app.put('/api/users/:id', userController_1.updateUser);
+app.delete('/api/users/:id', userController_1.deleteUser);
 // ============================================================
 // --- INTEGRAÇÃO CONVENIA ---
 // ============================================================

@@ -19,6 +19,8 @@ import { ManageLevelModal } from './components/ManageLevelModal';
 import PersonnelListView from './components/PersonnelListView';
 import { EditDepartmentModal } from './components/EditDepartmentModal';
 import { DeleteDepartmentModal } from './components/DeleteDepartmentModal';
+import { ToastContainer, Toast } from './components/ToastContainer';
+import { CustomConfirmModal } from './components/CustomConfirmModal';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -99,9 +101,14 @@ export default function App() {
   const [expandedDept, setExpandedDept] = useState<string | null>(null);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
 
+  // FILTROS
+  const [sourceFilter, setSourceFilter] = useState<'ALL' | 'THERIS' | 'INFRA'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'APROVADO' | 'REPROVADO' | 'PENDENTE'>('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
+
   // MODAL
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar'>('aprovar');
+  const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar' | 'pendente'>('aprovar');
   const [modalTargetId, setModalTargetId] = useState<string | null>(null);
 
   // EDIT MODAL
@@ -118,6 +125,41 @@ export default function App() {
   const [isEditDeptModalOpen, setIsEditDeptModalOpen] = useState(false);
   const [isDeleteDeptModalOpen, setIsDeleteDeptModalOpen] = useState(false);
   const [selectedDeptForAction, setSelectedDeptForAction] = useState<any>(null);
+
+  // NOTIFICAÇÕES E CONFIRMAÇÕES
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDestructive?: boolean;
+    confirmLabel?: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => { },
+  });
+
+  const showToast = (message: string, type: Toast['type'] = 'info') => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const customConfirm = (config: {
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDestructive?: boolean;
+    confirmLabel?: string;
+  }) => {
+    setConfirmConfig({ ...config, isOpen: true });
+  };
 
   // Stats
   const stats = {
@@ -140,7 +182,7 @@ export default function App() {
       const sessionStart = localStorage.getItem('theris_session_start');
       if (storedUser && sessionStart) {
         if (Date.now() - parseInt(sessionStart) > SESSION_DURATION) {
-          alert("Sessão expirada."); handleLogout();
+          showToast("Sessão expirada.", "warning"); handleLogout();
         } else setIsLoggedIn(true);
       } else setIsLoggedIn(false);
     };
@@ -213,11 +255,11 @@ export default function App() {
           setIsLoading(false);
           setIsMfaRequired(true);
         } else {
-          alert(data.error);
+          showToast(data.error, "error");
           setIsLoading(false);
         }
       } catch (e) {
-        alert("Erro de conexão.");
+        showToast("Erro de conexão.", "error");
         setIsLoading(false);
       }
     },
@@ -225,7 +267,7 @@ export default function App() {
   });
 
   const handleMfaVerify = async () => {
-    if (mfaCode.length < 6) return alert("Digite o código de 6 dígitos.");
+    if (mfaCode.length < 6) return showToast("Digite o código de 6 dígitos.", "warning");
     setIsLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/auth/verify-mfa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser?.id, code: mfaCode }) });
@@ -235,10 +277,11 @@ export default function App() {
         localStorage.setItem('theris_profile', systemProfile);
         localStorage.setItem('theris_session_start', Date.now().toString());
         setIsLoggedIn(true); setIsMfaRequired(false);
+        showToast("Bem-vindo de volta!", "success");
       } else {
-        alert(data.error || "Código inválido."); setMfaCode('');
+        showToast(data.error || "Código inválido.", "error"); setMfaCode('');
       }
-    } catch (e) { alert("Erro ao verificar."); }
+    } catch (e) { showToast("Erro ao verificar.", "error"); }
     setIsLoading(false);
   };
 
@@ -250,23 +293,31 @@ export default function App() {
   const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); setActiveTab('DASHBOARD'); setSelectedTool(null); setIsMfaRequired(false); };
 
   const handleDeleteTool = async (id: string) => {
-    if (!window.confirm('🚨 TEM CERTEZA? Isso excluirá permanentemente esta ferramenta e todos os seus históricos de acesso!')) return;
-    try {
-      const res = await fetch(`${API_URL}/api/tools/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setSelectedTool(null);
-        loadData();
-      } else {
-        alert("Erro ao excluir ferramenta.");
+    customConfirm({
+      title: "Excluir Ferramenta?",
+      message: "🚨 TEM CERTEZA? Isso excluirá permanentemente esta ferramenta e todos os seus históricos de acesso!",
+      isDestructive: true,
+      confirmLabel: "Sim, Excluir",
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/tools/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            setSelectedTool(null);
+            loadData();
+            showToast("Ferramenta excluída.", "success");
+          } else {
+            showToast("Erro ao excluir ferramenta.", "error");
+          }
+        } catch (e) {
+          showToast("Erro de rede.", "error");
+        }
       }
-    } catch (e) {
-      alert("Erro de rede.");
-    }
+    });
   };
 
-  const handleOpenApprove = (id: string, action: 'APROVAR' | 'REPROVAR') => {
+  const handleOpenApprove = (id: string, action: 'APROVAR' | 'REPROVAR' | 'PENDENTE') => {
     setModalTargetId(id);
-    setModalAction(action === 'APROVAR' ? 'aprovar' : 'reprovar');
+    setModalAction(action.toLowerCase() as any);
     setModalOpen(true);
   };
 
@@ -274,11 +325,11 @@ export default function App() {
     if (!modalTargetId) return;
 
     if (modalAction === 'reprovar' && !note.trim()) {
-      alert("⚠️ Para recusar, é obrigatório informar o motivo.");
+      showToast("⚠️ Para recusar, é obrigatório informar o motivo.", "warning");
       return;
     }
 
-    const apiStatus = modalAction === 'aprovar' ? 'APROVAR' : 'REPROVAR';
+    const apiStatus = modalAction === 'aprovar' ? 'APROVAR' : (modalAction === 'pendente' ? 'PENDENTE_GESTOR' : 'REPROVAR');
 
     try {
       const res = await fetch(`${API_URL}/api/solicitacoes/${modalTargetId}`, {
@@ -295,12 +346,13 @@ export default function App() {
         loadData();
         setModalOpen(false);
         setModalTargetId(null);
+        showToast(`Solicitação ${modalAction === 'aprovar' ? 'aprovada' : modalAction === 'pendente' ? 'marcada como pendente' : 'reprovada'} com sucesso!`, "success");
       } else {
         const data = await res.json();
-        alert(data.error || "Erro ao processar solicitação.");
+        showToast(data.error || "Erro ao processar solicitação.", "error");
       }
     } catch (e) {
-      alert("Erro de conexão ao processar solicitação.");
+      showToast("Erro de conexão ao processar solicitação.", "error");
     }
   };
 
@@ -326,24 +378,30 @@ export default function App() {
   };
 
   const handleDeleteUser = async (userToDelete: User) => {
-    if (!confirm(`Tem certeza que deseja excluir o usuário ${userToDelete.name}?`)) return;
+    customConfirm({
+      title: "Excluir Colaborador?",
+      message: `Tem certeza que deseja excluir o usuário ${userToDelete.name}?`,
+      isDestructive: true,
+      confirmLabel: "Excluir",
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/users/${userToDelete.id}`, {
+            method: 'DELETE',
+          });
 
-    try {
-      const res = await fetch(`${API_URL}/api/users/${userToDelete.id}`, {
-        method: 'DELETE',
-      });
-
-      if (res.ok) {
-        setAllUsers(prev => prev.filter(u => u.id !== userToDelete.id));
-        // Also remove from selected if needed
-        if (selectedUser?.id === userToDelete.id) setSelectedUser(null);
-      } else {
-        const data = await res.json();
-        alert(data.error || "Erro ao excluir usuário.");
+          if (res.ok) {
+            setAllUsers(prev => prev.filter(u => u.id !== userToDelete.id));
+            if (selectedUser?.id === userToDelete.id) setSelectedUser(null);
+            showToast("Colaborador removido.", "success");
+          } else {
+            const data = await res.json();
+            showToast(data.error || "Erro ao excluir usuário.", "error");
+          }
+        } catch (error) {
+          showToast("Erro ao excluir usuário.", "error");
+        }
       }
-    } catch (error) {
-      alert("Erro ao excluir usuário.");
-    }
+    });
   };
 
   const getGroupedPeople = () => {
@@ -376,13 +434,14 @@ export default function App() {
       });
       if (!res.ok) {
         const data = await res.json();
-        alert(data.error || "Erro ao reatribuir gestor.");
+        showToast(data.error || "Erro ao reatribuir gestor.", "error");
         loadData(); // Reverte visualmente se falhar
       } else {
+        showToast("Hierarquia atualizada!", "success");
         loadData();
       }
     } catch (e) {
-      alert("Erro de conexão ao alterar hierarquia.");
+      showToast("Erro de conexão ao alterar hierarquia.", "error");
       loadData();
     }
   };
@@ -571,8 +630,18 @@ export default function App() {
                             <p>Solicitante: {r.requester?.name}</p>
                           </div>
                           <div className="action-buttons">
-                            <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Aprovar</button>
-                            <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusar</button>
+                            {r.type === 'INFRA_SUPPORT' ? (
+                              <>
+                                <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Concluído</button>
+                                <button className="btn-mini" style={{ backgroundColor: 'rgba(217, 119, 6, 0.2)', color: '#fbbf24', border: '1px solid #d97706', padding: '4px 8px', fontSize: 11, borderRadius: 6 }} onClick={() => handleOpenApprove(r.id, 'PENDENTE')}>Pendente</button>
+                                <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusado</button>
+                              </>
+                            ) : (
+                              <>
+                                <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Aprovar</button>
+                                <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusar</button>
+                              </>
+                            )}
                           </div>
                         </div>
                       ))
@@ -905,15 +974,59 @@ export default function App() {
           {/* AUDITORIA */}
           {activeTab === 'HISTORY' && (
             <div className="fade-in">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Logs de Auditoria</h2>
-                <div style={{ fontSize: 12, color: '#71717a' }}>Total de Registros: {requests.filter(r => r.status !== 'PENDENTE').length}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 15, marginBottom: 20 }}>
+                {/* BUSCA */}
+                <div style={{ position: 'relative', flex: 1, minWidth: '300px' }}>
+                  <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#71717a' }} />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nome do solicitante ou ID..."
+                    className="input-base"
+                    style={{ paddingLeft: 40, background: '#18181b' }}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+
+                {/* FILTRO ORIGEM */}
+                <div style={{ display: 'flex', gap: 4, background: '#18181b', borderRadius: 8, padding: 4, border: '1px solid #27272a' }}>
+                  {(['ALL', 'THERIS', 'INFRA'] as const).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setSourceFilter(f)}
+                      style={{
+                        padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', transition: 'all 0.2s',
+                        background: sourceFilter === f ? (f === 'INFRA' ? 'rgba(251, 191, 36, 0.2)' : f === 'THERIS' ? 'rgba(167, 139, 250, 0.2)' : '#27272a') : 'transparent',
+                        color: sourceFilter === f ? (f === 'INFRA' ? '#fbbf24' : f === 'THERIS' ? '#a78bfa' : 'white') : '#71717a',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {f === 'ALL' ? 'Todos' : f === 'THERIS' ? 'Theris' : 'TI / Infra'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* FILTRO STATUS */}
+                <select
+                  className="input-base"
+                  style={{ width: 'auto', background: '#18181b', fontSize: 12, padding: '4px 10px' }}
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                >
+                  <option value="ALL">Status: Todos</option>
+                  <option value="PENDENTE">Ação Pendente</option>
+                  <option value="APROVADO">Concluído / Aprovado</option>
+                  <option value="REPROVADO">Recusado / Reprovado</option>
+                </select>
               </div>
+
               <div className="card-base" style={{ padding: 0, overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #27272a', color: '#a1a1aa', textAlign: 'left' }}>
                       <th style={{ padding: '16px', fontWeight: 600 }}>ID</th>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>CATEGORIA</th>
+                      <th style={{ padding: '16px', fontWeight: 600 }}>ASSUNTO</th>
                       <th style={{ padding: '16px', fontWeight: 600 }}>STATUS</th>
                       <th style={{ padding: '16px', fontWeight: 600 }}>SOLICITANTE</th>
                       <th style={{ padding: '16px', fontWeight: 600 }}>RESPONSÁVEL (APROVADOR)</th>
@@ -923,53 +1036,134 @@ export default function App() {
                   </thead>
                   <tbody>
                     {requests
-                      .filter(r => r.status !== 'PENDENTE')
+                      .filter(r => {
+                        // 1. Filtro de Status
+                        if (statusFilter !== 'ALL') {
+                          if (statusFilter === 'PENDENTE') {
+                            if (!r.status.startsWith('PENDENTE')) return false;
+                          } else if (r.status !== statusFilter) return false;
+                        } else {
+                          // Por padrão, esconde os que são apenas 'PENDENTE' (sem auditoria ainda?)
+                          // mas o usuário pediu um filtro robusto. 
+                          // Vamos mostrar tudo que não for o estado inicial cru de sistema se o filtro estiver em ALL
+                          // ou melhor, manter a lógica original de r.status !== 'PENDENTE'
+                          if (r.status === 'PENDENTE') return false;
+                        }
+
+                        // 2. Filtro de Origem
+                        const INFRA_TYPES = ['INFRA_SUPPORT'];
+                        const isInfra = INFRA_TYPES.includes(r.type);
+                        if (sourceFilter === 'THERIS' && isInfra) return false;
+                        if (sourceFilter === 'INFRA' && !isInfra) return false;
+
+                        // 3. Busca
+                        if (searchTerm) {
+                          const term = searchTerm.toLowerCase();
+                          const matchesName = r.requester?.name?.toLowerCase().includes(term);
+                          const matchesId = r.id.toLowerCase().includes(term);
+                          if (!matchesName && !matchesId) return false;
+                        }
+
+                        return true;
+                      })
                       .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
-                      .map(r => (
-                        <tr key={r.id} style={{ borderBottom: '1px solid #1f1f22', color: '#e4e4e7' }}>
-                          <td style={{ padding: '16px', fontSize: 11, color: '#71717a', fontFamily: 'monospace' }} title={r.id}>
-                            #{r.id.split('-')[0].toUpperCase()}
-                          </td>
-                          <td style={{ padding: '16px' }}>
-                            <span style={{
-                              padding: '4px 10px', borderRadius: '20px', fontSize: 11, fontWeight: 700,
-                              backgroundColor: r.status === 'APROVADO' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                              color: r.status === 'APROVADO' ? '#34d399' : '#f87171',
-                              border: r.status === 'APROVADO' ? '1px solid #059669' : '1px solid #b91c1c',
-                              display: 'inline-flex', alignItems: 'center', gap: 5
-                            }}>
-                              {r.status === 'APROVADO' ? <CheckCircle size={10} /> : <XCircle size={10} />}
-                              {r.status}
-                            </span>
-                          </td>
-                          <td style={{ padding: '16px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#3f3f46', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>
-                                {r.requester?.name?.charAt(0) || '?'}
-                              </div>
-                              <span>{r.requester?.name || 'Usuário Removido'}</span>
-                            </div>
-                          </td>
-                          <td style={{ padding: '16px' }}>
-                            {r.approver ? (
+                      .map(r => {
+                        // MAPEAR CATEGORIA E ASSUNTO
+                        let category = "Geral";
+                        let subject = r.type;
+
+                        const TOOL_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'];
+                        const PEOPLE_TYPES = ['DEPUTY_DESIGNATION', 'CHANGE_ROLE', 'HIRING', 'FIRING', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'];
+                        const INFRA_TYPES = ['INFRA_SUPPORT'];
+
+                        if (TOOL_TYPES.includes(r.type)) category = "Gestão de Ferramentas";
+                        else if (PEOPLE_TYPES.includes(r.type)) category = "Gestão de Pessoas";
+                        else if (INFRA_TYPES.includes(r.type)) category = "Infraestrutura & TI";
+
+                        // Assunto amigável
+                        const subjectMap: Record<string, string> = {
+                          'ACCESS_TOOL': 'Novo Acesso',
+                          'ACESSO_FERRAMENTA': 'Novo Acesso',
+                          'ACCESS_CHANGE': 'Alteração de Acesso',
+                          'EXTRAORDINARIO': 'Acesso Extraordinário',
+                          'ACCESS_TOOL_EXTRA': 'Acesso Extraordinário',
+                          'DEPUTY_DESIGNATION': 'Designação de Substituto',
+                          'CHANGE_ROLE': 'Mudança de Cargo',
+                          'PROMOCAO': 'Promoção',
+                          'ADMISSAO': 'Admissão / Onboarding',
+                          'DEMISSAO': 'Desligamento / Offboarding',
+                          'FIRING': 'Desligamento / Offboarding',
+                          'INFRA_SUPPORT': 'Suporte de TI / Hardware'
+                        };
+                        subject = subjectMap[r.type] || r.type;
+
+                        return (
+                          <tr key={r.id} style={{ borderBottom: '1px solid #1f1f22', color: '#e4e4e7' }}>
+                            <td style={{ padding: '16px', fontSize: 11, color: '#71717a', fontFamily: 'monospace' }} title={r.id}>
+                              #{r.id.split('-')[0].toUpperCase()}
+                            </td>
+                            <td style={{ padding: '16px' }}>
+                              <span style={{
+                                fontSize: 12,
+                                color: category === 'Gestão de Ferramentas' ? '#a78bfa' :
+                                  category === 'Gestão de Pessoas' ? '#34d399' :
+                                    category === 'Infraestrutura & TI' ? '#fbbf24' : '#a1a1aa',
+                                fontWeight: 600
+                              }}>
+                                {category}
+                              </span>
+                            </td>
+                            <td style={{ padding: '16px', fontSize: 13 }}>
+                              {subject}
+                            </td>
+                            <td style={{ padding: '16px' }}>
+                              <span style={{
+                                padding: '4px 10px', borderRadius: '20px', fontSize: 11, fontWeight: 700,
+                                backgroundColor: r.status === 'APROVADO' ? 'rgba(16, 185, 129, 0.2)' :
+                                  r.status === 'REPROVADO' ? 'rgba(239, 68, 68, 0.2)' :
+                                    r.status.startsWith('PENDENTE') ? 'rgba(245, 158, 11, 0.15)' : 'rgba(113, 113, 122, 0.2)',
+                                color: r.status === 'APROVADO' ? '#34d399' :
+                                  r.status === 'REPROVADO' ? '#f87171' :
+                                    r.status.startsWith('PENDENTE') ? '#fbbf24' : '#a1a1aa',
+                                border: r.status === 'APROVADO' ? '1px solid #059669' :
+                                  r.status === 'REPROVADO' ? '1px solid #b91c1c' :
+                                    r.status.startsWith('PENDENTE') ? '1px solid #d97706' : '1px solid #3f3f46',
+                                display: 'inline-flex', alignItems: 'center', gap: 5
+                              }}>
+                                {r.status === 'APROVADO' ? <CheckCircle size={10} /> :
+                                  r.status === 'REPROVADO' ? <XCircle size={10} /> : <Clock size={10} />}
+                                {r.status.replace('PENDENTE_', 'Pendente ')}
+                              </span>
+                            </td>
+                            <td style={{ padding: '16px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <Shield size={14} color="#a78bfa" />
-                                <span style={{ color: '#a78bfa' }}>{r.approver.name}</span>
+                                <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#3f3f46', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>
+                                  {r.requester?.name?.charAt(0) || '?'}
+                                </div>
+                                <span>{r.requester?.name || 'Usuário Removido'}</span>
                               </div>
-                            ) : (
-                              <span style={{ color: '#52525b', fontStyle: 'italic' }}>Sistema / Automático</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '16px', color: '#a1a1aa' }}>
-                            {new Date(r.updatedAt || r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td style={{ padding: '16px', color: '#71717a', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.adminNote}>
-                            {r.adminNote || '-'}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td style={{ padding: '16px' }}>
+                              {r.approver ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <Shield size={14} color="#a78bfa" />
+                                  <span style={{ color: '#a78bfa' }}>{r.approver.name}</span>
+                                </div>
+                              ) : (
+                                <span style={{ color: '#52525b', fontStyle: 'italic' }}>Sistema / Automático</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '16px', color: '#a1a1aa' }}>
+                              {new Date(r.updatedAt || r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td style={{ padding: '16px', color: '#71717a', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.adminNote}>
+                              {r.adminNote || '-'}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     {requests.filter(r => r.status !== 'PENDENTE').length === 0 && (
-                      <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#52525b' }}>Nenhum registro de auditoria encontrado.</td></tr>
+                      <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#52525b' }}>Nenhum registro de auditoria encontrado.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -987,6 +1181,8 @@ export default function App() {
           onClose={() => setIsEditModalOpen(false)}
           tool={selectedTool}
           onUpdate={loadData}
+          showToast={showToast}
+          customConfirm={customConfirm}
         />
       )}
 
@@ -1001,6 +1197,7 @@ export default function App() {
           onUpdate={loadData}
           currentUser={{ id: currentUser?.id || '', systemProfile }}
           allUsers={allUsers}
+          showToast={showToast}
         />
       )}
 
@@ -1008,6 +1205,7 @@ export default function App() {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onCreated={loadData}
+        showToast={showToast}
       />
 
       <EditAccessModal
@@ -1016,6 +1214,7 @@ export default function App() {
         access={selectedAccess}
         toolId={selectedTool?.id || ''}
         onUpdate={loadData}
+        showToast={showToast}
       />
 
       {/* RENDERIZAR O MODAL DE ESTRUTURA */}
@@ -1028,6 +1227,8 @@ export default function App() {
         onUpdate={loadData}
         initialDepartment={selectedStructureDept}
         allUsers={allUsers}
+        showToast={showToast}
+        customConfirm={customConfirm}
       />
 
       {selectedTool && selectedLevelName && (
@@ -1040,6 +1241,8 @@ export default function App() {
           tool={selectedTool as any}
           levelName={selectedLevelName}
           onUpdate={loadData}
+          showToast={showToast}
+          customConfirm={customConfirm}
         />
       )}
 
@@ -1049,14 +1252,32 @@ export default function App() {
         onClose={() => setIsEditDeptModalOpen(false)}
         department={selectedDeptForAction}
         onUpdated={loadData}
+        showToast={showToast}
       />
-      <DeleteDepartmentModal
-        isOpen={isDeleteDeptModalOpen}
-        onClose={() => setIsDeleteDeptModalOpen(false)}
-        department={selectedDeptForAction}
-        allDepartments={departments}
-        userCount={selectedDeptForAction ? allUsers.filter(u => u.department === selectedDeptForAction.name).length : 0}
-        onDeleted={loadData}
+      {isDeleteDeptModalOpen && (
+        <DeleteDepartmentModal
+          isOpen={isDeleteDeptModalOpen}
+          onClose={() => setIsDeleteDeptModalOpen(false)}
+          department={selectedDeptForAction}
+          allDepartments={departments}
+          userCount={selectedDeptForAction ? allUsers.filter(u => u.department === selectedDeptForAction.name).length : 0}
+          onDeleted={loadData}
+          showToast={showToast}
+          customConfirm={customConfirm}
+        />
+      )}
+
+      {/* CUSTOM UI OVERLAYS */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      <CustomConfirmModal
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        isDestructive={confirmConfig.isDestructive}
+        confirmLabel={confirmConfig.confirmLabel}
       />
     </div>
   );

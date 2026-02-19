@@ -5,7 +5,7 @@ const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
-const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, allUsers }) => {
+const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, allUsers, showToast, customConfirm }) => {
     const [departments, setDepartments] = (0, react_1.useState)([]);
     const [roles, setRoles] = (0, react_1.useState)([]);
     const [isLoading, setIsLoading] = (0, react_1.useState)(false);
@@ -70,104 +70,152 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
         if (!newDeptName)
             return;
         try {
-            await fetch(`${API_URL}/api/structure/departments`, {
+            const res = await fetch(`${API_URL}/api/structure/departments`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newDeptName })
             });
-            setNewDeptName('');
-            loadData();
-            onUpdate();
+            if (res.ok) {
+                setNewDeptName('');
+                loadData();
+                onUpdate();
+                showToast("Departamento criado!", "success");
+            }
+            else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao criar departamento.", "error");
+            }
         }
         catch (e) {
-            alert("Erro ao criar departamento.");
+            showToast("Erro ao criar departamento.", "error");
         }
     };
     const handleUpdateDeptName = async () => {
         if (!currentDept || !editedDeptName)
             return;
         try {
-            await fetch(`${API_URL}/api/structure/departments/${currentDept.id}`, {
+            const res = await fetch(`${API_URL}/api/structure/departments/${currentDept.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: editedDeptName })
             });
-            setIsEditingDeptName(false);
-            loadData();
-            onUpdate();
+            if (res.ok) {
+                setIsEditingDeptName(false);
+                loadData();
+                onUpdate();
+                showToast("Nome atualizado!", "success");
+            }
+            else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao atualizar.", "error");
+            }
         }
         catch (e) {
-            alert("Erro ao atualizar nome.");
+            showToast("Erro ao atualizar nome.", "error");
         }
     };
     const handleDeleteDept = async (id) => {
-        if (!confirm("Excluir este departamento?"))
-            return;
-        try {
-            const res = await fetch(`${API_URL}/api/structure/departments/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                if (viewMode === 'DEPARTMENT') {
-                    setViewMode('GLOBAL');
-                    setCurrentDept(null);
+        customConfirm({
+            title: "Excluir Departamento?",
+            message: "Excluir este departamento? Os cargos vinculados também serão removidos.",
+            isDestructive: true,
+            confirmLabel: "Sim, Excluir",
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/structure/departments/${id}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        if (viewMode === 'DEPARTMENT') {
+                            setViewMode('GLOBAL');
+                            setCurrentDept(null);
+                        }
+                        loadData();
+                        onUpdate();
+                        showToast("Departamento excluído.", "success");
+                    }
+                    else {
+                        const err = await res.json();
+                        showToast(err.error || "Erro ao excluir.", "error");
+                    }
                 }
-                loadData();
-                onUpdate();
+                catch (e) {
+                    showToast("Erro ao excluir.", "error");
+                }
             }
-            else {
-                const err = await res.json();
-                alert(err.error || "Erro ao excluir.");
-            }
-        }
-        catch (e) {
-            alert("Erro ao excluir.");
-        }
+        });
     };
     // --- ROLES ---
     const handleCreateRole = async () => {
         if (!newRoleName || !currentDept)
             return;
         try {
-            await fetch(`${API_URL}/api/structure/roles`, {
+            const res = await fetch(`${API_URL}/api/structure/roles`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newRoleName, departmentId: currentDept.id })
             });
-            setNewRoleName('');
-            loadData();
-            onUpdate();
+            if (res.ok) {
+                setNewRoleName('');
+                loadData();
+                onUpdate();
+                showToast("Cargo criado!", "success");
+            }
+            else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao criar cargo.", "error");
+            }
         }
         catch (e) {
-            alert("Erro ao criar cargo.");
+            showToast("Erro ao criar cargo.", "error");
         }
     };
     const handleUpdateRole = async (id) => {
         if (!currentDept)
             return;
         try {
-            await fetch(`${API_URL}/api/structure/roles/${id}`, {
+            const res = await fetch(`${API_URL}/api/structure/roles/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: editingRoleName, departmentId: currentDept.id })
             });
-            setEditingRoleId(null);
-            loadData();
-            onUpdate();
+            if (res.ok) {
+                setEditingRoleId(null);
+                loadData();
+                onUpdate();
+                showToast("Cargo atualizado!", "success");
+            }
+            else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao atualizar cargo.", "error");
+            }
         }
         catch (e) {
-            alert("Erro ao atualizar cargo.");
+            showToast("Erro ao atualizar cargo.", "error");
         }
     };
     const handleDeleteRole = async (id) => {
-        if (!confirm("Excluir este cargo?"))
-            return;
-        try {
-            await fetch(`${API_URL}/api/structure/roles/${id}`, { method: 'DELETE' });
-            loadData();
-            onUpdate();
-        }
-        catch (e) {
-            alert("Erro ao excluir.");
-        }
+        customConfirm({
+            title: "Excluir Cargo?",
+            message: "Tem certeza que deseja excluir este cargo?",
+            isDestructive: true,
+            confirmLabel: "Excluir",
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/structure/roles/${id}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        loadData();
+                        onUpdate();
+                        showToast("Cargo excluído!", "success");
+                    }
+                    else {
+                        const data = await res.json();
+                        showToast(data.error || "Erro ao excluir.", "error");
+                    }
+                }
+                catch (e) {
+                    showToast("Erro ao excluir.", "error");
+                }
+            }
+        });
     };
     // --- USER ASSIGNMENT ---
     const handleAddUserToRole = async (userId) => {
@@ -177,7 +225,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
             const user = allUsers.find(u => u.id === userId);
             if (!user)
                 return;
-            await fetch(`${API_URL}/api/users/${userId}`, {
+            const res = await fetch(`${API_URL}/api/users/${userId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -188,33 +236,53 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
                     department: currentDept.name
                 })
             });
-            setIsUserPickerOpen(false);
-            onUpdate();
+            if (res.ok) {
+                setIsUserPickerOpen(false);
+                onUpdate();
+                showToast("Colaborador adicionado!", "success");
+            }
+            else {
+                const data = await res.json();
+                showToast(data.error || "Erro ao adicionar usuário.", "error");
+            }
         }
         catch (e) {
-            alert("Erro ao adicionar usuário.");
+            showToast("Erro ao adicionar usuário.", "error");
         }
     };
     const handleRemoveUserFromRole = async (user) => {
-        if (!confirm(`Remover ${user.name} deste cargo?`))
-            return;
-        try {
-            await fetch(`${API_URL}/api/users/${user.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: user.name,
-                    email: user.email,
-                    systemProfile: user.systemProfile || 'VIEWER',
-                    jobTitle: '',
-                    department: user.department
-                })
-            });
-            onUpdate();
-        }
-        catch (e) {
-            alert("Erro ao remover usuário.");
-        }
+        customConfirm({
+            title: "Remover do Cargo?",
+            message: `Remover ${user.name} deste cargo?`,
+            confirmLabel: "Remover",
+            isDestructive: true,
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/api/users/${user.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: user.name,
+                            email: user.email,
+                            systemProfile: user.systemProfile || 'VIEWER',
+                            jobTitle: '',
+                            department: user.department
+                        })
+                    });
+                    if (res.ok) {
+                        onUpdate();
+                        showToast("Colaborador removido do cargo.", "info");
+                    }
+                    else {
+                        const data = await res.json();
+                        showToast(data.error || "Erro ao remover usuário.", "error");
+                    }
+                }
+                catch (e) {
+                    showToast("Erro ao remover usuário.", "error");
+                }
+            }
+        });
     };
     const pickerUsers = allUsers.filter(u => u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) &&
         u.jobTitle !== targetRole?.name);

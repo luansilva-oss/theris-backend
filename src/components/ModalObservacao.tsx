@@ -5,7 +5,7 @@ interface ModalObservacaoProps {
     onClose: () => void;
     onConfirm: (observacao: string) => void;
     titulo: string;
-    tipo: 'aprovar' | 'reprovar';
+    tipo: 'aprovar' | 'reprovar' | 'pendente';
 }
 
 export const ModalObservacao: React.FC<ModalObservacaoProps> = ({
@@ -83,7 +83,11 @@ export const ModalObservacao: React.FC<ModalObservacaoProps> = ({
                             fontSize: '14px',
                             fontFamily: "'Inter', sans-serif"
                         }}
-                        placeholder={tipo === 'reprovar' ? "Digite o motivo da reprovação (Obrigatório)..." : "Alguma observação adicional?..."}
+                        placeholder={
+                            tipo === 'reprovar' ? "Digite o motivo da reprovação (Obrigatório)..." :
+                                tipo === 'pendente' ? "Descreva o que falta ou por que está pendente..." :
+                                    "Alguma observação adicional?..."
+                        }
                         value={observacao}
                         onChange={(e) => setObservacao(e.target.value)}
                         autoFocus
@@ -114,7 +118,7 @@ export const ModalObservacao: React.FC<ModalObservacaoProps> = ({
                         onClick={() => onConfirm(observacao)}
                         style={{
                             padding: '8px 16px',
-                            backgroundColor: tipo === 'aprovar' ? '#059669' : '#DC2626', // Verde ou Vermelho
+                            backgroundColor: tipo === 'aprovar' ? '#059669' : tipo === 'reprovar' ? '#DC2626' : '#D97706', // Verde, Vermelho ou Âmbar
                             color: 'white',
                             border: 'none',
                             borderRadius: '6px',
@@ -123,8 +127,8 @@ export const ModalObservacao: React.FC<ModalObservacaoProps> = ({
                             fontSize: '0.875rem',
                             transition: 'background-color 0.2s'
                         }}
-                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#047857' : '#B91C1C'}
-                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#059669' : '#DC2626'}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#047857' : tipo === 'reprovar' ? '#B91C1C' : '#B45309'}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = tipo === 'aprovar' ? '#059669' : tipo === 'reprovar' ? '#DC2626' : '#D97706'}
                     >
                         Confirmar
                     </button>

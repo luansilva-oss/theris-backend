@@ -58,22 +58,38 @@ const updateDepartment = async (req, res) => {
 exports.updateDepartment = updateDepartment;
 const deleteDepartment = async (req, res) => {
     const { id } = req.params;
+    const { redirectToDepartmentId } = req.body; // Alvo para mover usuários
     try {
-        // 1. Check existing Roles
-        const rolesCount = await prisma.role.count({ where: { departmentId: id } });
-        if (rolesCount > 0)
-            return res.status(400).json({ error: "Não é possível excluir: existem cargos vinculados." });
-        // 2. Check existing Users (by string matching)
-        const dept = await prisma.department.findUnique({ where: { id } });
-        if (dept) {
-            const userCount = await prisma.user.count({ where: { department: dept.name } });
-            if (userCount > 0)
-                return res.status(400).json({ error: `Não é possível excluir: existem ${userCount} usuários neste departamento.` });
+        const deptToDelete = await prisma.department.findUnique({ where: { id } });
+        if (!deptToDelete)
+            return res.status(404).json({ error: "Departamento não encontrado." });
+        // 1. Redirecionar usuários se houver alvo
+        if (redirectToDepartmentId) {
+            const targetDept = await prisma.department.findUnique({ where: { id: redirectToDepartmentId } });
+            if (!targetDept)
+                return res.status(400).json({ error: "Departamento de destino não encontrado." });
+            await prisma.user.updateMany({
+                where: { department: deptToDelete.name },
+                data: { department: targetDept.name }
+            });
         }
+        else {
+            // Se não houver redirecionamento, verificar se o departamento está vazio
+            const userCount = await prisma.user.count({ where: { department: deptToDelete.name } });
+            if (userCount > 0) {
+                return res.status(400).json({
+                    error: `O departamento possui ${userCount} usuários. Selecione um destino para movê-los.`
+                });
+            }
+        }
+        // 2. Limpar cargos (roles) vinculados
+        await prisma.role.deleteMany({ where: { departmentId: id } });
+        // 3. Excluir o departamento
         await prisma.department.delete({ where: { id } });
         return res.json({ success: true });
     }
     catch (error) {
+        console.error("Erro ao excluir departamento:", error);
         return res.status(500).json({ error: "Erro ao excluir departamento." });
     }
 };
