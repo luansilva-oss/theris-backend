@@ -926,9 +926,9 @@ export default function App() {
                           <td style={{ padding: '16px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#3f3f46', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>
-                                {r.requester.name.charAt(0)}
+                                {r.requester?.name?.charAt(0) || '?'}
                               </div>
-                              <span>{r.requester.name}</span>
+                              <span>{r.requester?.name || 'Usuário Removido'}</span>
                             </div>
                           </td>
                           <td style={{ padding: '16px' }}>
