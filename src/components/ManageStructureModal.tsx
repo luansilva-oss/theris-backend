@@ -60,14 +60,13 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
         if (isOpen) {
             loadData();
             if (initialDepartment) {
-                // We'll set the mode after data loads or in a separate effect?
-                // Better to wait for load. default behavior below.
+                // We'll set the mode after data loads
             } else {
                 setViewMode('GLOBAL');
                 setCurrentDept(null);
             }
         }
-    }, [isOpen, initialDepartment]); // Add initialDepartment dependency
+    }, [isOpen, initialDepartment]);
 
     const loadData = async () => {
         setIsLoading(true);
@@ -78,7 +77,6 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                 setDepartments(data.departments);
                 setRoles(data.roles);
 
-                // Auto-enter department mode if initialDepartment matches
                 if (initialDepartment) {
                     const dept = data.departments.find((d: Department) => d.name === initialDepartment);
                     if (dept) {
@@ -87,7 +85,6 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                         setEditedDeptName(dept.name);
                     }
                 } else if (currentDept) {
-                    // Refresh current dept object if already in view
                     const refreshed = data.departments.find((d: Department) => d.id === currentDept.id);
                     if (refreshed) setCurrentDept(refreshed);
                 }
@@ -188,31 +185,6 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
     const handleAddUserToRole = async (userId: string) => {
         if (!targetRole || !currentDept) return;
         try {
-            // We update the user's jobTitle and department
-            const res = await fetch(`${API_URL}/api/users/${userId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    jobTitle: targetRole.name,
-                    department: currentDept.name,
-                    // Preserve other fields? Ideally GET first or the backend handles partial. 
-                    // Our backend user update might overwrite. 
-                    // Let's assume we need to send at least valid data or the backend handles partials.
-                    // Checking EditUserModal, it sends multiple fields. 
-                    // To be safe, let's just send the structural changes.
-                    // If the backend requires all fields, we might have issues. 
-                    // Assume typical REST patch behavior or that we accept minimal payload.
-                    // Looking at userController.updateUser, it uses req.body directly. 
-                    // It expects { name, email, jobTitle, department, systemProfile }. 
-                    // If we omit name/email, they might become undefined or null if not handled.
-                })
-            });
-
-            // Wait! The userController sets attributes based on `req.body`. 
-            // `data: { name, email, ... }`
-            // If name is undefined, it updates name to undefined? 
-            // We should probably fetch the user first to be safe, OR fix the controller to use undefined check.
-            // Since we can't easily change controller now without risk, let's fetch user first.
             const user = allUsers.find(u => u.id === userId);
             if (!user) return;
 
@@ -222,16 +194,14 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                 body: JSON.stringify({
                     name: user.name,
                     email: user.email,
-                    systemProfile: (user as any).systemProfile || 'VIEWER', // Safe fallback
+                    systemProfile: (user as any).systemProfile || 'VIEWER',
                     jobTitle: targetRole.name,
                     department: currentDept.name
                 })
             });
 
             setIsUserPickerOpen(false);
-            onUpdate(); // Triggers app reload which reloads 'allUsers' prop
-            // We also need to reload 'allUsers' in parent? 
-            // Yes, onUpdate calls loadData in App.tsx which setsAllUsers.
+            onUpdate(); 
         } catch (e) { alert("Erro ao adicionar usuário."); }
     };
 
@@ -245,21 +215,16 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                     name: user.name,
                     email: user.email,
                     systemProfile: (user as any).systemProfile || 'VIEWER',
-                    jobTitle: '', // Clear job title
-                    // Keep department? Usually if no job, maybe no dept? Or keep dept?
-                    // Let's keep department for now, or clear both?
-                    // Usually "removing from role" implies stripping the assignment.
-                    department: user.department // Keep department or clear? Let's keep dept for now.
+                    jobTitle: '', 
+                    department: user.department 
                 })
             });
             onUpdate();
         } catch (e) { alert("Erro ao remover usuário."); }
     };
 
-    // Filter users for the picker
     const pickerUsers = allUsers.filter(u =>
         u.name.toLowerCase().includes(userSearchTerm.toLowerCase()) &&
-        // Filter out users already in this specific role?
         u.jobTitle !== targetRole?.name
     );
 
@@ -388,7 +353,8 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                             const roleUsers = allUsers.filter(u => u.jobTitle === role.name && u.department === currentDept.name);
 
                                             return (
-                                                <div key={role.id} style={{ border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden' }}>
+                                                {/* Adicionado flexShrink: 0 e display flex aqui para evitar o corte horizontal/vertical */}
+                                                <div key={role.id} style={{ border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
                                                     {/* Role Header */}
                                                     <div style={{ background: '#27272a', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                         {editingRoleId === role.id ? (
@@ -433,18 +399,19 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                                         gap: 8,
                                                         minHeight: '48px',
                                                         maxHeight: '200px',
-                                                        overflowY: 'auto'
+                                                        overflowY: 'auto',
+                                                        alignItems: 'flex-start', // Garante que itens não estiquem
+                                                        alignContent: 'flex-start' // Garante que linhas fiquem no topo
                                                     }}>
                                                         {roleUsers.length === 0 ? (
                                                             <span style={{ fontSize: 12, color: '#52525b', fontStyle: 'italic' }}>Ninguém neste cargo ainda.</span>
                                                         ) : (
                                                             roleUsers.map(u => (
                                                                 <div key={u.id} style={{
-                                                                    display: 'flex', alignItems: 'center', gap: 6,
+                                                                    display: 'inline-flex', alignItems: 'center', gap: 6, // Trocado para inline-flex
                                                                     background: '#09090b', padding: '6px 12px', borderRadius: 20,
                                                                     border: '1px solid #27272a', fontSize: 12, color: '#d4d4d8',
-                                                                    flexShrink: 0,
-                                                                    height: 'fit-content'
+                                                                    flexShrink: 0
                                                                 }}>
                                                                     <UserIcon size={10} color="#a1a1aa" />
                                                                     <span style={{ whiteSpace: 'nowrap' }}>{u.name}</span>
