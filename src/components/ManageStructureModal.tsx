@@ -201,7 +201,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
             });
 
             setIsUserPickerOpen(false);
-            onUpdate(); 
+            onUpdate();
         } catch (e) { alert("Erro ao adicionar usuário."); }
     };
 
@@ -215,8 +215,8 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                     name: user.name,
                     email: user.email,
                     systemProfile: (user as any).systemProfile || 'VIEWER',
-                    jobTitle: '', 
-                    department: user.department 
+                    jobTitle: '',
+                    department: user.department
                 })
             });
             onUpdate();
@@ -353,7 +353,6 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                             const roleUsers = allUsers.filter(u => u.jobTitle === role.name && u.department === currentDept.name);
 
                                             return (
-                                                {/* Adicionado flexShrink: 0 e display flex aqui para evitar o corte horizontal/vertical */}
                                                 <div key={role.id} style={{ border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
                                                     {/* Role Header */}
                                                     <div style={{ background: '#27272a', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
