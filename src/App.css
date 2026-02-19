@@ -314,6 +314,23 @@ html {
   box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.1);
 }
 
+.input-base {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.input-base:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
+}
+
 .btn-verify {
   width: 100%;
   padding: 12px;
