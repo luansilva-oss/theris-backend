@@ -175,14 +175,15 @@ slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
           { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Permissão Necessária (nível de acesso)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
 
           // Campos de Duração
+          { type: 'input', block_id: 'blk_duration_val', label: { type: 'plain_text', text: 'Duração (Quantidade)' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: 48' } } },
           {
-            type: 'section',
+            type: 'input',
             block_id: 'blk_duration_wrap',
-            text: { type: 'mrkdwn', text: '*Estimativa de Tempo*' },
-            accessory: {
+            label: { type: 'plain_text', text: 'Unidade de Tempo' },
+            element: {
               type: 'static_select',
               action_id: 'unit_select',
-              placeholder: { type: 'plain_text', text: 'Unidade' },
+              placeholder: { type: 'plain_text', text: 'Selecione...' },
               options: [
                 { text: { type: 'plain_text', text: 'Horas' }, value: 'horas' },
                 { text: { type: 'plain_text', text: 'Dias' }, value: 'dias' },
@@ -190,7 +191,6 @@ slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
               ]
             }
           },
-          { type: 'input', block_id: 'blk_duration_val', label: { type: 'plain_text', text: 'Quantidade' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: 48' } } },
 
           { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa (Compliance)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
         ]
