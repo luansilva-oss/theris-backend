@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Building2, Briefcase, User as UserIcon, ChevronDown, ChevronRight } from 'lucide-react';
+import type { MouseEvent } from 'react';
+import { Building2, Briefcase, User as UserIcon, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 
 interface User {
     id: string;
@@ -28,9 +29,10 @@ interface PersonnelListViewProps {
     departments: Department[];
     roles: Role[];
     onEditUser: (user: User) => void;
+    onDeleteUser?: (user: User) => void;
 }
 
-export const PersonnelListView: React.FC<PersonnelListViewProps> = ({ users, departments, roles, onEditUser }) => {
+export const PersonnelListView: React.FC<PersonnelListViewProps> = ({ users, departments, roles, onEditUser, onDeleteUser }) => {
     const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
     const [expandedRoles, setExpandedRoles] = useState<Record<string, boolean>>({});
 
@@ -124,7 +126,30 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({ users, dep
                                                                 <div style={{ color: '#e4e4e7', fontSize: '14px', fontWeight: 500 }}>{user.name}</div>
                                                                 <div style={{ color: '#71717a', fontSize: '12px' }}>{user.email}</div>
                                                             </div>
-                                                            <UserIcon size={14} color="#52525b" />
+                                                            {onDeleteUser && (
+                                                                <button
+                                                                    onClick={(e: MouseEvent) => {
+                                                                        e.stopPropagation();
+                                                                        if (confirm(`Deseja excluir ${user.name}?`)) onDeleteUser(user);
+                                                                    }}
+                                                                    title="Excluir colaborador"
+                                                                    style={{
+                                                                        background: 'transparent',
+                                                                        border: 'none',
+                                                                        cursor: 'pointer',
+                                                                        padding: '4px',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        borderRadius: '4px',
+                                                                        opacity: 0.4,
+                                                                        transition: 'opacity 0.2s'
+                                                                    }}
+                                                                    onMouseOver={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
+                                                                    onMouseOut={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.4'; }}
+                                                                >
+                                                                    <Trash2 size={14} color="#ef4444" />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     ))
                                                 )}
