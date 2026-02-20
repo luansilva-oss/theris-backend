@@ -5,14 +5,14 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const sendMfaEmail = async (to: string, code: string) => {
 
-    // Verifica a chave
-    if (!process.env.RESEND_API_KEY) {
-        console.error("⚠️ RESEND_API_KEY não configurada.");
-        console.log(`🔑 CÓDIGO (FALLBACK): ${code}`);
-        return;
-    }
+  // Verifica a chave
+  if (!process.env.RESEND_API_KEY) {
+    console.error("⚠️ RESEND_API_KEY não configurada.");
+    console.log(`🔑 CÓDIGO (FALLBACK): ${code}`);
+    return;
+  }
 
-    const html = `
+  const html = `
     <div style="font-family: sans-serif; padding: 20px; background: #f3f4f6;">
       <div style="max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; border: 1px solid #e5e7eb;">
         <h2 style="color: #7C3AED; margin: 0; text-align: center;">Theris OS</h2>
@@ -25,31 +25,31 @@ export const sendMfaEmail = async (to: string, code: string) => {
     </div>
     `;
 
-    try {
-        console.log(`📤 Enviando via Resend API para ${to}...`);
+  try {
+    console.log(`📤 Enviando via Resend API para ${to}...`);
 
-        const data = await resend.emails.send({
-            // ⚠️ IMPORTANTE: 
-            // Se ainda não verificaste o domínio 'grupo-3c.com' no painel do Resend, 
-            // tens de usar 'onboarding@resend.dev' aqui.
-            // Se já verificaste, usa 'si@grupo-3c.com'.
-            from: 'Theris Security <onboarding@resend.dev>',
-            to: [to],
-            subject: '🔐 Código de Acesso - Theris',
-            html: html,
-        });
+    const data = await resend.emails.send({
+      // ⚠️ IMPORTANTE: 
+      // Se ainda não verificaste o domínio 'grupo-3c.com' no painel do Resend, 
+      // tens de usar 'onboarding@resend.dev' aqui.
+      // Se já verificaste, usa 'si@grupo-3c.com'.
+      from: 'Theris Security <si@grupo-3c.com>',
+      to: [to],
+      subject: '🔐 Código de Acesso - Theris',
+      html: html,
+    });
 
-        if (data.error) {
-            console.error('❌ Erro Resend:', data.error);
-            throw new Error(data.error.message);
-        }
-
-        console.log(`✅ Email enviado com sucesso! ID: ${data.data?.id}`);
-
-    } catch (error) {
-        console.error('❌ Falha no envio (API):', error);
-        console.log('------------------------------------------------');
-        console.log(`🔑 CÓDIGO DE ACESSO (FALLBACK): ${code}`);
-        console.log('------------------------------------------------');
+    if (data.error) {
+      console.error('❌ Erro Resend:', data.error);
+      throw new Error(data.error.message);
     }
+
+    console.log(`✅ Email enviado com sucesso! ID: ${data.data?.id}`);
+
+  } catch (error) {
+    console.error('❌ Falha no envio (API):', error);
+    console.log('------------------------------------------------');
+    console.log(`🔑 CÓDIGO DE ACESSO (FALLBACK): ${code}`);
+    console.log('------------------------------------------------');
+  }
 };
