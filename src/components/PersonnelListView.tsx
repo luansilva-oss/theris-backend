@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { MouseEvent } from 'react';
-import { Building2, Briefcase, User as UserIcon, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
+import { Building2, Briefcase, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
 
 interface User {
     id: string;
@@ -9,8 +9,6 @@ interface User {
     jobTitle?: string;
     department?: string;
     systemProfile: string;
-    managerId?: string | null;
-    manager?: { name: string };
 }
 
 interface Department {
@@ -32,10 +30,13 @@ interface PersonnelListViewProps {
     onDeleteUser?: (user: User) => void;
     onEditDepartment: (dept: Department) => void;
     onDeleteDepartment: (dept: Department) => void;
+    onEditRole?: (role: Role) => void;
+    onDeleteRole?: (role: Role) => void;
+    customConfirm?: (config: { title: string, message: string, onConfirm: () => void, isDestructive?: boolean }) => void;
 }
 
 export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
-    users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment
+    users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole, customConfirm
 }) => {
     const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
     const [expandedRoles, setExpandedRoles] = useState<Record<string, boolean>>({});
@@ -79,17 +80,13 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onEditDepartment(dept); }}
-                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, transition: '0.2s' }}
-                                    onMouseOver={e => e.currentTarget.style.opacity = '1'}
-                                    onMouseOut={e => e.currentTarget.style.opacity = '0.6'}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }}
                                 >
                                     <Pencil size={16} color="#71717a" />
                                 </button>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onDeleteDepartment(dept); }}
-                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6, transition: '0.2s' }}
-                                    onMouseOver={e => e.currentTarget.style.opacity = '1'}
-                                    onMouseOut={e => e.currentTarget.style.opacity = '0.6'}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }}
                                 >
                                     <Trash2 size={16} color="#ef4444" />
                                 </button>
@@ -108,7 +105,6 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                 getRolesForDept(dept.id).map(role => (
                                     <div key={role.id} className="role-section" style={{ border: '1px solid #27272a', borderRadius: '8px', overflow: 'hidden' }}>
                                         <div
-                                            onClick={() => toggleRole(role.id)}
                                             style={{
                                                 padding: '12px 16px',
                                                 background: '#18181b',
@@ -119,11 +115,33 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                 borderBottom: expandedRoles[role.id] ? '1px solid #27272a' : 'none'
                                             }}
                                         >
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }} onClick={() => toggleRole(role.id)}>
                                                 <Briefcase size={18} color="#71717a" />
                                                 <span style={{ fontWeight: 500, color: '#e4e4e7', fontSize: '14px' }}>{role.name}</span>
                                             </div>
-                                            {expandedRoles[role.id] ? <ChevronDown size={16} color="#52525b" /> : <ChevronRight size={16} color="#52525b" />}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    {onEditRole && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onEditRole(role); }}
+                                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }}
+                                                        >
+                                                            <Pencil size={14} color="#71717a" />
+                                                        </button>
+                                                    )}
+                                                    {onDeleteRole && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); onDeleteRole(role); }}
+                                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }}
+                                                        >
+                                                            <Trash2 size={14} color="#ef4444" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div onClick={() => toggleRole(role.id)}>
+                                                    {expandedRoles[role.id] ? <ChevronDown size={16} color="#52525b" /> : <ChevronRight size={16} color="#52525b" />}
+                                                </div>
+                                            </div>
                                         </div>
 
                                         {expandedRoles[role.id] && (
@@ -159,7 +177,16 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                 <button
                                                                     onClick={(e: MouseEvent) => {
                                                                         e.stopPropagation();
-                                                                        if (confirm(`Deseja excluir ${user.name}?`)) onDeleteUser(user);
+                                                                        if (customConfirm) {
+                                                                            customConfirm({
+                                                                                title: "Excluir Colaborador?",
+                                                                                message: `Deseja realmente excluir ${user.name}?`,
+                                                                                onConfirm: () => onDeleteUser(user),
+                                                                                isDestructive: true
+                                                                            });
+                                                                        } else {
+                                                                            if (window.confirm(`Deseja excluir ${user.name}?`)) onDeleteUser(user);
+                                                                        }
                                                                     }}
                                                                     title="Excluir colaborador"
                                                                     style={{

@@ -4,8 +4,9 @@ import {
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
   Search, Bell, Lock, Layers, ChevronDown, ChevronRight,
   Users, Building, Briefcase, // Ícone para Gestão de Pessoas
-  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus
+  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, LogIn, Box
 } from 'lucide-react';
+import { JOB_TITLE_DEFAULTS } from './constants/jobTitleDefaults';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
 
@@ -107,6 +108,7 @@ export default function App() {
   const [sourceFilter, setSourceFilter] = useState<'ALL' | 'THERIS' | 'INFRA'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'APROVADO' | 'REPROVADO' | 'PENDENTE'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [dashboardSubFilter, setDashboardSubFilter] = useState<'GERAL' | 'PESSOAS' | 'FERRAMENTAS' | 'INFRA'>('GERAL');
 
   // MODAL
   const [modalOpen, setModalOpen] = useState(false);
@@ -569,10 +571,33 @@ export default function App() {
         <div className="nav-section">
           {(['SUPER_ADMIN', 'GESTOR', 'ADMIN', 'APPROVER'].includes(systemProfile)) ? (
             <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Visão Geral</div>
+              <div
+                className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('DASHBOARD');
+                  setSelectedTool(null);
+                  if (activeTab !== 'DASHBOARD') setDashboardSubFilter('GERAL');
+                }}
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <LayoutDashboard size={18} /> Visão Geral
+                </div>
+                {activeTab === 'DASHBOARD' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </div>
+
+              {activeTab === 'DASHBOARD' && (
+                <div style={{ paddingLeft: 24, display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8, marginTop: 4 }}>
+                  <div className={`nav-sub-item ${dashboardSubFilter === 'GERAL' ? 'active' : ''}`} onClick={() => setDashboardSubFilter('GERAL')}>Geral</div>
+                  <div className={`nav-sub-item ${dashboardSubFilter === 'PESSOAS' ? 'active' : ''}`} onClick={() => setDashboardSubFilter('PESSOAS')}>Gestão de Pessoas</div>
+                  <div className={`nav-sub-item ${dashboardSubFilter === 'FERRAMENTAS' ? 'active' : ''}`} onClick={() => setDashboardSubFilter('FERRAMENTAS')}>Gestão de Ferramentas</div>
+                  <div className={`nav-sub-item ${dashboardSubFilter === 'INFRA' ? 'active' : ''}`} onClick={() => setDashboardSubFilter('INFRA')}>Gestão de Infraestrutura</div>
+                </div>
+              )}
+
               {systemProfile !== 'APPROVER' && (
                 <>
-                  <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => setActiveTab('PEOPLE')}><Users size={18} /> Gestão de Pessoas</div>
+                  <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => setActiveTab('PEOPLE')}><Users size={18} /> Colaboradores</div>
                   <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Layers size={18} /> Catálogo</div>
                 </>
               )}
@@ -580,7 +605,7 @@ export default function App() {
             </>
           ) : (
             <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Menu Principal</div>
+              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null); setDashboardSubFilter('GERAL'); }}><LayoutDashboard size={18} /> Menu Principal</div>
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
             </>
           )}
@@ -599,7 +624,7 @@ export default function App() {
       <main className="main-area">
         <header className="header-bar">
           <div className="page-title">Pagina: <span>{activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab}</span></div>
-          <div style={{ display: 'flex', gap: 20 }}><Search size={18} color="#71717a" /><Bell size={18} color="#71717a" /></div>
+          <div style={{ display: 'flex', gap: 20 }}></div>
         </header>
 
         <div className="content-scroll">
@@ -618,24 +643,97 @@ export default function App() {
                 )}
               </div>
 
+              {/* Kit Padrão do Cargo (Sector Kit) */}
+              {currentUser?.jobTitle && JOB_TITLE_DEFAULTS[currentUser.jobTitle] && (
+                <div className="card-base" style={{ gridColumn: 'span 4', background: 'rgba(124, 58, 237, 0.03)', borderColor: 'rgba(124, 58, 237, 0.15)', marginTop: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 15 }}>
+                    <Box size={18} color="#a78bfa" />
+                    <h3 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: 1, color: '#a78bfa', margin: 0 }}>Kit Padrão de Sistemas ({currentUser.jobTitle})</h3>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                    {JOB_TITLE_DEFAULTS[currentUser.jobTitle].map((kit, idx) => (
+                      <div key={idx} className="card-base" style={{ padding: 12, background: '#18181b', border: '1px solid #27272a' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: '#fafafa' }}>{kit.toolName}</div>
+                            <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 600 }}>{kit.level}</div>
+                          </div>
+                          <a
+                            href={kit.loginUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn-verify"
+                            style={{ margin: 0, padding: '4px 8px', fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, height: 24 }}
+                          >
+                            <LogIn size={12} /> Login
+                          </a>
+                        </div>
+                        <p style={{ fontSize: 11, color: '#a1a1aa', lineHeight: 1.4, margin: 0 }}>{kit.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="card-base cell-date">
                 <div style={{ fontSize: '42px', fontWeight: 800, color: 'white' }}>{new Date().getDate()}</div>
                 <div style={{ fontSize: '12px', textTransform: 'uppercase', color: '#a1a1aa' }}>{new Date().toLocaleDateString('pt-BR', { month: 'short' })}</div>
               </div>
 
-              {(systemProfile === 'SUPER_ADMIN' || systemProfile === 'GESTOR' || systemProfile === 'ADMIN' || systemProfile === 'APPROVER') && (
-                <>
-                  <div className="card-base cell-stat">
-                    <div className="card-header"><span className="card-title">Pendentes</span><Clock size={16} color="#fbbf24" /></div>
-                    <div className="metric-value">{stats.pending}</div>
-                  </div>
+              {/* Stats & Feed Filtered by Sub-Dashboard */}
+              {(() => {
+                const isFiltered = dashboardSubFilter !== 'GERAL';
+                const filteredRequests = requests.filter(r => {
+                  if (systemProfile === 'VIEWER' && r.requester.id !== currentUser?.id) return false;
+                  if (dashboardSubFilter === 'PESSOAS') return r.type === 'CHANGE_ROLE' || r.type === 'NEW_USER';
+                  if (dashboardSubFilter === 'FERRAMENTAS') return r.type === 'ADD_ACCESS' || r.type === 'EXTRAORDINARY_ACCESS';
+                  if (dashboardSubFilter === 'INFRA') return r.type === 'INFRA_SUPPORT' || r.type === 'REPAIR';
+                  return true;
+                });
 
-                  <div className="card-base cell-stat">
-                    <div className="card-header"><span className="card-title">Aprovados</span><CheckCircle size={16} color="#10b981" /></div>
-                    <div className="metric-value">{stats.approved}</div>
-                  </div>
-                </>
-              )}
+                const filteredStats = {
+                  pending: filteredRequests.filter(r => r.status.startsWith('PENDENTE')).length,
+                  approved: filteredRequests.filter(r => r.status === 'APROVADO').length
+                };
+
+                return (
+                  <>
+                    {(systemProfile === 'SUPER_ADMIN' || systemProfile === 'GESTOR' || systemProfile === 'ADMIN' || systemProfile === 'APPROVER') && (
+                      <>
+                        <div className="card-base cell-stat">
+                          <div className="card-header"><span className="card-title">Pendentes {isFiltered && `(${dashboardSubFilter})`}</span><Clock size={16} color="#fbbf24" /></div>
+                          <div className="metric-value">{filteredStats.pending}</div>
+                        </div>
+
+                        <div className="card-base cell-stat">
+                          <div className="card-header"><span className="card-title">Aprovados {isFiltered && `(${dashboardSubFilter})`}</span><CheckCircle size={16} color="#10b981" /></div>
+                          <div className="metric-value">{filteredStats.approved}</div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Recent Feed Filtered */}
+                    <div className="card-base" style={{ gridColumn: 'span 4', marginTop: 20 }}>
+                      <div className="card-header"><span className="card-title">Atividade Recente {isFiltered && `- ${dashboardSubFilter}`}</span><Activity size={16} color="#a78bfa" /></div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 15 }}>
+                        {filteredRequests.slice(0, 5).map(r => (
+                          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px', background: '#18181b', borderRadius: '8px', border: '1px solid #27272a' }}>
+                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#27272a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                              {r.requester?.name?.charAt(0)}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, color: '#f4f4f5' }}>{r.requester?.name} - <span style={{ color: '#a78bfa' }}>{r.type}</span></div>
+                              <div style={{ fontSize: 11, color: '#71717a' }}>{new Date(r.createdAt).toLocaleString()}</div>
+                            </div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: r.status === 'APROVADO' ? '#34d399' : '#fbbf24' }}>{r.status}</div>
+                          </div>
+                        ))}
+                        {filteredRequests.length === 0 && <div style={{ textAlign: 'center', color: '#52525b', padding: 20 }}>Nenhuma atividade encontrada.</div>}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               {(systemProfile === 'SUPER_ADMIN' || systemProfile === 'GESTOR' || systemProfile === 'ADMIN' || systemProfile === 'APPROVER') && (
                 <div className="card-base cell-tasks">
@@ -856,6 +954,31 @@ export default function App() {
                     setSelectedDeptForAction(dept);
                     setIsDeleteDeptModalOpen(true);
                   }}
+                  onEditRole={(role) => {
+                    const dept = departments.find(d => d.id === role.departmentId);
+                    setSelectedLevelName(role.name);
+                    setSelectedStructureDept(dept?.name || null);
+                    setIsManageLevelModalOpen(true);
+                  }}
+                  onDeleteRole={(role) => {
+                    customConfirm({
+                      title: "Excluir Cargo?",
+                      message: `Tem certeza que deseja excluir o cargo "${role.name}"? Isso não removerá os usuários, mas eles ficarão sem cargo definido.`,
+                      isDestructive: true,
+                      onConfirm: async () => {
+                        try {
+                          const res = await fetch(`${API_URL}/api/structure/roles/${role.id}`, { method: 'DELETE' });
+                          if (res.ok) {
+                            showToast("Cargo excluído.", "success");
+                            loadData();
+                          } else {
+                            showToast("Erro ao excluir cargo.", "error");
+                          }
+                        } catch (e) { showToast("Erro de rede.", "error"); }
+                      }
+                    });
+                  }}
+                  customConfirm={customConfirm}
                 />
               </div>
             </div>
@@ -1285,7 +1408,16 @@ export default function App() {
                               </span>
                             </td>
                             <td style={{ padding: '16px', fontSize: 13 }}>
-                              {subject}
+                              <div style={{ fontWeight: 600, marginBottom: r.details || r.justification ? 4 : 0 }}>{subject}</div>
+                              {r.details && <div style={{ fontSize: 11, color: '#a1a1aa' }}>{r.details}</div>}
+                              {r.isExtraordinary && (
+                                <div style={{ fontSize: 10, color: '#fbbf24', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <Timer size={10} /> Temporário {r.justification ? `(${r.justification})` : ''}
+                                </div>
+                              )}
+                              {!r.isExtraordinary && r.justification && (
+                                <div style={{ fontSize: 10, color: '#a78bfa', marginTop: 4 }}>Motivo: {r.justification}</div>
+                              )}
                             </td>
                             <td style={{ padding: '16px' }}>
                               <span style={{
@@ -1451,7 +1583,7 @@ export default function App() {
 
       <CustomConfirmModal
         isOpen={confirmConfig.isOpen}
-        onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
         onConfirm={confirmConfig.onConfirm}
         title={confirmConfig.title}
         message={confirmConfig.message}

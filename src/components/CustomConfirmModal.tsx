@@ -1,83 +1,69 @@
-import { X, AlertTriangle } from 'lucide-react';
+import React from 'react';
+import { AlertTriangle, X } from 'lucide-react';
 
-interface CustomConfirmModalProps {
+interface Props {
     isOpen: boolean;
-    onClose: () => void;
-    onConfirm: () => void;
     title: string;
     message: string;
     confirmLabel?: string;
     cancelLabel?: string;
+    onConfirm: () => void;
+    onCancel: () => void;
     isDestructive?: boolean;
 }
 
-export const CustomConfirmModal = ({
+export const CustomConfirmModal: React.FC<Props> = ({
     isOpen,
-    onClose,
-    onConfirm,
     title,
     message,
     confirmLabel = 'Confirmar',
     cancelLabel = 'Cancelar',
+    onConfirm,
+    onCancel,
     isDestructive = false
-}: CustomConfirmModalProps) => {
+}) => {
     if (!isOpen) return null;
 
     return (
-        <div className="modal-overlay" style={{ zIndex: 10000 }}>
-            <div className="modal-content" style={{ maxWidth: '400px', padding: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                            width: '40px',
-                            height: '40px',
-                            borderRadius: '50%',
-                            background: isDestructive ? 'rgba(239, 68, 68, 0.1)' : 'rgba(167, 139, 250, 0.1)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: isDestructive ? '#ef4444' : '#a78bfa'
-                        }}>
-                            <AlertTriangle size={20} />
-                        </div>
-                        <h3 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: 600 }}>{title}</h3>
+        <div className="modal-overlay" style={{ zIndex: 3000 }}>
+            <div className="modal-content fade-in" style={{ maxWidth: '400px', border: isDestructive ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(124, 58, 237, 0.2)' }}>
+                <div className="modal-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {isDestructive && <AlertTriangle size={20} color="#ef4444" />}
+                        <h2 style={{ fontSize: '18px', margin: 0 }}>{title}</h2>
                     </div>
-                    <button onClick={onClose} className="btn-icon">
-                        <X size={20} color="#71717a" />
-                    </button>
+                    <button onClick={onCancel} className="btn-icon"><X size={20} /></button>
                 </div>
 
-                <p style={{ color: '#a1a1aa', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px', margin: '0 0 24px 0' }}>
+                <div style={{ padding: '20px 0', color: '#a1a1aa', fontSize: '14px', lineHeight: 1.5 }}>
                     {message}
-                </p>
+                </div>
 
-                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: 12, marginTop: 10 }}>
                     <button
-                        onClick={onClose}
-                        className="btn-text"
-                        style={{ padding: '10px 20px', fontSize: '14px' }}
-                    >
-                        {cancelLabel}
-                    </button>
-                    <button
-                        onClick={() => {
-                            onConfirm();
-                            onClose();
-                        }}
+                        className="btn-verify"
                         style={{
-                            padding: '10px 20px',
-                            fontSize: '14px',
-                            borderRadius: '8px',
-                            border: 'none',
-                            cursor: 'pointer',
-                            fontWeight: 600,
+                            flex: 1,
+                            margin: 0,
                             background: isDestructive ? '#ef4444' : '#7c3aed',
-                            color: 'white',
-                            transition: 'all 0.2s'
+                            color: 'white'
                         }}
-                        className={isDestructive ? 'hover:bg-red-600' : 'hover:bg-violet-700'}
+                        onClick={onConfirm}
                     >
                         {confirmLabel}
+                    </button>
+                    <button
+                        className="btn-verify"
+                        style={{
+                            flex: 1,
+                            margin: 0,
+                            background: 'transparent',
+                            border: '1px solid #3f3f46',
+                            color: '#d4d4d8'
+                        }}
+                        onClick={onCancel}
+                    >
+                        {cancelLabel}
                     </button>
                 </div>
             </div>

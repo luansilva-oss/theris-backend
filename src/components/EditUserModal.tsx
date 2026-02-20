@@ -203,7 +203,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
 
                 <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(124, 58, 237, 0.05)', borderRadius: '10px', border: '1px solid rgba(124, 58, 237, 0.1)' }}>
                     <div style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, color: '#a78bfa', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                        <Box size={14} /> Kit Padrão do Cargo (Sector Kit)
+                        <Box size={14} /> Kit Padrão do Cargo
                     </div>
                     {jobTitle && JOB_TITLE_DEFAULTS[jobTitle] ? (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
