@@ -70,6 +70,8 @@ interface Request {
   approver?: User;
   type: string;
   adminNote?: string;
+  isExtraordinary: boolean;
+  justification?: string;
 }
 
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER' | 'GESTOR';
@@ -578,7 +580,7 @@ export default function App() {
             </>
           ) : (
             <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Meu Painel</div>
+              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Menu Principal</div>
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
             </>
           )}
@@ -606,8 +608,14 @@ export default function App() {
           {activeTab === 'DASHBOARD' && (
             <div className="bento-grid fade-in">
               <div className="card-base cell-hero" style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #09090b 100%)', borderColor: '#312e81' }}>
-                <h1 style={{ fontSize: '28px', color: 'white', marginBottom: 10 }}>Olá, {currentUser?.name.split(' ')[0]}</h1>
-                <p style={{ color: '#a5b4fc' }}>Painel de controle operacional ativo.</p>
+                <h1 style={{ fontSize: '28px', color: 'white', marginBottom: 5 }}>Olá, {currentUser?.name.split(' ')[0]}</h1>
+                <p style={{ color: '#a5b4fc', fontSize: 14 }}>{currentUser?.jobTitle} • {currentUser?.department}</p>
+                {currentUser?.manager && (
+                  <div style={{ marginTop: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', fontWeight: 700 }}>Gestor Imediato:</div>
+                    <div style={{ color: '#a78bfa', fontWeight: 600, fontSize: 13 }}>{currentUser.manager.name}</div>
+                  </div>
+                )}
               </div>
 
               <div className="card-base cell-date">
@@ -639,8 +647,50 @@ export default function App() {
                       requests.filter(r => r.status.includes('PENDENTE')).map(r => (
                         <div key={r.id} className="action-row">
                           <div className="action-info">
-                            <h4>{JSON.parse(r.details).info || JSON.parse(r.details).tool}</h4>
-                            <p>Solicitante: {r.requester?.name}</p>
+                            <h4 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {(() => {
+                                const det = JSON.parse(r.details || '{}');
+                                if (r.type === 'INFRA_SUPPORT') return <span>🛠️ {det.requestType || 'Suporte de TI'}</span>;
+                                if (r.isExtraordinary) return <span style={{ color: '#f472b6' }}>🔥 {det.tool || 'Extraordinário'}</span>;
+                                return <span>{det.info || det.tool || r.type}</span>;
+                              })()}
+                            </h4>
+                            <div style={{ fontSize: 12, color: '#d1d5db', marginTop: 4 }}>
+                              Solicitante: <strong>{r.requester?.name}</strong>
+                              <span style={{ color: '#71717a', marginLeft: 8 }}>• {r.requester?.department}</span>
+                            </div>
+
+                            {/* DETALHES DINÂMICOS CONFORME O TIPO */}
+                            <div style={{ marginTop: 8, padding: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.05)' }}>
+                              {(() => {
+                                const det = JSON.parse(r.details || '{}');
+                                if (r.type === 'INFRA_SUPPORT') {
+                                  return (
+                                    <div style={{ fontSize: 11 }}>
+                                      <div style={{ color: '#fbbf24', fontWeight: 600 }}>Urgência: {det.urgency}</div>
+                                      <div style={{ color: '#a1a1aa', marginTop: 4 }}>{det.description}</div>
+                                    </div>
+                                  );
+                                }
+                                if (r.type === 'ACCESS_TOOL_EXTRA' || r.isExtraordinary) {
+                                  return (
+                                    <div style={{ fontSize: 11, display: 'flex', gap: 15 }}>
+                                      <div><span style={{ color: '#71717a' }}>Perfil:</span> <span style={{ color: '#f472b6', fontWeight: 600 }}>{det.target || 'N/A'}</span></div>
+                                      <div><span style={{ color: '#71717a' }}>Duração:</span> <span style={{ color: 'white', fontWeight: 600 }}>{det.duration} {det.unit}</span></div>
+                                    </div>
+                                  );
+                                }
+                                if (r.type === 'CHANGE_ROLE') {
+                                  return (
+                                    <div style={{ fontSize: 11 }}>
+                                      <div style={{ color: '#34d399' }}>Novo Cargo: <strong>{det.future?.role}</strong></div>
+                                      <div style={{ color: '#71717a' }}>De: {det.current?.role} ({det.current?.dept})</div>
+                                    </div>
+                                  );
+                                }
+                                return <div style={{ fontSize: 11, color: '#71717a' }}>{r.justification || 'Sem justificativa adicional'}</div>;
+                              })()}
+                            </div>
                           </div>
                           <div className="action-buttons">
                             {r.type === 'INFRA_SUPPORT' ? (
@@ -683,6 +733,91 @@ export default function App() {
                     ))}
                 </div>
               </div>
+
+              {/* SECTION: MEU TIME E COLEGAS (EXCLUSIVE FOR VIEWER) */}
+              {systemProfile === 'VIEWER' && (
+                <div className="card-base" style={{ gridColumn: 'span 2', padding: '24px' }}>
+                  <div className="card-header" style={{ marginBottom: 20 }}>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Users size={18} color="#a78bfa" /> Meus Colegas de Equipe
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 15 }}>
+                    {allUsers
+                      .filter(u => u.department === currentUser?.department && u.id !== currentUser?.id)
+                      .map(colleague => (
+                        <div key={colleague.id} className="card-base" style={{ padding: '12px', background: '#18181b', border: '1px solid #27272a', display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#27272a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
+                            {colleague.name.charAt(0)}
+                          </div>
+                          <div style={{ overflow: 'hidden' }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{colleague.name}</div>
+                            <div style={{ fontSize: 10, color: '#71717a' }}>{colleague.jobTitle}</div>
+                          </div>
+                        </div>
+                      ))}
+                    {allUsers.filter(u => u.department === currentUser?.department && u.id !== currentUser?.id).length === 0 && (
+                      <div style={{ color: '#52525b', fontSize: 13, fontStyle: 'italic' }}>Nenhum colega encontrado no departamento.</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION: MEUS ACESSOS (EXCLUSIVE FOR VIEWER) */}
+              {systemProfile === 'VIEWER' && (
+                <div className="card-base" style={{ gridColumn: 'span 2', padding: '24px' }}>
+                  <div className="card-header" style={{ marginBottom: 20 }}>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Lock size={18} color="#f472b6" /> Seus Acessos às Ferramentas
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    {/* ACESSOS PRINCIPAIS */}
+                    <div>
+                      <h4 style={{ color: '#71717a', fontSize: 11, textTransform: 'uppercase', marginBottom: 12, letterSpacing: 1 }}>Acessos Principais (Padrão)</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
+                        {tools.filter(t => t.accesses?.some(acc => acc.user.id === currentUser?.id && !acc.isExtraordinary)).map(t => {
+                          const userAcc = t.accesses?.find(acc => acc.user.id === currentUser?.id);
+                          return (
+                            <div key={t.id} className="card-base" style={{ padding: '16px', background: '#111114', borderLeft: '3px solid #7c3aed' }}>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{t.name}</div>
+                              <div style={{ fontSize: 11, color: '#a78bfa', marginTop: 4 }}>Nível: {userAcc?.status}</div>
+                            </div>
+                          );
+                        })}
+                        {tools.filter(t => t.accesses?.some(acc => acc.user.id === currentUser?.id && !acc.isExtraordinary)).length === 0 && (
+                          <div style={{ color: '#3f3f46', fontSize: 12 }}>Nenhum acesso principal vinculado.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ACESSOS EXTRAORDINÁRIOS */}
+                    <div>
+                      <h4 style={{ color: '#71717a', fontSize: 11, textTransform: 'uppercase', marginBottom: 12, letterSpacing: 1 }}>Acessos Extraordinários (Temporários)</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 12 }}>
+                        {tools.filter(t => t.accesses?.some(acc => acc.user.id === currentUser?.id && acc.isExtraordinary)).map(t => {
+                          const userAcc = t.accesses?.find(acc => acc.user.id === currentUser?.id);
+                          return (
+                            <div key={t.id} className="card-base" style={{ padding: '16px', background: 'rgba(167, 139, 250, 0.05)', borderLeft: '3px solid #f472b6' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{t.name}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#fbbf24', fontSize: 10 }}>
+                                  <Clock size={10} /> {userAcc?.duration} {userAcc?.unit}
+                                </div>
+                              </div>
+                              <div style={{ fontSize: 11, color: '#f472b6', marginTop: 4 }}>Nível: {userAcc?.status}</div>
+                            </div>
+                          );
+                        })}
+                        {tools.filter(t => t.accesses?.some(acc => acc.user.id === currentUser?.id && acc.isExtraordinary)).length === 0 && (
+                          <div style={{ color: '#3f3f46', fontSize: 12 }}>Nenhum acesso extraordinário ativo.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

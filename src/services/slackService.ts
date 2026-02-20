@@ -234,14 +234,45 @@ slackApp.action('btn_tool_access', async ({ ack, body, client }) => {
 slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
   await ack();
   try {
+    // 1. Buscar dados do requerente
+    const userInfo = await client.users.info({ user: body.user.id });
+    const userEmail = (userInfo.user as any)?.profile?.email || 'N/A';
+    const userName = (userInfo.user as any)?.real_name || (userInfo.user as any)?.name || body.user.id;
+
+    // 2. Buscar ferramentas do catálogo para o dropdown
+    const tools = await prisma.tool.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, acronym: true, availableAccessLevels: true }
+    });
+
+    const toolOptions = tools.map(t => ({
+      text: { type: 'plain_text' as const, text: t.name + (t.acronym ? ` (${t.acronym})` : '') },
+      value: t.id // Usamos o ID como valor
+    }));
+
     await client.views.push({
       trigger_id: (body as any).trigger_id,
       view: {
         type: 'modal', callback_id: 'submit_tool_extra', title: { type: 'plain_text', text: 'Acesso Extra' }, submit: { type: 'plain_text', text: 'Solicitar' },
         blocks: [
-          { type: 'input', block_id: 'blk_collab', label: { type: 'plain_text', text: 'Quem receberá o acesso?' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_tool', label: { type: 'plain_text', text: 'Nome da ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_target', label: { type: 'plain_text', text: 'Permissão Necessária (nível de acesso)' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'section', text: { type: 'mrkdwn', text: `👤 *Solicitante:* ${userName} (${userEmail})\n_Este pedido será registrado em seu nome._` } },
+          {
+            type: 'input',
+            block_id: 'blk_tool_id',
+            label: { type: 'plain_text', text: 'Selecione a Ferramenta' },
+            element: {
+              type: 'static_select',
+              action_id: 'tool_select',
+              placeholder: { type: 'plain_text', text: 'Selecione...' },
+              options: toolOptions.slice(0, 100) // Slack limit
+            }
+          },
+          {
+            type: 'input',
+            block_id: 'blk_target',
+            label: { type: 'plain_text', text: 'Permissão Necessária (nível de acesso)' },
+            element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: Admin, Viewer, Editor...' } }
+          },
 
           // Campos de Duração
           { type: 'input', block_id: 'blk_duration_val', label: { type: 'plain_text', text: 'Duração (Quantidade)' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: 48' } } },
@@ -265,7 +296,7 @@ slackApp.action('btn_tool_extra', async ({ ack, body, client }) => {
         ]
       }
     });
-  } catch (e) { console.error(e); }
+  } catch (e) { console.error('❌ Erro modal extraordinário:', e); }
 });
 
 // INDICAR DEPUTY (NOVO)
@@ -402,14 +433,16 @@ slackApp.view('submit_tool_access', async ({ ack, body, view, client }) => {
 slackApp.view('submit_tool_extra', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
-  const tool = v.blk_tool.inp.value;
+  const toolId = v.blk_tool_id.tool_select.selected_option?.value;
+  const toolNameRaw = v.blk_tool_id.tool_select.selected_option?.text.text;
   const duration = v.blk_duration_val.inp.value;
   const unit = v.blk_duration_wrap.unit_select.selected_option?.value;
 
   const details = {
-    info: `Extraordinário: ${tool}`,
-    beneficiary: v.blk_collab.inp.value,
-    tool,
+    info: `Extraordinário: ${toolNameRaw}`,
+    beneficiary: body.user.name,
+    toolId: toolId,
+    tool: toolNameRaw,
     target: v.blk_target.inp.value,
     duration,
     unit
@@ -420,7 +453,7 @@ slackApp.view('submit_tool_extra', async ({ ack, body, view, client }) => {
     reason += ` (Duração pedida: ${duration} ${unit})`;
   }
 
-  await saveRequest(body, client, 'ACCESS_TOOL_EXTRA', details, reason, `🔥 Acesso extraordinário para *${tool}* enviado ao time de Segurança.`, true);
+  await saveRequest(body, client, 'ACCESS_TOOL_EXTRA', details, reason, `🔥 Acesso extraordinário para *${toolNameRaw}* enviado ao time de Segurança.`, true);
 });
 
 slackApp.view('submit_deputy', async ({ ack, body, view, client }) => {

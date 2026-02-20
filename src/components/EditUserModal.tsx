@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
+import { X, Save, Box } from 'lucide-react';
+import { JOB_TITLE_DEFAULTS } from '../constants/jobTitleDefaults';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -200,6 +201,24 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                     </select>
                 </div>
 
+                <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(124, 58, 237, 0.05)', borderRadius: '10px', border: '1px solid rgba(124, 58, 237, 0.1)' }}>
+                    <div style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, color: '#a78bfa', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                        <Box size={14} /> Kit Padrão do Cargo (Sector Kit)
+                    </div>
+                    {jobTitle && JOB_TITLE_DEFAULTS[jobTitle] ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {JOB_TITLE_DEFAULTS[jobTitle].map((kit, idx) => (
+                                <div key={idx} style={{ padding: '4px 8px', background: '#27272a', borderRadius: 6, fontSize: '11px', color: '#e4e4e7', border: '1px solid #3f3f46' }}>
+                                    <span style={{ fontWeight: 700 }}>{kit.toolName}</span>: {kit.level}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div style={{ fontSize: '11px', color: '#71717a', fontStyle: 'italic' }}>
+                            Nenhum kit padrão definido para este cargo.
+                        </div>
+                    )}
+                </div>
                 <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
                     <button
                         className="btn-verify"

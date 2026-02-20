@@ -271,13 +271,36 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     // =========================================================
     // 🚀 LÓGICA DE EXECUÇÃO AUTOMÁTICA
     // =========================================================
-    if (newApiStatus === 'APROVADO') {
+    if (action === 'APROVADO') {
 
-      // CENÁRIO 1: RH (Admissão, Promoção, Demissão)
-      // AQUI NÃO FAZEMOS NADA NO BANCO.
-      // O SI aprovou -> O RH recebe o ok -> Faz no Convenia -> Webhook do Convenia atualiza o Theris.
-      if (['ADMISSAO', 'DEMISSAO', 'PROMOCAO', 'MUDANCA_AREA'].includes(request.type)) {
-        console.log(`✅ RH: Solicitação ${request.type} aprovada. Aguardando sincronização do Convenia.`);
+      // CENÁRIO 1: RH (Admissão, Promoção, Demissão, Movimentação)
+      if (['ADMISSAO', 'DEMISSAO', 'PROMOCAO', 'MUDANCA_AREA', 'CHANGE_ROLE'].includes(request.type)) {
+        console.log(`✅ RH/SI: Solicitação ${request.type} aprovada. Atualizando dados do usuário...`);
+
+        try {
+          const det = JSON.parse(request.details || '{}');
+          const updateData: any = {};
+
+          if (det.future) {
+            if (det.future.role) updateData.jobTitle = det.future.role;
+            if (det.future.dept) updateData.department = det.future.dept;
+          }
+
+          // Se for uma movimentação, podemos ter o novo gestor nos detalhes também (opcional no modal atual, mas bom prever)
+          if (det.future?.managerId) {
+            updateData.managerId = det.future.managerId;
+          }
+
+          if (Object.keys(updateData).length > 0) {
+            await prisma.user.update({
+              where: { id: request.requesterId },
+              data: updateData
+            });
+            console.log(`🚀 Dados do usuário ${request.requesterId} atualizados automaticamente.`);
+          }
+        } catch (err) {
+          console.error("❌ Erro ao atualizar dados do usuário após aprovação:", err);
+        }
       }
 
       // CENÁRIO 2: ACESSO EXTRAORDINÁRIO / FERRAMENTA PONTUAL
