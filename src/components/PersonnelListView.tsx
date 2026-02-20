@@ -9,6 +9,7 @@ interface User {
     jobTitle?: string;
     department?: string;
     systemProfile: string;
+    active?: boolean;
 }
 
 interface Department {
@@ -50,8 +51,10 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
     };
 
     const getRolesForDept = (deptId: string) => roles.filter(r => r.departmentId === deptId);
+
+    // Filtro essencial para não mostrar pessoas demitidas visualmente na árvore
     const getUsersForRole = (roleName: string, deptName: string) =>
-        users.filter(u => u.jobTitle === roleName && u.department === deptName);
+        users.filter(u => u.jobTitle === roleName && u.department === deptName && u.active !== false);
 
     return (
         <div className="personnel-list-view" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

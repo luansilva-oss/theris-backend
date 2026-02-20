@@ -274,32 +274,94 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     if (action === 'APROVADO') {
 
       // CENÁRIO 1: RH (Admissão, Promoção, Demissão, Movimentação)
-      if (['ADMISSAO', 'DEMISSAO', 'PROMOCAO', 'MUDANCA_AREA', 'CHANGE_ROLE'].includes(request.type)) {
-        console.log(`✅ RH/SI: Solicitação ${request.type} aprovada. Atualizando dados do usuário...`);
+      if (['ADMISSAO', 'HIRING', 'DEMISSAO', 'FIRING', 'PROMOCAO', 'MUDANCA_AREA', 'CHANGE_ROLE'].includes(request.type)) {
+        console.log(`✅ RH/SI: Solicitação ${request.type} aprovada. Automizando ações...`);
 
         try {
           const det = JSON.parse(request.details || '{}');
-          const updateData: any = {};
 
-          if (det.future) {
-            if (det.future.role) updateData.jobTitle = det.future.role;
-            if (det.future.dept) updateData.department = det.future.dept;
+          // ADMISSÃO / HIRING
+          if (['ADMISSAO', 'HIRING'].includes(request.type)) {
+            if (det.email && det.name) {
+              await prisma.user.upsert({
+                where: { email: det.email.toLowerCase().trim() },
+                update: {
+                  name: det.name,
+                  jobTitle: det.role || det.jobTitle,
+                  department: det.dept || det.department,
+                  active: true // Garante que se foi recontratado, ativa novamente
+                },
+                create: {
+                  email: det.email.toLowerCase().trim(),
+                  name: det.name,
+                  jobTitle: det.role || det.jobTitle,
+                  department: det.dept || det.department,
+                  systemProfile: 'VIEWER',
+                  active: true
+                }
+              });
+              console.log(`🚀 Novo Colaborador Cadastrado: ${det.name} (${det.email})`);
+            } else {
+              console.warn(`⚠️ Admissão sem E-mail fornecido. Não foi possível criar usuário automático.`);
+            }
           }
 
-          // Se for uma movimentação, podemos ter o novo gestor nos detalhes também (opcional no modal atual, mas bom prever)
-          if (det.future?.managerId) {
-            updateData.managerId = det.future.managerId;
+          // DESLIGAMENTO / FIRING
+          else if (['DEMISSAO', 'FIRING'].includes(request.type)) {
+            // O slack manda v.blk_name, mas não temos o ID direto. Vamos buscar pelo nome.
+            const targetName = det.name || det.info?.split(': ')[1];
+            if (targetName) {
+              const targetUser = await prisma.user.findFirst({
+                where: { name: { contains: targetName.trim(), mode: 'insensitive' } }
+              });
+              if (targetUser) {
+                await prisma.user.update({
+                  where: { id: targetUser.id },
+                  data: {
+                    active: false,
+                    managerId: null, // Remove o gestor
+                    myDeputyId: null // Remove eventuais deputies
+                  }
+                });
+                // Opcional: Remover os subordinates que apontavam para ele?
+                await prisma.user.updateMany({
+                  where: { managerId: targetUser.id },
+                  data: { managerId: null }
+                });
+
+                console.log(`🚫 Colaborador Desativado: ${targetUser.name}`);
+              }
+            }
           }
 
-          if (Object.keys(updateData).length > 0) {
-            await prisma.user.update({
-              where: { id: request.requesterId },
-              data: updateData
-            });
-            console.log(`🚀 Dados do usuário ${request.requesterId} atualizados automaticamente.`);
+          // MUDANÇA (PROMOCAO, MUDANCA DE AREA, CHANGE_ROLE)
+          else {
+            const targetName = det.name || det.info?.split(': ')[1];
+            if (targetName) {
+              const targetUser = await prisma.user.findFirst({
+                where: { name: { contains: targetName.trim(), mode: 'insensitive' } }
+              });
+
+              if (targetUser) {
+                const updateData: any = {};
+                if (det.future) {
+                  if (det.future.role) updateData.jobTitle = det.future.role;
+                  if (det.future.dept) updateData.department = det.future.dept;
+                  if (det.future.managerId) updateData.managerId = det.future.managerId;
+                }
+
+                if (Object.keys(updateData).length > 0) {
+                  await prisma.user.update({
+                    where: { id: targetUser.id },
+                    data: updateData
+                  });
+                  console.log(`🔄 Dados do colaborador ${targetUser.name} atualizados.`);
+                }
+              }
+            }
           }
         } catch (err) {
-          console.error("❌ Erro ao atualizar dados do usuário após aprovação:", err);
+          console.error("❌ Erro ao automatizar dados do RH após aprovação:", err);
         }
       }
 

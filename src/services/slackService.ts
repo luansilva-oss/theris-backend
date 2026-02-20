@@ -182,6 +182,7 @@ slackApp.action('btn_hire', async ({ ack, body, client }) => {
         type: 'modal', callback_id: 'submit_hire', title: { type: 'plain_text', text: 'Contratação' }, submit: { type: 'plain_text', text: 'Agendar' },
         blocks: [
           { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome Completo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_email', label: { type: 'plain_text', text: 'E-mail Corporativo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_date', label: { type: 'plain_text', text: 'Data de Início' }, element: { type: 'datepicker', action_id: 'picker' } },
           { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
@@ -394,13 +395,16 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
   const name = v.blk_name.inp.value;
+  const email = v.blk_email.inp.value; // NOVO: Campo de e-mail obrigatório para cadastro automático
   const startDate = v.blk_date.picker.selected_date || 'A definir';
   const details = {
     info: `Contratação: ${name}`,
+    name,
+    email,
     startDate,
     role: v.blk_role.inp.value,
     dept: v.blk_dept.inp.value,
-    obs: v.blk_obs.inp.value
+    obs: v.blk_obs?.inp?.value || ''
   };
   await saveRequest(body, client, 'HIRING', details, `Início: ${startDate}`, `✅ Contratação de *${name}* registrada.`);
 });

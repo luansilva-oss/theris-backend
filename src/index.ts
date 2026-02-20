@@ -84,10 +84,6 @@ app.put('/api/users/:id', updateUser);
 app.delete('/api/users/:id', deleteUser);
 
 // ============================================================
-// --- INTEGRAÇÃO CONVENIA ---
-// ============================================================
-import { handleConveniaWebhook } from './controllers/conveniaController';
-app.post('/api/webhooks/convenia', handleConveniaWebhook);
 
 // ============================================================
 // --- WORKFLOW (SOLICITAÇÕES) ---

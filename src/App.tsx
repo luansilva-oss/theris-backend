@@ -36,6 +36,7 @@ interface User {
   managerId?: string | null;
   manager?: { name: string };
   myDeputy?: User;
+  active?: boolean;
 }
 
 interface Tool {
@@ -232,8 +233,8 @@ export default function App() {
       }
       if (resReqs.ok) setRequests(await resReqs.json());
 
-      // Carrega usuários se estiver na aba de gestão
-      if (activeTab === 'PEOPLE') {
+      // Carrega usuários se estiver na aba de gestão ou Dashboard
+      if (activeTab === 'PEOPLE' || activeTab === 'DASHBOARD') {
         const [resUsers, resDepts] = await Promise.all([
           fetch(`${API_URL}/api/users`),
           fetch(`${API_URL}/api/structure`)
@@ -605,7 +606,23 @@ export default function App() {
             </>
           ) : (
             <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null); setDashboardSubFilter('GERAL'); }}><LayoutDashboard size={18} /> Menu Principal</div>
+              <div className="nav-item-group">
+                <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null); setDashboardSubFilter('GERAL'); }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <LayoutDashboard size={18} /> Visão Geral
+                  </div>
+                  {activeTab === 'DASHBOARD' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </div>
+
+                {activeTab === 'DASHBOARD' && (
+                  <div style={{ paddingLeft: 32, display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8, marginTop: 4 }}>
+                    <div className={`nav-item ${dashboardSubFilter === 'GERAL' ? 'active' : ''}`} style={{ fontSize: 13, padding: '8px 12px' }} onClick={() => setDashboardSubFilter('GERAL')}>Geral</div>
+                    <div className={`nav-item ${dashboardSubFilter === 'PESSOAS' ? 'active' : ''}`} style={{ fontSize: 13, padding: '8px 12px' }} onClick={() => setDashboardSubFilter('PESSOAS')}>Gestão de Pessoas</div>
+                    <div className={`nav-item ${dashboardSubFilter === 'FERRAMENTAS' ? 'active' : ''}`} style={{ fontSize: 13, padding: '8px 12px' }} onClick={() => setDashboardSubFilter('FERRAMENTAS')}>Gestão de Ferramentas</div>
+                    <div className={`nav-item ${dashboardSubFilter === 'INFRA' ? 'active' : ''}`} style={{ fontSize: 13, padding: '8px 12px' }} onClick={() => setDashboardSubFilter('INFRA')}>Gestão de Infraestrutura</div>
+                  </div>
+                )}
+              </div>
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
             </>
           )}
@@ -653,9 +670,9 @@ export default function App() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
                     {JOB_TITLE_DEFAULTS[currentUser.jobTitle].map((kit, idx) => (
                       <div key={idx} className="card-base" style={{ padding: 12, background: '#18181b', border: '1px solid #27272a' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: 13, color: '#fafafa' }}>{kit.toolName}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 12 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: '#fafafa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{kit.toolName}</div>
                             <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 600 }}>{kit.level}</div>
                           </div>
                           <a
@@ -663,7 +680,7 @@ export default function App() {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="btn-verify"
-                            style={{ margin: 0, padding: '4px 8px', fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, height: 24 }}
+                            style={{ margin: 0, padding: '4px 12px', fontSize: 10, display: 'flex', alignItems: 'center', gap: 6, height: 26, flexShrink: 0 }}
                           >
                             <LogIn size={12} /> Login
                           </a>
@@ -685,9 +702,17 @@ export default function App() {
                 const isFiltered = dashboardSubFilter !== 'GERAL';
                 const filteredRequests = requests.filter(r => {
                   if (systemProfile === 'VIEWER' && r.requester.id !== currentUser?.id) return false;
-                  if (dashboardSubFilter === 'PESSOAS') return r.type === 'CHANGE_ROLE' || r.type === 'NEW_USER';
-                  if (dashboardSubFilter === 'FERRAMENTAS') return r.type === 'ADD_ACCESS' || r.type === 'EXTRAORDINARY_ACCESS';
-                  if (dashboardSubFilter === 'INFRA') return r.type === 'INFRA_SUPPORT' || r.type === 'REPAIR';
+
+                  if (dashboardSubFilter === 'PESSOAS') {
+                    return ['CHANGE_ROLE', 'NEW_USER', 'HIRING', 'FIRING', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO', 'MUDANCA_AREA', 'DEPUTY_DESIGNATION'].includes(r.type);
+                  }
+                  if (dashboardSubFilter === 'FERRAMENTAS') {
+                    return ['ADD_ACCESS', 'EXTRAORDINARY_ACCESS', 'ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'].includes(r.type);
+                  }
+                  if (dashboardSubFilter === 'INFRA') {
+                    return ['INFRA_SUPPORT', 'REPAIR'].includes(r.type) || r.type.includes('INFRA');
+                  }
+
                   return true;
                 });
 
@@ -927,7 +952,7 @@ export default function App() {
                   <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
                 </div>
                 <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                  <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Colaboradores</div>
+                  <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.filter(u => u.active !== false).length} Colaboradores</div>
                   <div style={{ height: 20, width: 1, background: '#27272a' }}></div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }}></div>
@@ -938,7 +963,7 @@ export default function App() {
 
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 <PersonnelListView
-                  users={allUsers}
+                  users={allUsers.filter(u => u.active !== false)}
                   departments={departments}
                   roles={roles}
                   onEditUser={(user) => {
@@ -1033,9 +1058,9 @@ export default function App() {
               {/* CABEÇALHO DA FERRAMENTA + OWNERS (4 BLOCKS) */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '24px' }}>
 
-                {/* BLOCK 1: OWNER */}
+                {/* BLOCK 1: RESPONSAVEL */}
                 <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ fontSize: 10, color: '#a78bfa', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Owner (Dono)</div>
+                  <div style={{ fontSize: 10, color: '#a78bfa', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Responsável (Donos)</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#2e1065', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 }}>
                       {selectedTool.owner?.name.charAt(0) || '?'}
@@ -1047,9 +1072,9 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* BLOCK 2: SUB-OWNER */}
+                {/* BLOCK 2: CO-RESPONSÁVEL */}
                 <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)' }}>
-                  <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Sub-Owner</div>
+                  <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Co-responsável</div>
                   {selectedTool.subOwner ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1c1917', border: '1px solid #444', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontWeight: 700, fontSize: 14 }}>
@@ -1065,9 +1090,9 @@ export default function App() {
                   )}
                 </div>
 
-                {/* BLOCK 3: DEPUTY (Só mostra se aprovado) */}
+                {/* BLOCK 3: SUBSTITUTO DO RESPONSÁVEL (Só mostra se aprovado) */}
                 <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)' }}>
-                  <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Deputy (Substituto)</div>
+                  <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Substituto do Responsável</div>
                   {selectedTool.owner?.myDeputy ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#064e3b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#34d399', fontWeight: 700, fontSize: 14 }}>

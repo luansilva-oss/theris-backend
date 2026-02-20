@@ -31,10 +31,8 @@ model User {
   // --- MUDANÇA 1: Simplificado para facilitar importação do CSV ---
   department    String?   // Agora é texto simples (Ex: "Comercial")
   jobTitle      String?   // Cargo (Ex: "SDR")
+  active         Boolean   @default(true) // NOVO: Flag de bloqueio para manter histórico (Demissão)
   // ---------------------------------------------------------------
-
-  roleId        String?
-  // role       Role?     @relation(fields: [roleId], references: [id]) // Comentei para evitar erros se não tiver roles
 
   // Hierarquia (Gestor)
   managerId     String?
