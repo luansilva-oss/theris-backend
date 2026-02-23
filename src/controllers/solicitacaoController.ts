@@ -271,7 +271,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     // =========================================================
     // 🚀 LÓGICA DE EXECUÇÃO AUTOMÁTICA
     // =========================================================
-    if (newApiStatus === 'APROVADO') {
+    if (action === 'APROVADO') {
 
       // CENÁRIO 1: RH (Admissão, Promoção, Demissão)
       // AQUI NÃO FAZEMOS NADA NO BANCO.
