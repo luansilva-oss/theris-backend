@@ -71,19 +71,26 @@ const deleteTool = async (req, res) => {
 exports.deleteTool = deleteTool;
 const updateTool = async (req, res) => {
     const { id } = req.params;
-    const { name, acronym, description, ownerId, subOwnerId, toolGroupId, availableAccessLevels } = req.body;
+    const body = req.body;
     try {
+        const data = {};
+        if (body.name !== undefined)
+            data.name = body.name;
+        if (body.acronym !== undefined)
+            data.acronym = body.acronym;
+        if (body.description !== undefined)
+            data.description = body.description;
+        if (body.ownerId !== undefined)
+            data.ownerId = body.ownerId || null;
+        if (body.subOwnerId !== undefined)
+            data.subOwnerId = body.subOwnerId || null;
+        if (body.toolGroupId !== undefined)
+            data.toolGroupId = body.toolGroupId || null;
+        if (body.availableAccessLevels !== undefined)
+            data.availableAccessLevels = body.availableAccessLevels;
         const updatedTool = await prisma.tool.update({
             where: { id },
-            data: {
-                name,
-                acronym,
-                description,
-                ownerId: ownerId || null,
-                subOwnerId: subOwnerId || null,
-                toolGroupId: toolGroupId || null,
-                availableAccessLevels: availableAccessLevels // Array de strings
-            }
+            data
         });
         return res.json(updatedTool);
     }

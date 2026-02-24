@@ -254,7 +254,7 @@ const updateSolicitacao = async (req, res) => {
         // =========================================================
         // 🚀 LÓGICA DE EXECUÇÃO AUTOMÁTICA
         // =========================================================
-        if (newApiStatus === 'APROVADO') {
+        if (action === 'APROVADO') {
             // CENÁRIO 1: RH (Admissão, Promoção, Demissão)
             // AQUI NÃO FAZEMOS NADA NO BANCO.
             // O SI aprovou -> O RH recebe o ok -> Faz no Convenia -> Webhook do Convenia atualiza o Theris.

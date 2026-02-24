@@ -1,16 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteRole = exports.updateRole = exports.createRole = exports.deleteDepartment = exports.updateDepartment = exports.createDepartment = exports.getStructure = void 0;
+exports.updateRoleKit = exports.getRoleKit = exports.deleteRole = exports.updateRole = exports.createRole = exports.deleteDepartment = exports.updateDepartment = exports.createDepartment = exports.getStructure = void 0;
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
-// GET all departments and roles
+// GET all departments and roles (with kit items for each role)
 const getStructure = async (req, res) => {
     try {
         const [departments, roles] = await Promise.all([
             prisma.department.findMany({ orderBy: { name: 'asc' } }),
             prisma.role.findMany({
                 orderBy: { name: 'asc' },
-                include: { department: true }
+                include: { department: true, kitItems: true }
             })
         ]);
         return res.json({ departments, roles });
@@ -96,9 +96,9 @@ const deleteDepartment = async (req, res) => {
 exports.deleteDepartment = deleteDepartment;
 // --- ROLE (CARGO) CRUD ---
 const createRole = async (req, res) => {
-    const { name, departmentId } = req.body;
+    const { name, departmentId, code } = req.body;
     try {
-        const role = await prisma.role.create({ data: { name, departmentId } });
+        const role = await prisma.role.create({ data: { name, departmentId, code: code || null } });
         return res.json(role);
     }
     catch (error) {
@@ -108,7 +108,7 @@ const createRole = async (req, res) => {
 exports.createRole = createRole;
 const updateRole = async (req, res) => {
     const { id } = req.params;
-    const { name, departmentId } = req.body;
+    const { name, departmentId, code } = req.body;
     try {
         // 1. Get old role
         const oldRole = await prisma.role.findUnique({ where: { id } });
@@ -116,7 +116,7 @@ const updateRole = async (req, res) => {
             return res.status(404).json({ error: "Cargo não encontrado." });
         const role = await prisma.role.update({
             where: { id },
-            data: { name, departmentId }
+            data: { name, departmentId, code: code !== undefined ? code : undefined }
         });
         // 2. Sync with Users (if name changed)
         if (oldRole.name !== name) {
@@ -149,3 +149,51 @@ const deleteRole = async (req, res) => {
     }
 };
 exports.deleteRole = deleteRole;
+// --- ROLE KIT (Kit Básico do Cargo) ---
+const getRoleKit = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const role = await prisma.role.findUnique({
+            where: { id },
+            include: { kitItems: true, department: true }
+        });
+        if (!role)
+            return res.status(404).json({ error: "Cargo não encontrado." });
+        return res.json(role);
+    }
+    catch (error) {
+        return res.status(500).json({ error: "Erro ao buscar kit do cargo." });
+    }
+};
+exports.getRoleKit = getRoleKit;
+const updateRoleKit = async (req, res) => {
+    const { id } = req.params;
+    const { items } = req.body;
+    try {
+        const role = await prisma.role.findUnique({ where: { id } });
+        if (!role)
+            return res.status(404).json({ error: "Cargo não encontrado." });
+        await prisma.roleKitItem.deleteMany({ where: { roleId: id } });
+        if (Array.isArray(items) && items.length > 0) {
+            await prisma.roleKitItem.createMany({
+                data: items.map((it) => ({
+                    roleId: id,
+                    toolCode: it.toolCode || '',
+                    toolName: it.toolName || '',
+                    accessLevelDesc: it.accessLevelDesc || null,
+                    criticality: it.criticality || null,
+                    isCritical: it.isCritical !== false
+                }))
+            });
+        }
+        const updated = await prisma.role.findUnique({
+            where: { id },
+            include: { kitItems: true }
+        });
+        return res.json(updated);
+    }
+    catch (error) {
+        return res.status(500).json({ error: "Erro ao atualizar kit do cargo." });
+    }
+};
+exports.updateRoleKit = updateRoleKit;
