@@ -9,6 +9,7 @@ interface User {
     email: string;
     jobTitle?: string;
     department?: string;
+    unit?: string;
     systemProfile: string;
     managerId?: string | null;
 }
@@ -41,6 +42,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
     const [email, setEmail] = useState(user.email);
     const [jobTitle, setJobTitle] = useState(user.jobTitle);
     const [department, setDepartment] = useState(user.department);
+    const [unit, setUnit] = useState(user.unit);
     const [systemProfile, setSystemProfile] = useState(user.systemProfile || 'VIEWER');
     const [managerId, setManagerId] = useState<string | null>(user.managerId || null);
     const [isSaving, setIsSaving] = useState(false);
@@ -53,6 +55,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
         setEmail(user.email);
         setJobTitle(user.jobTitle);
         setDepartment(user.department);
+        setUnit(user.unit);
         setSystemProfile(user.systemProfile || 'VIEWER');
         setManagerId(user.managerId || null);
         loadStructure();
@@ -78,7 +81,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                     'Content-Type': 'application/json',
                     'x-requester-id': currentUser.id
                 },
-                body: JSON.stringify({ name, email, jobTitle, department, systemProfile, managerId })
+                body: JSON.stringify({ name, email, jobTitle, department, unit, systemProfile, managerId })
             });
 
             if (res.ok) {
@@ -133,6 +136,16 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                         className="form-input"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                    />
+                </div>
+
+                <div className="form-group">
+                    <label>Unidade</label>
+                    <input
+                        className="form-input"
+                        value={unit || ''}
+                        onChange={(e) => setUnit(e.target.value)}
+                        placeholder="Ex: 3C+, Dizify"
                     />
                 </div>
 

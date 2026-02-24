@@ -44,6 +44,7 @@ model User {
   // --- MUDANÇA 1: Simplificado para facilitar importação do CSV ---
   department    String?   // Agora é texto simples (Ex: "Comercial")
   jobTitle      String?   // Cargo (Ex: "SDR")
+  unit          String?   // Unidade (Ex: "3C+", "Dizify", "Instituto 3C")
   // ---------------------------------------------------------------
 
   roleId        String?

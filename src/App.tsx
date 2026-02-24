@@ -19,6 +19,8 @@ import { ManageLevelModal } from './components/ManageLevelModal';
 import PersonnelListView from './components/PersonnelListView';
 import { EditDepartmentModal } from './components/EditDepartmentModal';
 import { DeleteDepartmentModal } from './components/DeleteDepartmentModal';
+import { EditRoleKitModal } from './components/EditRoleKitModal';
+import { ToolAccessManager } from './components/ToolAccessManager';
 import { ToastContainer, Toast } from './components/ToastContainer';
 import { CustomConfirmModal } from './components/CustomConfirmModal';
 
@@ -31,6 +33,7 @@ interface User {
   email: string;
   jobTitle?: string;
   department?: string;
+  unit?: string;
   systemProfile: string;
   managerId?: string | null;
   manager?: { name: string };
@@ -160,6 +163,9 @@ export default function App() {
   const [isEditDeptModalOpen, setIsEditDeptModalOpen] = useState(false);
   const [isDeleteDeptModalOpen, setIsDeleteDeptModalOpen] = useState(false);
   const [selectedDeptForAction, setSelectedDeptForAction] = useState<any>(null);
+  const [isEditRoleKitModalOpen, setIsEditRoleKitModalOpen] = useState(false);
+  const [selectedRoleForKit, setSelectedRoleForKit] = useState<any>(null);
+  const [selectedToolForAccessId, setSelectedToolForAccessId] = useState<string>('');
 
   // NOTIFICAÇÕES E CONFIRMAÇÕES
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -777,7 +783,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
                 <PersonnelListView
                   users={allUsers}
                   departments={departments}
@@ -795,6 +801,19 @@ export default function App() {
                     setSelectedDeptForAction(dept);
                     setIsDeleteDeptModalOpen(true);
                   }}
+                  onEditRole={['ADMIN', 'SUPER_ADMIN', 'GESTOR'].includes(systemProfile) ? (role) => {
+                    setSelectedRoleForKit(role);
+                    setIsEditRoleKitModalOpen(true);
+                  } : undefined}
+                />
+                <ToolAccessManager
+                  tool={selectedToolForAccessId ? tools.find(t => t.id === selectedToolForAccessId) || null : null}
+                  tools={tools}
+                  allUsers={allUsers}
+                  onSelectTool={setSelectedToolForAccessId}
+                  onUpdate={loadData}
+                  showToast={showToast}
+                  customConfirm={customConfirm}
                 />
               </div>
             </div>
@@ -1397,7 +1416,6 @@ export default function App() {
             tool={selectedTool}
             onUpdate={loadData}
             showToast={showToast}
-            customConfirm={customConfirm}
           />
         )
       }
@@ -1488,6 +1506,14 @@ export default function App() {
           />
         )
       }
+
+      <EditRoleKitModal
+        isOpen={isEditRoleKitModalOpen}
+        onClose={() => { setIsEditRoleKitModalOpen(false); setSelectedRoleForKit(null); }}
+        role={selectedRoleForKit}
+        onUpdate={loadData}
+        showToast={showToast}
+      />
 
       {/* CUSTOM UI OVERLAYS */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />

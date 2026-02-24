@@ -32,10 +32,11 @@ interface PersonnelListViewProps {
     onDeleteUser?: (user: User) => void;
     onEditDepartment: (dept: Department) => void;
     onDeleteDepartment: (dept: Department) => void;
+    onEditRole?: (role: Role) => void;
 }
 
 export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
-    users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment
+    users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole
 }) => {
     const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
     const [expandedRoles, setExpandedRoles] = useState<Record<string, boolean>>({});
@@ -108,22 +109,36 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                 getRolesForDept(dept.id).map(role => (
                                     <div key={role.id} className="role-section" style={{ border: '1px solid #27272a', borderRadius: '8px', overflow: 'hidden' }}>
                                         <div
-                                            onClick={() => toggleRole(role.id)}
                                             style={{
                                                 padding: '12px 16px',
                                                 background: '#18181b',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'space-between',
-                                                cursor: 'pointer',
                                                 borderBottom: expandedRoles[role.id] ? '1px solid #27272a' : 'none'
                                             }}
                                         >
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <div
+                                                onClick={() => toggleRole(role.id)}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, cursor: 'pointer' }}
+                                            >
                                                 <Briefcase size={18} color="#71717a" />
                                                 <span style={{ fontWeight: 500, color: '#e4e4e7', fontSize: '14px' }}>{role.name}</span>
                                             </div>
-                                            {expandedRoles[role.id] ? <ChevronDown size={16} color="#52525b" /> : <ChevronRight size={16} color="#52525b" />}
+                                            {onEditRole && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onEditRole(role); }}
+                                                    title="Editar kit de ferramentas e níveis de acesso do cargo"
+                                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', opacity: 0.6, transition: '0.2s', marginRight: 8 }}
+                                                    onMouseOver={e => (e.currentTarget.style.opacity = '1')}
+                                                    onMouseOut={e => (e.currentTarget.style.opacity = '0.6')}
+                                                >
+                                                    <Pencil size={16} color="#a78bfa" />
+                                                </button>
+                                            )}
+                                            <div onClick={() => toggleRole(role.id)} style={{ cursor: 'pointer' }}>
+                                                {expandedRoles[role.id] ? <ChevronDown size={16} color="#52525b" /> : <ChevronRight size={16} color="#52525b" />}
+                                            </div>
                                         </div>
 
                                         {expandedRoles[role.id] && (

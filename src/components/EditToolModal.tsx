@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Plus, Trash2, Search, Users, Shield, Box } from 'lucide-react';
+import { X, Plus } from 'lucide-react';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -26,43 +26,30 @@ interface Tool {
     toolGroup?: ToolGroup;
     availableAccessLevels?: string[];
     description?: string;
-    accesses?: {
-        id?: string;
-        user: User;
-        status: string;
-        isExtraordinary?: boolean;
-        duration?: number;
-        unit?: string;
-    }[];
 }
 
 interface Props {
     isOpen: boolean;
     onClose: () => void;
     tool: Tool;
-    onUpdate: () => void; // Recarregar dados pai
+    onUpdate: () => void;
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
-    customConfirm: (config: { title: string; message: string; onConfirm: () => void; isDestructive?: boolean; confirmLabel?: string }) => void;
 }
 
-export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate, showToast, customConfirm }) => {
+export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate, showToast }) => {
     if (!isOpen) return null;
 
-    const [activeTab, setActiveTab] = useState<'IDENTITY' | 'ACCESS'>('IDENTITY');
-
-    // Form Data
+    // Form Data (apenas Identidade & Grupo - Acessos ficam em Gestão de Pessoas)
     const [name, setName] = useState(tool.name);
     const [acronym, setAcronym] = useState(tool.acronym || '');
     const [groupId, setGroupId] = useState(tool.toolGroupId || '');
     const [ownerId, setOwnerId] = useState(tool.owner?.id || '');
     const [subOwnerId, setSubOwnerId] = useState(tool.subOwner?.id || '');
     const [description, setDescription] = useState(tool.description || '');
-    const [accessLevels, setAccessLevels] = useState<string[]>(tool.availableAccessLevels || ["Admin", "User", "Viewer"]);
 
     // Data Lists
     const [availableGroups, setAvailableGroups] = useState<ToolGroup[]>([]);
     const [allUsers, setAllUsers] = useState<User[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
 
     // UI States
     const [isSaving, setIsSaving] = useState(false);
@@ -86,7 +73,7 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
         }
     };
 
-    const handleSaveIdentity = async () => {
+    const handleSave = async () => {
         setIsSaving(true);
         try {
             const res = await fetch(`${API_URL}/api/tools/${tool.id}`, {
@@ -98,8 +85,7 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                     toolGroupId: groupId || null,
                     ownerId: ownerId || null,
                     subOwnerId: subOwnerId || null,
-                    description,
-                    availableAccessLevels: accessLevels
+                    description
                 })
             });
 
@@ -116,46 +102,6 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
         }
         setIsSaving(false);
     };
-
-    const notifyUserChange = async (userId: string, level: string) => {
-        try {
-            const res = await fetch(`${API_URL}/api/tools/${tool.id}/access`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, level })
-            });
-            if (res.ok) {
-                onUpdate();
-                showToast("Acesso atualizado!", "success");
-            } else {
-                showToast("Erro ao atualizar acesso.", "error");
-            }
-        } catch (e) {
-            showToast("Erro ao atualizar acesso.", "error");
-        }
-    };
-
-    const removeUser = async (userId: string) => {
-        customConfirm({
-            title: "Remover Acesso?",
-            message: "Tem certeza que deseja remover este acesso?",
-            isDestructive: true,
-            confirmLabel: "Remover",
-            onConfirm: async () => {
-                try {
-                    const res = await fetch(`${API_URL}/api/tools/${tool.id}/access/${userId}`, { method: 'DELETE' });
-                    if (res.ok) {
-                        onUpdate();
-                        showToast("Acesso removido.", "info");
-                    } else {
-                        showToast("Erro ao remover.", "error");
-                    }
-                } catch (e) {
-                    showToast("Erro de conexão.", "error");
-                }
-            }
-        });
-    }
 
     const createGroup = async () => {
         if (!newGroupName) return;
@@ -178,56 +124,17 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
         } catch (e) { showToast("Erro ao criar grupo.", "error"); }
     }
 
-    // Filter users for selection inputs
-    const filteredUsers = allUsers.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()));
-
     return (
         <div className="modal-overlay">
-            <div className="modal-content" style={{ maxWidth: '800px', width: '90%', height: '80vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-content" style={{ maxWidth: '600px', width: '90%', display: 'flex', flexDirection: 'column' }}>
 
-                {/* Header */}
                 <div className="modal-header">
                     <h2>Editar {tool.name}</h2>
                     <button onClick={onClose} className="btn-icon"><X size={20} /></button>
                 </div>
 
-                {/* Tabs */}
-                <div style={{ display: 'flex', borderBottom: '1px solid #27272a', marginBottom: 20 }}>
-                    <button
-                        onClick={() => setActiveTab('IDENTITY')}
-                        style={{
-                            padding: '12px 24px',
-                            background: 'transparent',
-                            border: 'none',
-                            borderBottom: activeTab === 'IDENTITY' ? '2px solid #8b5cf6' : 'none',
-                            color: activeTab === 'IDENTITY' ? 'white' : '#71717a',
-                            cursor: 'pointer',
-                            fontWeight: 600
-                        }}
-                    >
-                        Identidade & Grupo
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('ACCESS')}
-                        style={{
-                            padding: '12px 24px',
-                            background: 'transparent',
-                            border: 'none',
-                            borderBottom: activeTab === 'ACCESS' ? '2px solid #8b5cf6' : 'none',
-                            color: activeTab === 'ACCESS' ? 'white' : '#71717a',
-                            cursor: 'pointer',
-                            fontWeight: 600
-                        }}
-                    >
-                        Acessos & Pessoas
-                    </button>
-                </div>
-
-                {/* Content */}
                 <div style={{ flex: 1, overflowY: 'auto', paddingRight: 10 }}>
-
-                    {activeTab === 'IDENTITY' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                             <div className="form-group">
                                 <label>Nome do Sistema</label>
                                 <input value={name} onChange={e => setName(e.target.value)} className="form-input" style={{ width: '100%', textAlign: 'left', fontSize: 14 }} />
@@ -285,132 +192,11 @@ export const EditToolModal: React.FC<Props> = ({ isOpen, onClose, tool, onUpdate
                             </div>
 
                             <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #27272a' }}>
-                                <button onClick={handleSaveIdentity} disabled={isSaving} className="btn-verify" style={{ width: 'auto', padding: '10px 30px' }}>
+                                <button onClick={handleSave} disabled={isSaving} className="btn-verify" style={{ width: 'auto', padding: '10px 30px' }}>
                                     {isSaving ? 'Salvando...' : 'Salvar Alterações'}
                                 </button>
                             </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'ACCESS' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-                            {/* Níveis de Acesso */}
-                            <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a' }}>
-                                <h4 style={{ color: 'white', margin: '0 0 10px 0' }}>Níveis de Acesso Disponíveis</h4>
-                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                                    {accessLevels.map(lvl => (
-                                        <span key={lvl} style={{ background: '#3f3f46', padding: '4px 8px', borderRadius: 4, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            {lvl}
-                                            <button
-                                                onClick={() => setAccessLevels(accessLevels.filter(l => l !== lvl))}
-                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 0, display: 'flex' }}
-                                            >
-                                                <X size={12} />
-                                            </button>
-                                        </span>
-                                    ))}
-                                </div>
-                                <div style={{ display: 'flex', gap: 10 }}>
-                                    <input
-                                        id="newLevelInput"
-                                        placeholder="Novo nível (ex: Auditor)"
-                                        className="form-input"
-                                        style={{ flex: 1, fontSize: 13, height: 36 }}
-                                    />
-                                    <button
-                                        onClick={() => {
-                                            const el = document.getElementById('newLevelInput') as HTMLInputElement;
-                                            if (el.value && !accessLevels.includes(el.value)) {
-                                                setAccessLevels([...accessLevels, el.value]);
-                                                el.value = '';
-                                            }
-                                        }}
-                                        className="btn-mini"
-                                    >
-                                        Adicionar e Salvar
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Save Button for Access Tab (Explicit Request) */}
-                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                <button onClick={handleSaveIdentity} disabled={isSaving} className="btn-verify" style={{ width: 'auto', padding: '8px 20px', fontSize: 13 }}>
-                                    {isSaving ? 'Salvando Configurações...' : 'Salvar Níveis e Alterações'}
-                                </button>
-                            </div>
-
-                            {/* Adicionar Usuário */}
-                            <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a' }}>
-                                <h4 style={{ color: 'white', margin: '0 0 10px 0' }}>Adicionar Usuário ao Sistema</h4>
-                                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                                    <div style={{ flex: 1, position: 'relative' }}>
-                                        <Search size={14} style={{ position: 'absolute', left: 10, top: 12, color: '#71717a' }} />
-                                        <input
-                                            value={searchTerm}
-                                            onChange={e => setSearchTerm(e.target.value)}
-                                            placeholder="Buscar pessoa..."
-                                            className="form-input"
-                                            style={{ width: '100%', paddingLeft: 30, fontSize: 14 }}
-                                        />
-                                        {searchTerm && (
-                                            <div style={{ position: 'absolute', top: 45, left: 0, right: 0, background: '#18181b', border: '1px solid #27272a', borderRadius: 8, zIndex: 10, maxHeight: 200, overflowY: 'auto' }}>
-                                                {filteredUsers.slice(0, 5).map(u => (
-                                                    <div
-                                                        key={u.id + "_search"}
-                                                        onClick={() => {
-                                                            // Adicionar direto default 'User'
-                                                            notifyUserChange(u.id, accessLevels[1] || 'User'); // Pega o segundo nível ou User
-                                                            setSearchTerm('');
-                                                        }}
-                                                        style={{ padding: '8px 12px', borderBottom: '1px solid #27272a', cursor: 'pointer', fontSize: 13, color: '#d4d4d8' }}
-                                                        className="hover:bg-zinc-800"
-                                                    >
-                                                        {u.name}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Lista de Usuários */}
-                            <div className="card-base" style={{ padding: 0, border: '1px solid #27272a', overflow: 'hidden' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                                    <thead style={{ background: '#18181b', color: '#a1a1aa' }}>
-                                        <tr>
-                                            <th style={{ padding: 12, textAlign: 'left' }}>Usuário</th>
-                                            <th style={{ padding: 12, textAlign: 'left' }}>Nível Atual</th>
-                                            <th style={{ padding: 12, width: 40 }}></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {tool.accesses && tool.accesses.map(acc => (
-                                            <tr key={acc.user.id} style={{ borderBottom: '1px solid #27272a', color: '#e4e4e7' }}>
-                                                <td style={{ padding: 12 }}>{acc.user.name}</td>
-                                                <td style={{ padding: 12 }}>
-                                                    <select
-                                                        value={acc.status}
-                                                        onChange={(e) => notifyUserChange(acc.user.id, e.target.value)}
-                                                        style={{ background: '#27272a', color: 'white', border: 'none', padding: '4px 8px', borderRadius: 4 }}
-                                                    >
-                                                        {accessLevels.map(l => <option key={l} value={l}>{l}</option>)}
-                                                    </select>
-                                                </td>
-                                                <td style={{ padding: 12 }}>
-                                                    <button onClick={() => removeUser(acc.user.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )}
-
+                    </div>
                 </div>
             </div>
         </div>
