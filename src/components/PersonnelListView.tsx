@@ -94,7 +94,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                             <div style={{ padding: '12px 16px 16px', background: '#09090b' }}>
                                 {deptNames.map(deptName => {
                                     const usersInDept = usersInUnit.filter(u => u.department === deptName);
-                                    const jobTitles = [...new Set(usersInDept.map(u => u.jobTitle || '').trim()).filter(Boolean)];
+                                    const jobTitles = [...new Set(usersInDept.map(u => (u.jobTitle || '').trim()).filter(Boolean))];
                                     const deptKey = `${unitKey}-${deptName}`;
                                     const deptEntity = findDepartment(deptName);
                                     return (
