@@ -159,7 +159,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                 <button
                                                                     onClick={(e: MouseEvent) => {
                                                                         e.stopPropagation();
-                                                                        if (confirm(`Deseja excluir ${user.name}?`)) onDeleteUser(user);
+                                                                        onDeleteUser(user);
                                                                     }}
                                                                     title="Excluir colaborador"
                                                                     style={{

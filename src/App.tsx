@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Server, FileText, LogOut, Bird,
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
-  Search, Bell, Lock, Layers, ChevronDown, ChevronRight,
+  Search, Lock, Layers, ChevronDown, ChevronRight,
   Users, Building, Briefcase, // Ícone para Gestão de Pessoas
   Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus
 } from 'lucide-react';
@@ -63,6 +63,7 @@ interface Tool {
 interface Request {
   id: string;
   details: string;
+  justification?: string | null;
   status: string;
   createdAt: string;
   updatedAt?: string;
@@ -105,6 +106,40 @@ export default function App() {
   const [sourceFilter, setSourceFilter] = useState<'ALL' | 'THERIS' | 'INFRA'>('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'APROVADO' | 'REPROVADO' | 'PENDENTE'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const REQUEST_TYPE_OPTIONS: { value: string; label: string }[] = [
+    { value: 'ACCESS_TOOL', label: 'Kit Padrão / Acesso Ferramenta' },
+    { value: 'ACCESS_CHANGE', label: 'Alteração de Acesso' },
+    { value: 'ACCESS_TOOL_EXTRA', label: 'Kit Especial / Acesso Extraordinário' },
+    { value: 'CHANGE_ROLE', label: 'Mudança de Cargo' },
+    { value: 'HIRING', label: 'Contratação' },
+    { value: 'FIRING', label: 'Desligamento' },
+    { value: 'DEPUTY_DESIGNATION', label: 'Indicar Deputy' },
+    { value: 'INFRA_SUPPORT', label: 'Suporte Infra / TI' },
+    { value: '__OTHER__', label: 'Outros' }
+  ];
+  const [typeFilterEnabled, setTypeFilterEnabled] = useState<Record<string, boolean>>(() => {
+    const o: Record<string, boolean> = {};
+    REQUEST_TYPE_OPTIONS.forEach(opt => { o[opt.value] = true; });
+    return o;
+  });
+  const COLUMN_OPTIONS: { key: string; label: string }[] = [
+    { key: 'id', label: 'ID' },
+    { key: 'categoria', label: 'Categoria' },
+    { key: 'assunto', label: 'Assunto' },
+    { key: 'status', label: 'Status' },
+    { key: 'solicitante', label: 'Solicitante' },
+    { key: 'responsavel', label: 'Responsável' },
+    { key: 'data', label: 'Data' },
+    { key: 'observacao', label: 'Observação' },
+    { key: 'justificativa', label: 'Justificativa' },
+    { key: 'detalhes', label: 'Detalhes (campos do Slack)' }
+  ];
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
+    const o: Record<string, boolean> = {};
+    COLUMN_OPTIONS.forEach(c => { o[c.key] = true; });
+    return o;
+  });
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
 
   // MODAL
   const [modalOpen, setModalOpen] = useState(false);
@@ -597,7 +632,6 @@ export default function App() {
       <main className="main-area">
         <header className="header-bar">
           <div className="page-title">Pagina: <span>{activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab}</span></div>
-          <div style={{ display: 'flex', gap: 20 }}><Search size={18} color="#71717a" /><Bell size={18} color="#71717a" /></div>
         </header>
 
         <div className="content-scroll">
@@ -614,6 +648,46 @@ export default function App() {
                 <div style={{ fontSize: '42px', fontWeight: 800, color: 'white' }}>{new Date().getDate()}</div>
                 <div style={{ fontSize: '12px', textTransform: 'uppercase', color: '#a1a1aa' }}>{new Date().toLocaleDateString('pt-BR', { month: 'short' })}</div>
               </div>
+
+              {/* Viewer: meu perfil (gestor, cargo, departamento, kit básico) */}
+              {systemProfile === 'VIEWER' && currentUser && (
+                <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+                  <h3 style={{ color: '#a78bfa', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Users size={18} /> Meu perfil
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Gestor direto</div>
+                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{allUsers.find(u => u.id === currentUser.id)?.manager?.name || currentUser.manager?.name || '—'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Cargo</div>
+                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.jobTitle || '—'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Departamento</div>
+                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.department || '—'}</div>
+                    </div>
+                  </div>
+                  {(() => {
+                    const myRole = roles.find((r: any) => r.name === currentUser.jobTitle && r.department?.name === currentUser.department);
+                    const kitItems = myRole?.kitItems || [];
+                    if (kitItems.length === 0) return null;
+                    return (
+                      <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #27272a' }}>
+                        <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 10 }}>Kit Básico de sistemas (cargo)</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {kitItems.map((k: any) => (
+                            <span key={k.id || k.toolCode} style={{ background: '#18181b', border: '1px solid #3f3f46', padding: '6px 12px', borderRadius: 8, fontSize: 12, color: '#e4e4e7' }}>
+                              {k.toolName} {k.toolCode ? `(${k.toolCode})` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               {(systemProfile === 'SUPER_ADMIN' || systemProfile === 'GESTOR' || systemProfile === 'ADMIN' || systemProfile === 'APPROVER') && (
                 <>
@@ -1051,53 +1125,92 @@ export default function App() {
                   <option value="APROVADO">Concluído / Aprovado</option>
                   <option value="REPROVADO">Recusado / Reprovado</option>
                 </select>
+
+                {/* PERSONALIZAR VISUALIZAÇÃO */}
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilterPanel(prev => !prev)}
+                    className="input-base"
+                    style={{ background: '#18181b', fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #27272a' }}
+                  >
+                    <Settings size={14} color="#a78bfa" /> Personalizar filtro
+                  </button>
+                  {showFilterPanel && (
+                    <div style={{
+                      position: 'absolute', top: '100%', right: 0, marginTop: 8, zIndex: 100,
+                      background: '#18181b', border: '1px solid #3f3f46', borderRadius: 12, padding: 16, minWidth: 320, boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', marginBottom: 12 }}>Tipos de solicitação</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto', marginBottom: 16 }}>
+                        {REQUEST_TYPE_OPTIONS.map(opt => (
+                          <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#e4e4e7', fontSize: 12 }}>
+                            <input type="checkbox" checked={typeFilterEnabled[opt.value] !== false} onChange={e => setTypeFilterEnabled(prev => ({ ...prev, [opt.value]: e.target.checked }))} />
+                            {opt.label}
+                          </label>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', marginBottom: 8 }}>Colunas visíveis</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {COLUMN_OPTIONS.map(c => (
+                          <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#e4e4e7', fontSize: 11 }}>
+                            <input type="checkbox" checked={visibleColumns[c.key] !== false} onChange={e => setVisibleColumns(prev => ({ ...prev, [c.key]: e.target.checked }))} />
+                            {c.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="card-base" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="card-base" style={{ padding: 0, overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #27272a', color: '#a1a1aa', textAlign: 'left' }}>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>ID</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>CATEGORIA</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>ASSUNTO</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>STATUS</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>SOLICITANTE</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>RESPONSÁVEL (APROVADOR)</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>DATA & HORA</th>
-                      <th style={{ padding: '16px', fontWeight: 600 }}>OBSERVAÇÃO</th>
+                      {visibleColumns.id !== false && <th style={{ padding: '16px', fontWeight: 600 }}>ID</th>}
+                      {visibleColumns.categoria !== false && <th style={{ padding: '16px', fontWeight: 600 }}>CATEGORIA</th>}
+                      {visibleColumns.assunto !== false && <th style={{ padding: '16px', fontWeight: 600 }}>ASSUNTO</th>}
+                      {visibleColumns.status !== false && <th style={{ padding: '16px', fontWeight: 600 }}>STATUS</th>}
+                      {visibleColumns.solicitante !== false && <th style={{ padding: '16px', fontWeight: 600 }}>SOLICITANTE</th>}
+                      {visibleColumns.responsavel !== false && <th style={{ padding: '16px', fontWeight: 600 }}>RESPONSÁVEL</th>}
+                      {visibleColumns.data !== false && <th style={{ padding: '16px', fontWeight: 600 }}>DATA & HORA</th>}
+                      {visibleColumns.observacao !== false && <th style={{ padding: '16px', fontWeight: 600 }}>OBSERVAÇÃO</th>}
+                      {visibleColumns.justificativa !== false && <th style={{ padding: '16px', fontWeight: 600 }}>JUSTIFICATIVA</th>}
+                      {visibleColumns.detalhes !== false && <th style={{ padding: '16px', fontWeight: 600 }}>DETALHES (Slack)</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {requests
                       .filter(r => {
-                        // 0. Filtro de permissão (O MAIS IMPORTANTE)
+                        // 0. Filtro de permissão
                         if (systemProfile === 'VIEWER' && r.requester.id !== currentUser?.id) return false;
 
-                        // 1. Filtro de Status
+                        // 1. Filtro por tipo (personalizado)
+                        const typeKey = REQUEST_TYPE_OPTIONS.some(o => o.value === r.type) ? r.type : '__OTHER__';
+                        if (typeFilterEnabled[typeKey] === false) return false;
+
+                        // 2. Filtro de Status
                         if (statusFilter !== 'ALL') {
                           if (statusFilter === 'PENDENTE') {
                             if (!r.status.startsWith('PENDENTE')) return false;
                           } else if (r.status !== statusFilter) return false;
-                        } else {
-                          // Por padrão, esconde os que são apenas 'PENDENTE' (sem auditoria ainda?)
-                          // mas o usuário pediu um filtro robusto. 
-                          // Vamos mostrar tudo que não for o estado inicial cru de sistema se o filtro estiver em ALL
-                          // ou melhor, manter a lógica original de r.status !== 'PENDENTE'
-                          if (r.status === 'PENDENTE') return false;
                         }
 
-                        // 2. Filtro de Origem
+                        // 3. Filtro de Origem
                         const INFRA_TYPES = ['INFRA_SUPPORT'];
                         const isInfra = INFRA_TYPES.includes(r.type);
                         if (sourceFilter === 'THERIS' && isInfra) return false;
                         if (sourceFilter === 'INFRA' && !isInfra) return false;
 
-                        // 3. Busca
+                        // 4. Busca
                         if (searchTerm) {
                           const term = searchTerm.toLowerCase();
                           const matchesName = r.requester?.name?.toLowerCase().includes(term);
                           const matchesId = r.id.toLowerCase().includes(term);
-                          if (!matchesName && !matchesId) return false;
+                          const detailsStr = (r as any).details ? String((r as any).details) : '';
+                          const matchesDetails = detailsStr.toLowerCase().includes(term);
+                          if (!matchesName && !matchesId && !matchesDetails) return false;
                         }
 
                         return true;
@@ -1133,73 +1246,138 @@ export default function App() {
                         };
                         subject = subjectMap[r.type] || r.type;
 
+                        let detailsParsed: Record<string, unknown> = {};
+                        try {
+                          detailsParsed = typeof r.details === 'string' ? JSON.parse(r.details || '{}') : (r.details || {});
+                        } catch (_) { }
+                        const formatDetails = () => {
+                          const d = detailsParsed as any;
+                          const parts: string[] = [];
+                          if (d.info) parts.push(d.info);
+                          if (r.type === 'CHANGE_ROLE' && d.current) parts.push(`Atual: ${d.current.role || ''} / ${d.current.dept || ''}`);
+                          if (r.type === 'CHANGE_ROLE' && d.future) parts.push(`Novo: ${d.future.role || ''} / ${d.future.dept || ''}`);
+                          if (d.startDate) parts.push(`Início: ${d.startDate}`);
+                          if (d.role) parts.push(`Cargo: ${d.role}`);
+                          if (d.dept) parts.push(`Depto: ${d.dept}`);
+                          if (d.tool) parts.push(`Ferramenta: ${d.tool}`);
+                          if (d.current && typeof d.current === 'string') parts.push(`Nível atual: ${d.current}`);
+                          if (d.target) parts.push(`Nível desejado: ${d.target}`);
+                          if (d.beneficiary) parts.push(`Beneficiário: ${d.beneficiary}`);
+                          if (d.duration != null && d.unit) parts.push(`Duração: ${d.duration} ${d.unit}`);
+                          if (d.substitute) parts.push(`Substituto: ${d.substitute}`);
+                          if (d.obs) parts.push(`Obs: ${d.obs}`);
+                          if (d.requestType) parts.push(`Tipo: ${d.requestType}`);
+                          if (d.description) parts.push(`Descrição: ${d.description}`);
+                          if (d.urgency) parts.push(`Urgência: ${d.urgency}`);
+                          return parts.length ? parts.join(' · ') : '-';
+                        };
+
                         return (
                           <tr key={r.id} style={{ borderBottom: '1px solid #1f1f22', color: '#e4e4e7' }}>
-                            <td style={{ padding: '16px', fontSize: 11, color: '#71717a', fontFamily: 'monospace' }} title={r.id}>
-                              #{r.id.split('-')[0].toUpperCase()}
-                            </td>
-                            <td style={{ padding: '16px' }}>
-                              <span style={{
-                                fontSize: 12,
-                                color: category === 'Gestão de Ferramentas' ? '#a78bfa' :
-                                  category === 'Gestão de Pessoas' ? '#34d399' :
-                                    category === 'Infraestrutura & TI' ? '#fbbf24' : '#a1a1aa',
-                                fontWeight: 600
-                              }}>
-                                {category}
-                              </span>
-                            </td>
-                            <td style={{ padding: '16px', fontSize: 13 }}>
-                              {subject}
-                            </td>
-                            <td style={{ padding: '16px' }}>
-                              <span style={{
-                                padding: '4px 10px', borderRadius: '20px', fontSize: 11, fontWeight: 700,
-                                backgroundColor: r.status === 'APROVADO' ? 'rgba(16, 185, 129, 0.2)' :
-                                  r.status === 'REPROVADO' ? 'rgba(239, 68, 68, 0.2)' :
-                                    r.status.startsWith('PENDENTE') ? 'rgba(245, 158, 11, 0.15)' : 'rgba(113, 113, 122, 0.2)',
-                                color: r.status === 'APROVADO' ? '#34d399' :
-                                  r.status === 'REPROVADO' ? '#f87171' :
-                                    r.status.startsWith('PENDENTE') ? '#fbbf24' : '#a1a1aa',
-                                border: r.status === 'APROVADO' ? '1px solid #059669' :
-                                  r.status === 'REPROVADO' ? '1px solid #b91c1c' :
-                                    r.status.startsWith('PENDENTE') ? '1px solid #d97706' : '1px solid #3f3f46',
-                                display: 'inline-flex', alignItems: 'center', gap: 5
-                              }}>
-                                {r.status === 'APROVADO' ? <CheckCircle size={10} /> :
-                                  r.status === 'REPROVADO' ? <XCircle size={10} /> : <Clock size={10} />}
-                                {r.status.replace('PENDENTE_', 'Pendente ')}
-                              </span>
-                            </td>
-                            <td style={{ padding: '16px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#3f3f46', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>
-                                  {r.requester?.name?.charAt(0) || '?'}
-                                </div>
-                                <span>{r.requester?.name || 'Usuário Removido'}</span>
-                              </div>
-                            </td>
-                            <td style={{ padding: '16px' }}>
-                              {r.approver ? (
+                            {visibleColumns.id !== false && (
+                              <td style={{ padding: '16px', fontSize: 11, color: '#71717a', fontFamily: 'monospace' }} title={r.id}>
+                                #{r.id.split('-')[0].toUpperCase()}
+                              </td>
+                            )}
+                            {visibleColumns.categoria !== false && (
+                              <td style={{ padding: '16px' }}>
+                                <span style={{
+                                  fontSize: 12,
+                                  color: category === 'Gestão de Ferramentas' ? '#a78bfa' :
+                                    category === 'Gestão de Pessoas' ? '#34d399' :
+                                      category === 'Infraestrutura & TI' ? '#fbbf24' : '#a1a1aa',
+                                  fontWeight: 600
+                                }}>
+                                  {category}
+                                </span>
+                              </td>
+                            )}
+                            {visibleColumns.assunto !== false && <td style={{ padding: '16px', fontSize: 13 }}>{subject}</td>}
+                            {visibleColumns.status !== false && (
+                              <td style={{ padding: '16px' }}>
+                                <span style={{
+                                  padding: '4px 10px', borderRadius: '20px', fontSize: 11, fontWeight: 700,
+                                  backgroundColor: r.status === 'APROVADO' ? 'rgba(16, 185, 129, 0.2)' :
+                                    r.status === 'REPROVADO' ? 'rgba(239, 68, 68, 0.2)' :
+                                      r.status.startsWith('PENDENTE') ? 'rgba(245, 158, 11, 0.15)' : 'rgba(113, 113, 122, 0.2)',
+                                  color: r.status === 'APROVADO' ? '#34d399' :
+                                    r.status === 'REPROVADO' ? '#f87171' :
+                                      r.status.startsWith('PENDENTE') ? '#fbbf24' : '#a1a1aa',
+                                  border: r.status === 'APROVADO' ? '1px solid #059669' :
+                                    r.status === 'REPROVADO' ? '1px solid #b91c1c' :
+                                      r.status.startsWith('PENDENTE') ? '1px solid #d97706' : '1px solid #3f3f46',
+                                  display: 'inline-flex', alignItems: 'center', gap: 5
+                                }}>
+                                  {r.status === 'APROVADO' ? <CheckCircle size={10} /> :
+                                    r.status === 'REPROVADO' ? <XCircle size={10} /> : <Clock size={10} />}
+                                  {r.status.replace('PENDENTE_', 'Pendente ')}
+                                </span>
+                              </td>
+                            )}
+                            {visibleColumns.solicitante !== false && (
+                              <td style={{ padding: '16px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                  <Shield size={14} color="#a78bfa" />
-                                  <span style={{ color: '#a78bfa' }}>{r.approver.name}</span>
+                                  <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#3f3f46', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>
+                                    {r.requester?.name?.charAt(0) || '?'}
+                                  </div>
+                                  <span>{r.requester?.name || 'Usuário Removido'}</span>
                                 </div>
-                              ) : (
-                                <span style={{ color: '#52525b', fontStyle: 'italic' }}>Sistema / Automático</span>
-                              )}
-                            </td>
-                            <td style={{ padding: '16px', color: '#a1a1aa' }}>
-                              {new Date(r.updatedAt || r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                            </td>
-                            <td style={{ padding: '16px', color: '#71717a', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.adminNote}>
-                              {r.adminNote || '-'}
-                            </td>
+                              </td>
+                            )}
+                            {visibleColumns.responsavel !== false && (
+                              <td style={{ padding: '16px' }}>
+                                {r.approver ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <Shield size={14} color="#a78bfa" />
+                                    <span style={{ color: '#a78bfa' }}>{r.approver.name}</span>
+                                  </div>
+                                ) : (
+                                  <span style={{ color: '#52525b', fontStyle: 'italic' }}>Sistema / Automático</span>
+                                )}
+                              </td>
+                            )}
+                            {visibleColumns.data !== false && (
+                              <td style={{ padding: '16px', color: '#a1a1aa' }}>
+                                {new Date(r.updatedAt || r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                            )}
+                            {visibleColumns.observacao !== false && (
+                              <td style={{ padding: '16px', color: '#71717a', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.adminNote}>
+                                {r.adminNote || '-'}
+                              </td>
+                            )}
+                            {visibleColumns.justificativa !== false && (
+                              <td style={{ padding: '16px', color: '#a1a1aa', maxWidth: '180px', fontSize: 12 }} title={r.justification || ''}>
+                                {(r.justification || '-').toString().slice(0, 60)}{(r.justification && r.justification.length > 60) ? '…' : ''}
+                              </td>
+                            )}
+                            {visibleColumns.detalhes !== false && (
+                              <td style={{ padding: '16px', color: '#a1a1aa', maxWidth: '280px', fontSize: 11 }} title={formatDetails()}>
+                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{formatDetails()}</span>
+                              </td>
+                            )}
                           </tr>
                         )
                       })}
-                    {requests.filter(r => r.status !== 'PENDENTE').length === 0 && (
-                      <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#52525b' }}>Nenhum registro de auditoria encontrado.</td></tr>
+                    {requests.filter(r => {
+                      if (systemProfile === 'VIEWER' && r.requester.id !== currentUser?.id) return false;
+                      const typeKey = REQUEST_TYPE_OPTIONS.some(o => o.value === r.type) ? r.type : '__OTHER__';
+                      if (typeFilterEnabled[typeKey] === false) return false;
+                      if (statusFilter !== 'ALL') {
+                        if (statusFilter === 'PENDENTE' && !r.status.startsWith('PENDENTE')) return false;
+                        if (statusFilter !== 'PENDENTE' && r.status !== statusFilter) return false;
+                      }
+                      const INFRA_TYPES = ['INFRA_SUPPORT'];
+                      if (sourceFilter === 'THERIS' && INFRA_TYPES.includes(r.type)) return false;
+                      if (sourceFilter === 'INFRA' && !INFRA_TYPES.includes(r.type)) return false;
+                      if (searchTerm) {
+                        const term = searchTerm.toLowerCase();
+                        const match = r.requester?.name?.toLowerCase().includes(term) || r.id.toLowerCase().includes(term) || String((r as any).details || '').toLowerCase().includes(term);
+                        if (!match) return false;
+                      }
+                      return true;
+                    }).length === 0 && (
+                      <tr><td colSpan={10} style={{ padding: '40px', textAlign: 'center', color: '#52525b' }}>Nenhum registro encontrado.</td></tr>
                     )}
                   </tbody>
                 </table>

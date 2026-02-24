@@ -17,10 +17,23 @@ model Department {
 }
 
 model Role {
-  id           String     @id @default(uuid())
+  id           String        @id @default(uuid())
   name         String
+  code         String?       @unique  // Ex: KBS-BO-1 (Código do cargo no board)
   departmentId String
-  department   Department @relation(fields: [departmentId], references: [id])
+  department   Department    @relation(fields: [departmentId], references: [id])
+  kitItems     RoleKitItem[]
+}
+
+model RoleKitItem {
+  id                String   @id @default(uuid())
+  roleId             String
+  role               Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  toolCode           String   // Ex: ap_CK-1
+  toolName           String   // Ex: ClickUp
+  accessLevelDesc    String?  // Nível de Acesso (Descritivo Oficial)
+  criticality        String?  // Alta, Média, Baixa
+  isCritical         Boolean  @default(true)
 }
 
 model User {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Edit2, Check, Briefcase, Building2, User as UserIcon, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Plus, Trash2, Edit2, Check, Briefcase, Building2, User as UserIcon, Search, ChevronDown, ChevronRight, Package } from 'lucide-react';
+import { RoleKitModal } from './RoleKitModal';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
@@ -12,6 +13,8 @@ interface Role {
     id: string;
     name: string;
     departmentId: string;
+    code?: string | null;
+    kitItems?: { id: string; toolCode: string; toolName: string; accessLevelDesc?: string | null; criticality?: string | null; isCritical: boolean }[];
 }
 
 interface User {
@@ -57,6 +60,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
     const [isUserPickerOpen, setIsUserPickerOpen] = useState(false);
     const [targetRole, setTargetRole] = useState<Role | null>(null);
     const [userSearchTerm, setUserSearchTerm] = useState('');
+    const [roleForKit, setRoleForKit] = useState<{ id: string; name: string; departmentName: string } | null>(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -436,10 +440,17 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                                 <Briefcase size={14} color="#a1a1aa" />
                                                                 <span style={{ fontWeight: 600, color: '#e4e4e7', fontSize: 14 }}>{role.name}</span>
-                                                                <button className="btn-icon" onClick={() => { setEditingRoleId(role.id); setEditingRoleName(role.name); }}><Edit2 size={12} color="#52525b" /></button>
+                                                                <button className="btn-icon" onClick={() => { setEditingRoleId(role.id); setEditingRoleName(role.name); }} title="Editar nome do cargo"><Edit2 size={12} color="#52525b" /></button>
                                                             </div>
                                                         )}
-                                                        <div style={{ display: 'flex', gap: 8 }}>
+                                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                                            <button
+                                                                className="btn-icon"
+                                                                onClick={() => setRoleForKit({ id: role.id, name: role.name, departmentName: currentDept.name })}
+                                                                title="Ver/Editar Kit Básico do cargo"
+                                                            >
+                                                                <Package size={14} color="#a78bfa" />
+                                                            </button>
                                                             <button
                                                                 className="btn-mini"
                                                                 onClick={() => {
@@ -451,7 +462,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                                             >
                                                                 <Plus size={12} /> Add Pessoa
                                                             </button>
-                                                            <button className="btn-icon" onClick={() => handleDeleteRole(role.id)}><Trash2 size={14} color="#71717a" /></button>
+                                                            <button className="btn-icon" onClick={() => handleDeleteRole(role.id)} title="Excluir cargo"><Trash2 size={14} color="#71717a" /></button>
                                                         </div>
                                                     </div>
 
@@ -549,6 +560,16 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                         </div>
                     </div>
                 )}
+
+                <RoleKitModal
+                    isOpen={!!roleForKit}
+                    onClose={() => setRoleForKit(null)}
+                    roleId={roleForKit?.id ?? null}
+                    roleName={roleForKit?.name ?? ''}
+                    departmentName={roleForKit?.departmentName ?? ''}
+                    onUpdate={loadData}
+                    showToast={showToast}
+                />
             </div>
         </div>
     );

@@ -60,6 +60,8 @@ app.delete('/api/structure/departments/:id', structureController.deleteDepartmen
 app.post('/api/structure/roles', structureController.createRole);
 app.put('/api/structure/roles/:id', structureController.updateRole);
 app.delete('/api/structure/roles/:id', structureController.deleteRole);
+app.get('/api/structure/roles/:id/kit', structureController.getRoleKit);
+app.put('/api/structure/roles/:id/kit', structureController.updateRoleKit);
 
 // 2. Ferramentas
 app.get('/api/tools', getTools);
