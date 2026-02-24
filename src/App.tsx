@@ -20,7 +20,6 @@ import PersonnelListView from './components/PersonnelListView';
 import { EditDepartmentModal } from './components/EditDepartmentModal';
 import { DeleteDepartmentModal } from './components/DeleteDepartmentModal';
 import { EditRoleKitModal } from './components/EditRoleKitModal';
-import { ToolAccessManager } from './components/ToolAccessManager';
 import { ToastContainer, Toast } from './components/ToastContainer';
 import { CustomConfirmModal } from './components/CustomConfirmModal';
 
@@ -165,7 +164,6 @@ export default function App() {
   const [selectedDeptForAction, setSelectedDeptForAction] = useState<any>(null);
   const [isEditRoleKitModalOpen, setIsEditRoleKitModalOpen] = useState(false);
   const [selectedRoleForKit, setSelectedRoleForKit] = useState<any>(null);
-  const [selectedToolForAccessId, setSelectedToolForAccessId] = useState<string>('');
 
   // NOTIFICAÇÕES E CONFIRMAÇÕES
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -783,7 +781,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 <PersonnelListView
                   users={allUsers.filter(u => u.department && u.department !== 'Geral')}
                   departments={departments.filter(d => d.name !== 'Geral')}
@@ -805,15 +803,6 @@ export default function App() {
                     setSelectedRoleForKit(role);
                     setIsEditRoleKitModalOpen(true);
                   } : undefined}
-                />
-                <ToolAccessManager
-                  tool={selectedToolForAccessId ? tools.find(t => t.id === selectedToolForAccessId) || null : null}
-                  tools={tools}
-                  allUsers={allUsers}
-                  onSelectTool={setSelectedToolForAccessId}
-                  onUpdate={loadData}
-                  showToast={showToast}
-                  customConfirm={customConfirm}
                 />
               </div>
             </div>
