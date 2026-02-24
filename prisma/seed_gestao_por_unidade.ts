@@ -140,35 +140,7 @@ const ROWS: { unit: string; department: string; jobTitle: string; name: string; 
 ];
 
 async function main() {
-  console.log('🌱 Seed Gestão por Unidade — departamentos, cargos e colaboradores');
-
-  const deptSet = new Set(ROWS.map(r => r.department));
-  const deptList = [...deptSet].sort();
-
-  await prisma.roleKitItem.deleteMany({});
-  await prisma.role.deleteMany({});
-  await prisma.department.deleteMany({});
-
-  const deptMap = new Map<string, string>();
-  for (const name of deptList) {
-    const d = await prisma.department.create({ data: { name } });
-    deptMap.set(name, d.id);
-  }
-  console.log(`   ${deptList.length} departamentos criados.`);
-
-  const roleKey = (dept: string, job: string) => `${dept}::${job}`;
-  const roleKeys = new Set(ROWS.map(r => roleKey(r.department, r.jobTitle)));
-  const roleMap = new Map<string, string>();
-  for (const key of roleKeys) {
-    const [deptName, jobTitle] = key.split('::');
-    const deptId = deptMap.get(deptName);
-    if (!deptId) continue;
-    const role = await prisma.role.create({
-      data: { name: jobTitle, departmentId: deptId },
-    });
-    roleMap.set(key, role.id);
-  }
-  console.log(`   ${roleMap.size} cargos criados.`);
+  console.log('🌱 Seed Gestão por Unidade — atualiza usuários (unit, department, jobTitle). Estrutura Unit/Department/Role deve vir do seed_units.ts');
 
   for (const row of ROWS) {
     const email = row.email.toLowerCase().trim();

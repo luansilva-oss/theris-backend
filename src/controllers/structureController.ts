@@ -3,17 +3,24 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// GET all departments and roles (with kit items for each role)
+// GET estrutura completa: Unit -> Department -> Role -> kitItems
 export const getStructure = async (req: Request, res: Response) => {
     try {
-        const [departments, roles] = await Promise.all([
-            prisma.department.findMany({ orderBy: { name: 'asc' } }),
-            prisma.role.findMany({
-                orderBy: { name: 'asc' },
-                include: { department: true, kitItems: true }
-            })
-        ]);
-        return res.json({ departments, roles });
+        const units = await prisma.unit.findMany({
+            orderBy: { name: 'asc' },
+            include: {
+                departments: {
+                    orderBy: { name: 'asc' },
+                    include: {
+                        roles: {
+                            orderBy: { name: 'asc' },
+                            include: { kitItems: true }
+                        }
+                    }
+                }
+            }
+        });
+        return res.json({ units });
     } catch (error) {
         console.error("Erro ao buscar estrutura:", error);
         return res.status(500).json({ error: "Erro interno ao buscar estrutura." });
@@ -23,9 +30,10 @@ export const getStructure = async (req: Request, res: Response) => {
 // --- DEPARTMENT CRUD ---
 
 export const createDepartment = async (req: Request, res: Response) => {
-    const { name } = req.body;
+    const { name, unitId } = req.body;
+    if (!unitId) return res.status(400).json({ error: "unitId é obrigatório." });
     try {
-        const dept = await prisma.department.create({ data: { name } });
+        const dept = await prisma.department.create({ data: { name, unitId } });
         return res.json(dept);
     } catch (error) {
         return res.status(500).json({ error: "Erro ao criar departamento." });
@@ -34,22 +42,22 @@ export const createDepartment = async (req: Request, res: Response) => {
 
 export const updateDepartment = async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { name } = req.body;
+    const { name, unitId } = req.body;
     try {
-        // 1. Get old name
         const oldDept = await prisma.department.findUnique({ where: { id } });
         if (!oldDept) return res.status(404).json({ error: "Departamento não encontrado." });
 
-        const dept = await prisma.department.update({ where: { id }, data: { name } });
+        const data: { name?: string; unitId?: string } = {};
+        if (name !== undefined) data.name = name;
+        if (unitId !== undefined) data.unitId = unitId;
+        const dept = await prisma.department.update({ where: { id }, data });
 
-        // 2. Sync with Users (if name changed)
         if (oldDept.name !== name) {
             await prisma.user.updateMany({
                 where: { department: oldDept.name },
-                data: { department: name }
+                data: { department: name ?? oldDept.name }
             });
         }
-
         return res.json(dept);
     } catch (error) {
         return res.status(500).json({ error: "Erro ao atualizar departamento." });

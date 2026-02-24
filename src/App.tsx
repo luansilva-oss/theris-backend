@@ -71,6 +71,7 @@ interface Request {
   updatedAt?: string;
   requester: User;
   approver?: User;
+  approverId?: string | null;
   type: string;
   adminNote?: string;
 }
@@ -96,8 +97,9 @@ export default function App() {
   const [tools, setTools] = useState<Tool[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]); // Lista de colaboradores
-  const [departments, setDepartments] = useState<any[]>([]); // Lista mestra de departamentos
-  const [roles, setRoles] = useState<any[]>([]); // Lista mestra de cargos
+  const [units, setUnits] = useState<any[]>([]); // Estrutura Unit -> Department -> Role (da API)
+  const [departments, setDepartments] = useState<any[]>([]); // Lista plana (derivada de units) para modais
+  const [roles, setRoles] = useState<any[]>([]); // Lista plana (derivada de units) para modais
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
@@ -276,8 +278,10 @@ export default function App() {
         if (resUsers.ok) setAllUsers(await resUsers.json());
         if (resDepts.ok) {
           const structData = await resDepts.json();
-          setDepartments(structData.departments || []);
-          setRoles(structData.roles || []);
+          const unitList = structData.units || [];
+          setUnits(unitList);
+          setDepartments(unitList.flatMap((u: any) => u.departments || []));
+          setRoles(unitList.flatMap((u: any) => (u.departments || []).flatMap((d: any) => d.roles || [])));
         }
       }
 
@@ -456,9 +460,7 @@ export default function App() {
 
   const getGroupedPeople = () => {
     const grouped: Record<string, Record<string, User[]>> = {};
-
-    // Inicializa com todos os departamentos conhecidos
-    departments.forEach(d => {
+    departments.forEach((d: any) => {
       grouped[d.name] = {};
     });
 
@@ -711,32 +713,62 @@ export default function App() {
                 <div className="card-base cell-tasks">
                   <div className="card-header"><span className="card-title">Ação Necessária</span></div>
                   <div style={{ flex: 1, overflowY: 'auto' }}>
-                    {requests.filter(r => r.status.includes('PENDENTE')).length === 0 ? (
-                      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: 14 }}>Nenhuma pendência.</div>
-                    ) : (
-                      requests.filter(r => r.status.includes('PENDENTE')).map(r => (
-                        <div key={r.id} className="action-row">
-                          <div className="action-info">
-                            <h4>{JSON.parse(r.details).info || JSON.parse(r.details).tool}</h4>
-                            <p>Solicitante: {r.requester?.name}</p>
+                    {(() => {
+                      const pendingForMe = requests.filter(r => {
+                        if (!r.status.includes('PENDENTE')) return false;
+                        return r.approverId === currentUser?.id || r.approverId == null;
+                      });
+                      if (pendingForMe.length === 0) {
+                        return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: 14 }}>Nenhuma pendência.</div>;
+                      }
+                      return pendingForMe.map(r => {
+                        let detailsObj: Record<string, unknown> = {};
+                        try { detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch (_) { }
+                        const d = detailsObj as Record<string, string | undefined>;
+                        const infoLines: { label: string; value: string }[] = [];
+                        if (d.info) infoLines.push({ label: 'Resumo', value: d.info });
+                        if (d.tool) infoLines.push({ label: 'Ferramenta', value: d.tool });
+                        if (d.requestType) infoLines.push({ label: 'Tipo', value: d.requestType });
+                        if (d.description) infoLines.push({ label: 'Descrição', value: d.description });
+                        if (d.urgency) infoLines.push({ label: 'Urgência', value: d.urgency });
+                        if (d.duration != null && d.unit) infoLines.push({ label: 'Duração', value: `${d.duration} ${d.unit}` });
+                        if (d.substitute) infoLines.push({ label: 'Substituto', value: d.substitute });
+                        if (d.name) infoLines.push({ label: 'Nome/Colaborador', value: d.name });
+                        if (d.role) infoLines.push({ label: 'Cargo', value: d.role });
+                        if (d.dept) infoLines.push({ label: 'Departamento', value: d.dept });
+                        if (d.startDate) infoLines.push({ label: 'Data início', value: d.startDate });
+                        if (d.reason) infoLines.push({ label: 'Motivo', value: d.reason });
+                        return (
+                          <div key={r.id} className="action-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                            <div style={{ background: '#18181b', borderRadius: 8, padding: '10px 12px', border: '1px solid #27272a' }}>
+                              <h4 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#f4f4f5' }}>{d.info || d.tool || r.type}</h4>
+                              {infoLines.length > 1 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                                  {infoLines.filter(l => l.label !== 'Resumo').map((l, i) => (
+                                    <div key={i} style={{ fontSize: 12, color: '#a1a1aa' }}><span style={{ color: '#71717a' }}>{l.label}:</span> {l.value}</div>
+                                  ))}
+                                </div>
+                              )}
+                              <p style={{ margin: 0, fontSize: 12, color: '#71717a' }}>Solicitante: {r.requester?.name}</p>
+                            </div>
+                            <div className="action-buttons" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                              {r.type === 'INFRA_SUPPORT' ? (
+                                <>
+                                  <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Concluído</button>
+                                  <button className="btn-mini" style={{ backgroundColor: 'rgba(217, 119, 6, 0.2)', color: '#fbbf24', border: '1px solid #d97706', padding: '4px 8px', fontSize: 11, borderRadius: 6 }} onClick={() => handleOpenApprove(r.id, 'PENDENTE')}>Pendente</button>
+                                  <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusado</button>
+                                </>
+                              ) : (
+                                <>
+                                  <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Aprovar</button>
+                                  <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusar</button>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <div className="action-buttons">
-                            {r.type === 'INFRA_SUPPORT' ? (
-                              <>
-                                <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Concluído</button>
-                                <button className="btn-mini" style={{ backgroundColor: 'rgba(217, 119, 6, 0.2)', color: '#fbbf24', border: '1px solid #d97706', padding: '4px 8px', fontSize: 11, borderRadius: 6 }} onClick={() => handleOpenApprove(r.id, 'PENDENTE')}>Pendente</button>
-                                <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusado</button>
-                              </>
-                            ) : (
-                              <>
-                                <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Aprovar</button>
-                                <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusar</button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    )}
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               )}
@@ -783,8 +815,9 @@ export default function App() {
 
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 <PersonnelListView
+                  units={units}
                   users={allUsers.filter(u => u.department && u.department !== 'Geral')}
-                  departments={departments.filter(d => d.name !== 'Geral')}
+                  departments={departments.filter((d: any) => d.name !== 'Geral')}
                   roles={roles}
                   onEditUser={(user) => {
                     setSelectedUser(user);

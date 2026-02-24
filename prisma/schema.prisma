@@ -7,13 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// (Opcional: Pode manter ou remover Department/Role se não estiver usando ativamente, 
-// mas desconectei do User para facilitar o CSV)
+// Hierarquia: Unit -> Department -> Role
+model Unit {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  createdAt   DateTime     @default(now())
+  departments Department[]
+}
+
 model Department {
   id        String   @id @default(uuid())
-  name      String   @unique
+  name      String
+  unitId    String
+  unit      Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   roles     Role[]
+
+  @@unique([unitId, name])
 }
 
 model Role {
