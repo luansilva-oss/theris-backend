@@ -774,7 +774,7 @@ export default function App() {
                   <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
                 </div>
                 <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                  <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.length} Colaboradores</div>
+                  <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.filter(u => u.department && u.department !== 'Geral').length} Colaboradores</div>
                   <div style={{ height: 20, width: 1, background: '#27272a' }}></div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }}></div>
@@ -785,8 +785,8 @@ export default function App() {
 
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
                 <PersonnelListView
-                  users={allUsers}
-                  departments={departments}
+                  users={allUsers.filter(u => u.department && u.department !== 'Geral')}
+                  departments={departments.filter(d => d.name !== 'Geral')}
                   roles={roles}
                   onEditUser={(user) => {
                     setSelectedUser(user);

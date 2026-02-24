@@ -21,6 +21,7 @@ interface Department {
 interface Role {
     id: string;
     name: string;
+    code?: string | null;
     departmentId: string;
 }
 
@@ -123,7 +124,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                 style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, cursor: 'pointer' }}
                                             >
                                                 <Briefcase size={18} color="#71717a" />
-                                                <span style={{ fontWeight: 500, color: '#e4e4e7', fontSize: '14px' }}>{role.name}</span>
+                                                <span style={{ fontWeight: 500, color: '#e4e4e7', fontSize: '14px' }}>{role.code ? `${role.code} | ${role.name}` : role.name}</span>
                                             </div>
                                             {onEditRole && (
                                                 <button

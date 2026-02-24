@@ -22,6 +22,7 @@ interface Tool {
 interface Role {
     id: string;
     name: string;
+    code?: string | null;
     departmentId: string;
     department?: { name: string };
     kitItems?: RoleKitItem[];
@@ -38,18 +39,17 @@ interface Props {
 export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpdate, showToast }) => {
     if (!isOpen) return null;
 
+    const [roleName, setRoleName] = useState('');
+    const [roleCode, setRoleCode] = useState('');
     const [kitItems, setKitItems] = useState<RoleKitItem[]>([]);
     const [tools, setTools] = useState<Tool[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    // Add form
-    const [selectedToolId, setSelectedToolId] = useState('');
-    const [selectedLevel, setSelectedLevel] = useState('');
-    const [criticality, setCriticality] = useState<string>('');
-
     useEffect(() => {
         if (role) {
+            setRoleName(role.name);
+            setRoleCode(role.code || '');
             setLoading(true);
             Promise.all([
                 fetch(`${API_URL}/api/structure/roles/${role.id}/kit`).then(r => r.ok ? r.json() : null),
@@ -65,33 +65,47 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                 setTools(toolsList || []);
             }).catch(e => console.error(e)).finally(() => setLoading(false));
         }
-    }, [role?.id, isOpen]);
+    }, [role?.id, role?.name, role?.code, isOpen]);
 
-    const selectedTool = tools.find(t => t.id === selectedToolId);
-    const levels = selectedTool?.availableAccessLevels?.length
-        ? selectedTool.availableAccessLevels
-        : ['Admin', 'User', 'Viewer'];
-
-    const addItem = () => {
-        if (!selectedToolId || !selectedTool) return;
-        const level = selectedLevel || levels[0];
-        if (kitItems.some(k => k.toolCode === selectedTool.id)) {
-            showToast('Esta ferramenta já está no kit.', 'warning');
-            return;
+    useEffect(() => {
+        if (role) {
+            setRoleName(role.name);
+            setRoleCode(role.code || '');
         }
-        setKitItems([...kitItems, {
-            toolCode: selectedTool.id,
-            toolName: selectedTool.name,
-            accessLevelDesc: level,
-            criticality: criticality || null,
-            isCritical: true
-        }]);
-        setSelectedToolId('');
-        setSelectedLevel('');
-        setCriticality('');
+    }, [role?.name, role?.code]);
+
+    const getLevelsForTool = (toolId: string): string[] => {
+        const t = tools.find(x => x.id === toolId);
+        return (t?.availableAccessLevels?.length ? t.availableAccessLevels : ['Admin', 'User', 'Viewer']) as string[];
     };
 
-    const removeItem = (index: number) => {
+    const addRow = () => {
+        setKitItems([...kitItems, {
+            toolCode: '',
+            toolName: '',
+            accessLevelDesc: null,
+            criticality: null,
+            isCritical: true
+        }]);
+    };
+
+    const updateRow = (index: number, field: keyof RoleKitItem, value: any) => {
+        const next = [...kitItems];
+        if (field === 'toolCode' && value) {
+            const t = tools.find(x => x.id === value);
+            next[index] = {
+                ...next[index],
+                toolCode: value,
+                toolName: t ? t.name : next[index].toolName,
+                accessLevelDesc: next[index].accessLevelDesc || (t?.availableAccessLevels?.[0] ?? 'User')
+            };
+        } else {
+            (next[index] as any)[field] = value;
+        }
+        setKitItems(next);
+    };
+
+    const removeRow = (index: number) => {
         setKitItems(kitItems.filter((_, i) => i !== index));
     };
 
@@ -99,26 +113,40 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
         if (!role) return;
         setSaving(true);
         try {
-            const res = await fetch(`${API_URL}/api/structure/roles/${role.id}/kit`, {
+            const nameRes = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    items: kitItems.map(it => ({
-                        toolCode: it.toolCode,
-                        toolName: it.toolName,
-                        accessLevelDesc: it.accessLevelDesc || null,
-                        criticality: it.criticality || null,
-                        isCritical: it.isCritical !== false
-                    }))
-                })
+                body: JSON.stringify({ name: roleName.trim() || role.name, code: roleCode.trim() || null })
             });
-            if (res.ok) {
-                showToast('Kit do cargo atualizado!', 'success');
+            if (!nameRes.ok) {
+                const err = await nameRes.json();
+                showToast(err.error || 'Erro ao salvar nome do cargo.', 'error');
+                setSaving(false);
+                return;
+            }
+
+            const validItems = kitItems
+                .filter(it => it.toolCode && it.toolName)
+                .map(it => ({
+                    toolCode: it.toolCode,
+                    toolName: it.toolName,
+                    accessLevelDesc: it.accessLevelDesc || null,
+                    criticality: it.criticality || null,
+                    isCritical: it.isCritical !== false
+                }));
+
+            const kitRes = await fetch(`${API_URL}/api/structure/roles/${role.id}/kit`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: validItems })
+            });
+            if (kitRes.ok) {
+                showToast('Cargo e kit atualizados!', 'success');
                 onUpdate();
                 onClose();
             } else {
-                const err = await res.json();
-                showToast(err.error || 'Erro ao salvar.', 'error');
+                const err = await kitRes.json();
+                showToast(err.error || 'Erro ao salvar kit.', 'error');
             }
         } catch (e) {
             showToast('Erro de conexão.', 'error');
@@ -128,9 +156,9 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
 
     return (
         <div className="modal-overlay">
-            <div className="modal-content" style={{ maxWidth: '560px', width: '90%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-content" style={{ maxWidth: '720px', width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
                 <div className="modal-header">
-                    <h2>Kit de ferramentas e níveis — {role?.name}</h2>
+                    <h2>Editar cargo e kit básico</h2>
                     <button onClick={onClose} className="btn-icon"><X size={20} /></button>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}>
@@ -139,92 +167,120 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                     ) : (
                         <>
                             <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', marginBottom: 16 }}>
-                                <h4 style={{ color: '#f4f4f5', margin: '0 0 12px 0', fontSize: 14 }}>Adicionar ferramenta ao kit padrão</h4>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <h4 style={{ color: '#f4f4f5', margin: '0 0 12px 0', fontSize: 14 }}>Nome do cargo</h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                                     <div>
-                                        <label style={{ fontSize: 12, color: '#a1a1aa' }}>Ferramenta</label>
-                                        <select
-                                            value={selectedToolId}
-                                            onChange={e => { setSelectedToolId(e.target.value); setSelectedLevel(''); }}
+                                        <label style={{ fontSize: 12, color: '#a1a1aa' }}>Código (ex: KBS-BO-1)</label>
+                                        <input
+                                            value={roleCode}
+                                            onChange={e => setRoleCode(e.target.value)}
+                                            placeholder="KBS-BO-1"
                                             className="form-input"
                                             style={{ width: '100%', marginTop: 4 }}
-                                        >
-                                            <option value="">Selecione...</option>
-                                            {tools.map(t => (
-                                                <option key={t.id} value={t.id}>{t.name}{t.acronym ? ` (${t.acronym})` : ''}</option>
-                                            ))}
-                                        </select>
+                                        />
                                     </div>
-                                    {selectedTool && (
-                                        <div>
-                                            <label style={{ fontSize: 12, color: '#a1a1aa' }}>Nível de acesso padrão</label>
-                                            <select
-                                                value={selectedLevel}
-                                                onChange={e => setSelectedLevel(e.target.value)}
-                                                className="form-input"
-                                                style={{ width: '100%', marginTop: 4 }}
-                                            >
-                                                {levels.map(l => <option key={l} value={l}>{l}</option>)}
-                                            </select>
-                                        </div>
-                                    )}
                                     <div>
-                                        <label style={{ fontSize: 12, color: '#a1a1aa' }}>Criticidade (opcional)</label>
-                                        <select
-                                            value={criticality}
-                                            onChange={e => setCriticality(e.target.value)}
+                                        <label style={{ fontSize: 12, color: '#a1a1aa' }}>Nome</label>
+                                        <input
+                                            value={roleName}
+                                            onChange={e => setRoleName(e.target.value)}
+                                            placeholder="Ex: CEO"
                                             className="form-input"
                                             style={{ width: '100%', marginTop: 4 }}
-                                        >
-                                            <option value="">—</option>
-                                            <option value="Alta">Alta</option>
-                                            <option value="Média">Média</option>
-                                            <option value="Baixa">Baixa</option>
-                                        </select>
+                                        />
                                     </div>
-                                    <button type="button" onClick={addItem} className="btn-mini" style={{ alignSelf: 'flex-start' }}>
-                                        <Plus size={14} style={{ marginRight: 6 }} /> Adicionar
-                                    </button>
                                 </div>
                             </div>
 
-                            <h4 style={{ color: '#f4f4f5', margin: '0 0 8px 0', fontSize: 14 }}>Itens do kit</h4>
-                            {kitItems.length === 0 ? (
-                                <div style={{ padding: 16, color: '#52525b', fontSize: 13, fontStyle: 'italic' }}>Nenhuma ferramenta no kit. Adicione acima.</div>
-                            ) : (
-                                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                                    {kitItems.map((item, index) => (
-                                        <li
-                                            key={`${item.toolCode}-${index}`}
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
-                                                padding: '10px 12px',
-                                                background: '#18181b',
-                                                border: '1px solid #27272a',
-                                                borderRadius: 8,
-                                                marginBottom: 6
-                                            }}
-                                        >
-                                            <div>
-                                                <span style={{ color: '#e4e4e7', fontWeight: 500 }}>{item.toolName}</span>
-                                                <span style={{ color: '#71717a', fontSize: 12, marginLeft: 8 }}>{item.accessLevelDesc || '—'}</span>
-                                                {item.criticality && (
-                                                    <span style={{ fontSize: 11, color: '#a78bfa', marginLeft: 8 }}>{item.criticality}</span>
-                                                )}
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeItem(index)}
-                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
+                            <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', marginBottom: 16 }}>
+                                <h4 style={{ color: '#f4f4f5', margin: '0 0 12px 0', fontSize: 14 }}>Kit básico de ferramentas</h4>
+                                <p style={{ color: '#71717a', fontSize: 12, margin: '0 0 12px 0' }}>Selecione apenas ferramentas já cadastradas no Catálogo. Novas ferramentas criadas no Catálogo aparecem aqui automaticamente.</p>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                        <thead>
+                                            <tr style={{ borderBottom: '1px solid #27272a', color: '#a1a1aa' }}>
+                                                <th style={{ padding: '10px 8px', textAlign: 'left', width: '36%' }}>Ferramenta</th>
+                                                <th style={{ padding: '10px 8px', textAlign: 'left', width: '28%' }}>Nível de acesso</th>
+                                                <th style={{ padding: '10px 8px', textAlign: 'left', width: '18%' }}>Criticidade</th>
+                                                <th style={{ padding: '10px 8px', textAlign: 'left', width: '12%' }}>Crítico</th>
+                                                <th style={{ padding: '10px 8px', width: 44 }}></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {kitItems.map((item, index) => (
+                                                <tr key={index} style={{ borderBottom: '1px solid #27272a' }}>
+                                                    <td style={{ padding: '8px' }}>
+                                                        <select
+                                                            value={item.toolCode}
+                                                            onChange={e => {
+                                                                const id = e.target.value;
+                                                                const t = tools.find(x => x.id === id);
+                                                                if (t) updateRow(index, 'toolCode', id);
+                                                            }}
+                                                            className="form-input"
+                                                            style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
+                                                        >
+                                                            <option value="">Selecione...</option>
+                                                            {tools.map(t => (
+                                                                <option key={t.id} value={t.id}>{t.name}{t.acronym ? ` (${t.acronym})` : ''}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                    <td style={{ padding: '8px' }}>
+                                                        <select
+                                                            value={item.accessLevelDesc || ''}
+                                                            onChange={e => updateRow(index, 'accessLevelDesc', e.target.value || null)}
+                                                            className="form-input"
+                                                            style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
+                                                        >
+                                                            <option value="">—</option>
+                                                            {(item.toolCode ? getLevelsForTool(item.toolCode) : ['Admin', 'User', 'Viewer']).map(l => (
+                                                                <option key={l} value={l}>{l}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                    <td style={{ padding: '8px' }}>
+                                                        <select
+                                                            value={item.criticality || ''}
+                                                            onChange={e => updateRow(index, 'criticality', e.target.value || null)}
+                                                            className="form-input"
+                                                            style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
+                                                        >
+                                                            <option value="">—</option>
+                                                            <option value="Alta">Alta</option>
+                                                            <option value="Média">Média</option>
+                                                            <option value="Baixa">Baixa</option>
+                                                        </select>
+                                                    </td>
+                                                    <td style={{ padding: '8px' }}>
+                                                        <select
+                                                            value={item.isCritical ? 'Sim' : 'Não'}
+                                                            onChange={e => updateRow(index, 'isCritical', e.target.value === 'Sim')}
+                                                            className="form-input"
+                                                            style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
+                                                        >
+                                                            <option value="Sim">Sim</option>
+                                                            <option value="Não">Não</option>
+                                                        </select>
+                                                    </td>
+                                                    <td style={{ padding: '8px' }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeRow(index)}
+                                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <button type="button" onClick={addRow} className="btn-mini" style={{ marginTop: 10 }}>
+                                    <Plus size={14} style={{ marginRight: 6 }} /> Adicionar ferramenta
+                                </button>
+                            </div>
                         </>
                     )}
                 </div>
@@ -233,7 +289,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                         Cancelar
                     </button>
                     <button type="button" onClick={handleSave} disabled={saving || loading} className="btn-verify">
-                        {saving ? 'Salvando...' : 'Salvar kit'}
+                        {saving ? 'Salvando...' : 'Salvar'}
                     </button>
                 </div>
             </div>
