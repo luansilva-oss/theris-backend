@@ -22,8 +22,7 @@ import { DeleteDepartmentModal } from './components/DeleteDepartmentModal';
 import { EditRoleKitModal } from './components/EditRoleKitModal';
 import { ToastContainer, Toast } from './components/ToastContainer';
 import { CustomConfirmModal } from './components/CustomConfirmModal';
-
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+import { API_URL } from './config';
 
 // --- TYPES ---
 interface User {

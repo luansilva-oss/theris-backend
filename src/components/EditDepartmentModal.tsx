@@ -14,7 +14,7 @@ interface Props {
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+import { API_URL } from '../config';
 
 export const EditDepartmentModal: React.FC<Props> = ({ isOpen, onClose, department, onUpdated, showToast }) => {
     const [name, setName] = useState('');

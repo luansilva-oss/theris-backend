@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Save, Trash2, Search, Plus, Shield, Crown, Zap, } from 'lucide-react'; // Added icons
 
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+import { API_URL } from '../config';
 
 interface User {
     id: string;

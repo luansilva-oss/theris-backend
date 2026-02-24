@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+import { API_URL } from '../config';
 
 interface RoleKitItem {
     id?: string;

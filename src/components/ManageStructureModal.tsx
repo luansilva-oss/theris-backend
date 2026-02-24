@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Edit2, Check, Briefcase, Building2, User as UserIcon, Search, ChevronDown, ChevronRight, Package } from 'lucide-react';
 import { RoleKitModal } from './RoleKitModal';
-
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+import { API_URL } from '../config';
 
 interface Unit {
     id: string;

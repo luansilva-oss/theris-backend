@@ -17,7 +17,7 @@ interface Props {
     customConfirm: (config: { title: string; message: string; onConfirm: () => void; isDestructive?: boolean; confirmLabel?: string }) => void;
 }
 
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+import { API_URL } from '../config';
 
 export const DeleteDepartmentModal: React.FC<Props> = ({ isOpen, onClose, department, allDepartments, userCount, onDeleted, showToast, customConfirm }) => {
     const [redirectToId, setRedirectToId] = useState('');
