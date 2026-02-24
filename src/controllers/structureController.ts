@@ -3,10 +3,11 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// GET estrutura completa: Unit -> Department -> Role -> kitItems
+// GET /api/structure — estrutura completa Unit -> Department -> Role -> kitItems
+// O frontend espera obrigatoriamente: { units: Unit[] }
 export const getStructure = async (req: Request, res: Response) => {
     try {
-        const units = await prisma.unit.findMany({
+        const data = await prisma.unit.findMany({
             orderBy: { name: 'asc' },
             include: {
                 departments: {
@@ -20,7 +21,7 @@ export const getStructure = async (req: Request, res: Response) => {
                 }
             }
         });
-        return res.json({ units });
+        return res.json({ units: data ?? [] });
     } catch (error) {
         console.error("Erro ao buscar estrutura:", error);
         return res.status(500).json({ error: "Erro interno ao buscar estrutura." });
