@@ -18,8 +18,8 @@ model Unit {
 model Department {
   id        String   @id @default(uuid())
   name      String
-  unitId    String
-  unit      Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unitId    String?  // Opcional para permitir db push com dados existentes; seed_units recria a estrutura
+  unit      Unit?    @relation(fields: [unitId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   roles     Role[]
 
