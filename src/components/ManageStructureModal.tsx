@@ -4,9 +4,17 @@ import { RoleKitModal } from './RoleKitModal';
 
 const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 
+interface Unit {
+    id: string;
+    name: string;
+    departments: Department[];
+}
+
 interface Department {
     id: string;
     name: string;
+    unitId?: string;
+    roles?: Role[];
 }
 
 interface Role {
@@ -36,16 +44,20 @@ interface Props {
 }
 
 export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdate, initialDepartment, allUsers, showToast, customConfirm }) => {
-    const [departments, setDepartments] = useState<Department[]>([]);
-    const [roles, setRoles] = useState<Role[]>([]);
+    const [units, setUnits] = useState<Unit[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+
+    // Derived: lista plana para buscar dept/roles por id
+    const flatDepartments = units.flatMap(u => (u.departments || []).map(d => ({ ...d, unitId: d.unitId ?? u.id })));
+    const flatRoles = flatDepartments.flatMap(d => (d.roles || []));
 
     // Editing States
     const [viewMode, setViewMode] = useState<'GLOBAL' | 'DEPARTMENT'>('GLOBAL');
     const [currentDept, setCurrentDept] = useState<Department | null>(null);
 
-    // Global: Create Dept
+    // Global: Create Dept (precisa de unitId)
     const [newDeptName, setNewDeptName] = useState('');
+    const [newDeptUnitId, setNewDeptUnitId] = useState<string>('');
 
     // Department View: Edit Name
     const [isEditingDeptName, setIsEditingDeptName] = useState(false);
@@ -80,18 +92,20 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
             const res = await fetch(`${API_URL}/api/structure`);
             if (res.ok) {
                 const data = await res.json();
-                setDepartments(data.departments);
-                setRoles(data.roles);
+                const unitList = data.units || [];
+                setUnits(unitList);
+
+                const depts = unitList.flatMap((u: Unit) => (u.departments || []).map((d: Department) => ({ ...d, unitId: d.unitId ?? u.id })));
 
                 if (initialDepartment) {
-                    const dept = data.departments.find((d: Department) => d.name === initialDepartment);
+                    const dept = depts.find((d: Department) => d.name === initialDepartment);
                     if (dept) {
                         setCurrentDept(dept);
                         setViewMode('DEPARTMENT');
                         setEditedDeptName(dept.name);
                     }
                 } else if (currentDept) {
-                    const refreshed = data.departments.find((d: Department) => d.id === currentDept.id);
+                    const refreshed = depts.find((d: Department) => d.id === currentDept.id);
                     if (refreshed) setCurrentDept(refreshed);
                 }
             }
@@ -102,15 +116,19 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
     // --- ACTIONS ---
 
     const handleCreateDept = async () => {
-        if (!newDeptName) return;
+        if (!newDeptName || !newDeptUnitId) {
+            showToast("Selecione a unidade e informe o nome do departamento.", "warning");
+            return;
+        }
         try {
             const res = await fetch(`${API_URL}/api/structure/departments`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newDeptName })
+                body: JSON.stringify({ name: newDeptName, unitId: newDeptUnitId })
             });
             if (res.ok) {
                 setNewDeptName('');
+                setNewDeptUnitId('');
                 loadData();
                 onUpdate();
                 showToast("Departamento criado!", "success");
@@ -319,46 +337,71 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
 
                     {viewMode === 'GLOBAL' ? (
                         <div style={{ padding: 24, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                            <h4 style={{ color: '#d4d4d8', marginTop: 0, marginBottom: 16 }}>Departamentos</h4>
-
-                            {/* Create Dept */}
-                            <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexShrink: 0 }}>
+                            {/* Criar Departamento: Unidade + Nome */}
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <select
+                                    className="form-input"
+                                    value={newDeptUnitId}
+                                    onChange={e => setNewDeptUnitId(e.target.value)}
+                                    style={{ minWidth: 160 }}
+                                >
+                                    <option value="">Unidade</option>
+                                    {units.map(u => (
+                                        <option key={u.id} value={u.id}>{u.name}</option>
+                                    ))}
+                                </select>
                                 <input
                                     className="form-input"
                                     placeholder="Novo Departamento..."
                                     value={newDeptName}
                                     onChange={e => setNewDeptName(e.target.value)}
-                                    style={{ flex: 1 }}
+                                    style={{ flex: 1, minWidth: 180 }}
                                 />
                                 <button className="btn-verify" style={{ margin: 0, width: 'auto' }} onClick={handleCreateDept}><Plus size={16} /> Criar</button>
                             </div>
 
-                            {/* Scrollable Department List */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', paddingRight: 8, flex: 1 }}>
-                                {departments.map(d => (
-                                    <div
-                                        key={d.id}
-                                        onClick={() => {
-                                            setCurrentDept(d);
-                                            setViewMode('DEPARTMENT');
-                                            setEditedDeptName(d.name);
-                                        }}
-                                        className="card-base hover-card"
-                                        style={{
-                                            padding: '16px 20px',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            justifyContent: 'center',
-                                            alignItems: 'center',
-                                            border: '1px solid #27272a',
-                                            position: 'relative',
-                                            minHeight: '56px'
-                                        }}
-                                    >
-                                        <span style={{ fontSize: 16, fontWeight: 500, color: 'white', textAlign: 'center' }}>{d.name}</span>
-                                        <ChevronRight size={20} color="#52525b" style={{ position: 'absolute', right: 16 }} />
+                            {/* Unidades -> Departamentos */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', paddingRight: 8, flex: 1 }}>
+                                {units.map(unit => (
+                                    <div key={unit.id} style={{ flexShrink: 0 }}>
+                                        <div style={{ fontSize: 12, color: '#8b5cf6', fontWeight: 700, textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }}>
+                                            UNIDADE: {unit.name}
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                            {(unit.departments || []).length === 0 ? (
+                                                <div style={{ padding: 12, color: '#52525b', fontSize: 13, fontStyle: 'italic', border: '1px dashed #27272a', borderRadius: 8 }}>Nenhum departamento nesta unidade.</div>
+                                            ) : (
+                                                (unit.departments || []).map(d => (
+                                                    <div
+                                                        key={d.id}
+                                                        onClick={() => {
+                                                            setCurrentDept({ ...d, unitId: d.unitId ?? unit.id });
+                                                            setViewMode('DEPARTMENT');
+                                                            setEditedDeptName(d.name);
+                                                        }}
+                                                        className="card-base hover-card"
+                                                        style={{
+                                                            padding: '16px 20px',
+                                                            cursor: 'pointer',
+                                                            display: 'flex',
+                                                            justifyContent: 'center',
+                                                            alignItems: 'center',
+                                                            border: '1px solid #27272a',
+                                                            position: 'relative',
+                                                            minHeight: '56px'
+                                                        }}
+                                                    >
+                                                        <span style={{ fontSize: 16, fontWeight: 500, color: 'white', textAlign: 'center' }}>{d.name}</span>
+                                                        <ChevronRight size={20} color="#52525b" style={{ position: 'absolute', right: 16 }} />
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
+                                {units.length === 0 && !isLoading && (
+                                    <div style={{ padding: 24, textAlign: 'center', color: '#71717a', fontSize: 14 }}>Nenhuma unidade carregada. Execute seed_units no deploy.</div>
+                                )}
                             </div>
                         </div>
                     ) : (
@@ -419,7 +462,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
 
                                     {/* Scrollable Roles Container */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '400px', overflowY: 'auto', paddingRight: 8 }}>
-                                        {roles.filter(r => r.departmentId === currentDept.id).map(role => {
+                                        {flatRoles.filter(r => r.departmentId === currentDept.id).map(role => {
                                             const roleUsers = allUsers.filter(u => u.jobTitle === role.name && u.department === currentDept.name);
 
                                             return (

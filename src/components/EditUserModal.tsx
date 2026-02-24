@@ -66,8 +66,11 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
             const res = await fetch(`${API_URL}/api/structure`);
             if (res.ok) {
                 const data = await res.json();
-                setAvailableDepts(data.departments);
-                setAvailableRoles(data.roles);
+                const unitList = data.units || [];
+                const depts = unitList.flatMap((u: { departments?: { id: string; name: string }[] }) => u.departments || []);
+                const roles = depts.flatMap((d: { roles?: { id: string; name: string; departmentId: string }[] }) => d.roles || []);
+                setAvailableDepts(depts);
+                setAvailableRoles(roles);
             }
         } catch (e) { console.error(e); }
     };
