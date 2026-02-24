@@ -77,7 +77,11 @@ async function main() {
             try { await prisma.access.deleteMany({ where: { userId: fantasma.id } }); } catch (e) { }
 
             // 3. Apaga TODAS as solicitações (Requests) que ele fez ou aprovou
-            try { await prisma.request.deleteMany({ where: { userId: fantasma.id } }); } catch (e) { }
+            try {
+              await prisma.request.deleteMany({
+                where: { OR: [{ requesterId: fantasma.id }, { approverId: fantasma.id }] }
+              });
+            } catch (e) { }
 
             // 4. Remove ele de Dono/Sub-Dono de qualquer ferramenta
             // Nota: Vai deixar a ferramenta sem dono (null), você pode ajustar depois no painel
