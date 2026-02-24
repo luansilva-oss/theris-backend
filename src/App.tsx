@@ -724,20 +724,27 @@ export default function App() {
                       return pendingForMe.map(r => {
                         let detailsObj: Record<string, unknown> = {};
                         try { detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch (_) { }
-                        const d = detailsObj as Record<string, string | undefined>;
+                        const d = detailsObj as Record<string, string | Record<string, string> | undefined>;
                         const infoLines: { label: string; value: string }[] = [];
                         if (d.info) infoLines.push({ label: 'Resumo', value: d.info });
-                        if (d.tool) infoLines.push({ label: 'Ferramenta', value: d.tool });
-                        if (d.requestType) infoLines.push({ label: 'Tipo', value: d.requestType });
-                        if (d.description) infoLines.push({ label: 'Descrição', value: d.description });
-                        if (d.urgency) infoLines.push({ label: 'Urgência', value: d.urgency });
+                        // Movimentação (CHANGE_ROLE): setor/cargo atual e novo
+                        const curr = d.current as Record<string, string> | undefined;
+                        const fut = d.future as Record<string, string> | undefined;
+                        if (curr?.role) infoLines.push({ label: 'Cargo atual', value: curr.role });
+                        if (curr?.dept) infoLines.push({ label: 'Departamento atual', value: curr.dept });
+                        if (fut?.role) infoLines.push({ label: 'Novo cargo', value: fut.role });
+                        if (fut?.dept) infoLines.push({ label: 'Novo departamento', value: fut.dept });
+                        if (d.tool) infoLines.push({ label: 'Ferramenta', value: d.tool as string });
+                        if (d.requestType) infoLines.push({ label: 'Tipo', value: d.requestType as string });
+                        if (d.description) infoLines.push({ label: 'Descrição', value: d.description as string });
+                        if (d.urgency) infoLines.push({ label: 'Urgência', value: d.urgency as string });
                         if (d.duration != null && d.unit) infoLines.push({ label: 'Duração', value: `${d.duration} ${d.unit}` });
-                        if (d.substitute) infoLines.push({ label: 'Substituto', value: d.substitute });
-                        if (d.name) infoLines.push({ label: 'Nome/Colaborador', value: d.name });
-                        if (d.role) infoLines.push({ label: 'Cargo', value: d.role });
-                        if (d.dept) infoLines.push({ label: 'Departamento', value: d.dept });
-                        if (d.startDate) infoLines.push({ label: 'Data início', value: d.startDate });
-                        if (d.reason) infoLines.push({ label: 'Motivo', value: d.reason });
+                        if (d.substitute) infoLines.push({ label: 'Substituto', value: d.substitute as string });
+                        if (d.name) infoLines.push({ label: 'Nome/Colaborador', value: d.name as string });
+                        if (!curr?.role && d.role) infoLines.push({ label: 'Cargo', value: d.role as string });
+                        if (!curr?.dept && d.dept) infoLines.push({ label: 'Departamento', value: d.dept as string });
+                        if (d.startDate) infoLines.push({ label: 'Data início', value: d.startDate as string });
+                        if (d.reason) infoLines.push({ label: 'Motivo', value: d.reason as string });
                         return (
                           <div key={r.id} className="action-tile">
                             <div className="action-tile-inner">
@@ -799,18 +806,8 @@ export default function App() {
           {/* GESTÃO DE PESSOAS INTERATIVA (LISTA EM CASCATA) */}
           {activeTab === 'PEOPLE' && (
             <div className="fade-in" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 15 }}>
-                  <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
-                </div>
-                <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-                  <div style={{ fontSize: 12, color: '#71717a' }}>{allUsers.filter(u => u.department && u.department !== 'Geral').length} Colaboradores</div>
-                  <div style={{ height: 20, width: 1, background: '#27272a' }}></div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }}></div>
-                    <span style={{ fontSize: 10, color: '#a1a1aa' }}>Gestores</span>
-                  </div>
-                </div>
+              <div style={{ marginBottom: 20 }}>
+                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
               </div>
 
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>

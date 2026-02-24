@@ -1,5 +1,16 @@
 # De onde vêm os dados da Gestão de Pessoas
 
+## API e banco (o quê é o quê)
+
+- **API**: é o próprio **backend Theris** que sobe no Render (serviço `theris-backend`). A URL é a do seu app no Render (ex.: `https://theris-backend.onrender.com`). Os endpoints usados pela Gestão de Pessoas são:
+  - **GET /api/structure** → retorna unidades, departamentos e cargos (lidos do banco).
+  - **GET /api/users** → retorna todos os usuários (lidos do banco).
+- **Banco**: é o **banco de dados PostgreSQL** que o Prisma usa. No Render, é o banco ligado ao serviço pela variável de ambiente **DATABASE_URL**. O `prisma db push` e os seeds rodam no **mesmo** banco que a aplicação usa em produção.
+
+Ou seja: “a API” = o backend no Render; “o banco” = o PostgreSQL cuja URL está na DATABASE_URL. Os seeds rodam durante o build e gravam nesse banco; quando você abre a tela, o front chama a API e a API lê desse banco.
+
+---
+
 ## Resumo
 
 - **Estrutura (Unidades, Departamentos, Cargos)**: vêm **só** do banco, via `GET /api/structure`. Quem popula é o **seed_units.ts** no deploy. Não há criação automática de estrutura na subida do servidor.
