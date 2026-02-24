@@ -179,7 +179,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                                         {user.name.charAt(0)}
                                                                                     </div>
                                                                                     <div style={{ flex: 1, fontSize: '13px', color: '#e4e4e7' }}>
-                                                                                        {user.name} <span style={{ color: '#71717a' }}|</span> {user.email}
+                                                                                        {user.name} <span style={{ color: '#71717a' }}>|</span> {user.email}
                                                                                     </div>
                                                                                     {onDeleteUser && (
                                                                                         <button
