@@ -712,7 +712,7 @@ export default function App() {
               {(systemProfile === 'SUPER_ADMIN' || systemProfile === 'GESTOR' || systemProfile === 'ADMIN' || systemProfile === 'APPROVER') && (
                 <div className="card-base cell-tasks">
                   <div className="card-header"><span className="card-title">Ação Necessária</span></div>
-                  <div style={{ flex: 1, overflowY: 'auto' }}>
+                  <div className="action-tiles-wrap">
                     {(() => {
                       const pendingForMe = requests.filter(r => {
                         if (!r.status.includes('PENDENTE')) return false;
@@ -739,23 +739,23 @@ export default function App() {
                         if (d.startDate) infoLines.push({ label: 'Data início', value: d.startDate });
                         if (d.reason) infoLines.push({ label: 'Motivo', value: d.reason });
                         return (
-                          <div key={r.id} className="action-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
-                            <div style={{ background: '#18181b', borderRadius: 8, padding: '10px 12px', border: '1px solid #27272a' }}>
-                              <h4 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#f4f4f5' }}>{d.info || d.tool || r.type}</h4>
+                          <div key={r.id} className="action-tile">
+                            <div className="action-tile-inner">
+                              <h4>{d.info || d.tool || r.type}</h4>
                               {infoLines.length > 1 && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                                <div className="action-tile-details">
                                   {infoLines.filter(l => l.label !== 'Resumo').map((l, i) => (
-                                    <div key={i} style={{ fontSize: 12, color: '#a1a1aa' }}><span style={{ color: '#71717a' }}>{l.label}:</span> {l.value}</div>
+                                    <div key={i}><span className="action-tile-label">{l.label}:</span> {l.value}</div>
                                   ))}
                                 </div>
                               )}
-                              <p style={{ margin: 0, fontSize: 12, color: '#71717a' }}>Solicitante: {r.requester?.name}</p>
+                              <p className="action-tile-requester">Solicitante: {r.requester?.name}</p>
                             </div>
-                            <div className="action-buttons" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                            <div className="action-tile-buttons">
                               {r.type === 'INFRA_SUPPORT' ? (
                                 <>
                                   <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Concluído</button>
-                                  <button className="btn-mini" style={{ backgroundColor: 'rgba(217, 119, 6, 0.2)', color: '#fbbf24', border: '1px solid #d97706', padding: '4px 8px', fontSize: 11, borderRadius: 6 }} onClick={() => handleOpenApprove(r.id, 'PENDENTE')}>Pendente</button>
+                                  <button className="btn-mini btn-pendente" onClick={() => handleOpenApprove(r.id, 'PENDENTE')}>Pendente</button>
                                   <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusado</button>
                                 </>
                               ) : (
