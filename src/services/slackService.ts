@@ -512,12 +512,14 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
   await ack();
   const b = body as any;
   const view = b.view;
-  const selected = b.actions?.[0]?.selected_option?.value as string;
+  const selected = (b.actions?.[0]?.selected_option?.value ?? '') as string;
   if (!view?.id || !selected) return;
 
-  const metadata = { actionType: selected };
+  const actionType = selected;
+  const metadata = { actionType };
   const actionLabels: Record<string, string> = { acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
   const toolOptions = TOOL_KEYS.map(k => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
+
   const blocks: any[] = [
     {
       type: 'input',
@@ -528,7 +530,7 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
         type: 'static_select',
         action_id: 'acessos_action_type',
         placeholder: { type: 'plain_text', text: 'Selecione...' },
-        initial_option: { text: { type: 'plain_text', text: actionLabels[selected] || selected }, value: selected },
+        initial_option: { text: { type: 'plain_text', text: actionLabels[actionType] || actionType }, value: actionType },
         options: [
           { text: { type: 'plain_text', text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
           { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' }
@@ -577,11 +579,9 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
   await ack();
   const b = body as any;
   const view = b.view;
-  const selectedTool = b.actions?.[0]?.selected_option?.value as string;
+  const selectedToolRaw = b.actions?.[0]?.selected_option?.value;
+  const selectedTool = typeof selectedToolRaw === 'string' ? selectedToolRaw.trim() : '';
   if (!view?.id || !selectedTool) return;
-
-  const levels = TOOLS_AND_LEVELS[selectedTool] || [];
-  const levelOptions = levels.map(l => ({ text: { type: 'plain_text' as const, text: l.label }, value: l.value }));
 
   let actionType = 'acesso_extraordinario';
   try {
@@ -589,43 +589,9 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
     actionType = parsed.actionType || actionType;
   } catch (_) {}
 
-  let currentLevelMessage: string | null = null;
-  if (actionType === 'acesso_extraordinario') {
-    try {
-      const slackUserId = b.user?.id;
-      if (slackUserId) {
-        const info = await client.users.info({ user: slackUserId });
-        const email = info.user?.profile?.email;
-        if (email) {
-          const userDb = await prisma.user.findUnique({ where: { email } });
-          if (userDb?.roleId) {
-            const role = await prisma.role.findUnique({
-              where: { id: userDb.roleId },
-              include: { kitItems: true }
-            });
-            const selectedNorm = normalizeToolName(selectedTool);
-            const kitItem = role?.kitItems?.find(
-              (item) => normalizeToolName(item.toolName) === selectedNorm
-            );
-            if (kitItem) {
-              const levelName = kitItem.accessLevelDesc?.trim() || kitItem.toolCode?.trim() || 'KBS';
-              currentLevelMessage = `ℹ️ Seu nível atual nesta ferramenta é: ${levelName}.`;
-            } else {
-              currentLevelMessage = '⚠️ Você atualmente não possui acesso padrão a esta ferramenta.';
-            }
-          } else {
-            currentLevelMessage = '⚠️ Você atualmente não possui acesso padrão a esta ferramenta.';
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Erro ao buscar nível atual (KBS) no acessos_tool_select:', err);
-      currentLevelMessage = '⚠️ Você atualmente não possui acesso padrão a esta ferramenta.';
-    }
-  }
-
   const toolOptions = TOOL_KEYS.map(k => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
   const actionLabels: Record<string, string> = { acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
+
   const blocks: any[] = [
     {
       type: 'input',
@@ -658,26 +624,64 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
     }
   ];
 
-  if (actionType === 'acesso_extraordinario' && currentLevelMessage) {
+  if (actionType === 'acesso_extraordinario') {
+    let currentLevelMessage: string;
+    try {
+      const slackUserId = b.user?.id;
+      const selectedNorm = (selectedTool || '').toLowerCase().trim();
+      let found = false;
+      if (slackUserId) {
+        const info = await client.users.info({ user: slackUserId });
+        const email = info.user?.profile?.email;
+        if (email) {
+          const userDb = await prisma.user.findUnique({ where: { email } });
+          if (userDb?.roleId) {
+            const role = await prisma.role.findUnique({
+              where: { id: userDb.roleId },
+              include: { kitItems: true }
+            });
+            const kitItem = role?.kitItems?.find(
+              (item) => (item.toolName || '').toLowerCase().trim() === selectedNorm
+            );
+            if (kitItem) {
+              const levelName = (kitItem.accessLevelDesc || kitItem.toolCode || 'KBS').trim();
+              currentLevelMessage = `ℹ️ Seu nível atual nesta ferramenta é: ${levelName}.`;
+              found = true;
+            }
+          }
+        }
+      }
+      if (!found) currentLevelMessage = '⚠️ Você atualmente não possui acesso padrão a esta ferramenta.';
+    } catch (err) {
+      console.error('Erro ao buscar nível atual (KBS) no acessos_tool_select:', err);
+      currentLevelMessage = '⚠️ Você atualmente não possui acesso padrão a esta ferramenta.';
+    }
     blocks.push({
       type: 'section',
       block_id: 'blk_current_level_info',
       text: { type: 'mrkdwn', text: currentLevelMessage }
     });
-  }
 
-  if (levelOptions.length >= 1) {
-    blocks.push({
-      type: 'input',
-      block_id: 'blk_level',
-      label: { type: 'plain_text', text: 'Nível de Acesso' },
-      element: {
-        type: 'static_select',
-        action_id: 'acessos_level_select',
-        placeholder: { type: 'plain_text', text: 'Selecione o nível...' },
-        options: levelOptions
-      }
-    });
+    const levels = TOOLS_AND_LEVELS[selectedTool] || [];
+    const levelOptions = levels.map(l => ({ text: { type: 'plain_text' as const, text: l.label }, value: l.value }));
+    if (levelOptions.length >= 1) {
+      blocks.push({
+        type: 'input',
+        block_id: 'blk_level',
+        label: { type: 'plain_text', text: 'Nível de Acesso' },
+        element: {
+          type: 'static_select',
+          action_id: 'acessos_level_select',
+          placeholder: { type: 'plain_text', text: 'Selecione o nível...' },
+          options: levelOptions
+        }
+      });
+    }
+  } else if (actionType === 'indicar_deputy') {
+    blocks.push(
+      { type: 'input', block_id: 'blk_deputy_name', label: { type: 'plain_text', text: 'Nome do Substituto' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+      { type: 'input', block_id: 'blk_deputy_email', label: { type: 'plain_text', text: 'E-mail do Substituto' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'email@empresa.com' } } }
+    );
   }
 
   blocks.push({ type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } });
@@ -904,12 +908,20 @@ slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
   const levelValue = levelBlock?.acessos_level_select?.selected_option?.value ?? '';
   const levelLabel = levelBlock?.acessos_level_select?.selected_option?.text?.text ?? levelValue;
   const reason = reasonBlock?.inp?.value ?? '';
+  const deputyName = v.blk_deputy_name?.inp?.value ?? '';
+  const deputyEmail = v.blk_deputy_email?.inp?.value ?? '';
 
   if (actionType === 'acesso_extraordinario') {
     const details = { info: `Acesso extraordinário: ${toolName}`, tool: toolName, target: levelLabel, targetValue: levelValue };
     await saveRequest(body, client, 'ACCESS_TOOL_EXTRA', details, reason, `🔥 Acesso extraordinário para *${toolName}* enviado ao time de Segurança.`, true);
   } else if (actionType === 'indicar_deputy') {
-    const details = { info: `Indicar Deputy: ${toolName}`, tool: toolName, target: levelLabel, targetValue: levelValue };
+    const details = {
+      info: `Indicar Deputy: ${toolName}`,
+      tool: toolName,
+      substituteName: deputyName,
+      substituteEmail: deputyEmail,
+      substitute: deputyName || deputyEmail
+    };
     await saveRequest(body, client, 'DEPUTY_DESIGNATION', details, reason, `✅ Indicação de substituto (Deputy) para *${toolName}* enviada para aprovação do time de S.I.`);
   }
 });
