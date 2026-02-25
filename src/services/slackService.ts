@@ -204,19 +204,24 @@ function buildAcessosInitialBlocks() {
 slackApp.command('/acessos', async ({ ack, body, client }) => {
   await ack();
   try {
+    const viewPayload = {
+      type: 'modal' as const,
+      callback_id: 'acessos_main_modal',
+      title: { type: 'plain_text' as const, text: 'Gestão de Ferramentas / Acessos' },
+      submit: { type: 'plain_text' as const, text: 'Continuar' },
+      close: { type: 'plain_text' as const, text: 'Cancelar' },
+      private_metadata: JSON.stringify({ actionType: '' }),
+      blocks: buildAcessosInitialBlocks()
+    };
     await client.views.open({
       trigger_id: body.trigger_id,
-      view: {
-        type: 'modal',
-        callback_id: 'acessos_main_modal',
-        title: { type: 'plain_text', text: 'Gestão de Ferramentas / Acessos' },
-        close: { type: 'plain_text', text: 'Cancelar' },
-        private_metadata: JSON.stringify({ actionType: '' }),
-        blocks: buildAcessosInitialBlocks()
-      }
+      view: viewPayload
     });
-  } catch (error) {
-    console.error('❌ Erro /acessos:', error);
+  } catch (error: any) {
+    const err = error?.data ?? error?.response?.data ?? error;
+    console.error('❌ Erro /acessos (views.open):', typeof err === 'object' ? JSON.stringify(err, null, 2) : err);
+    if (error?.message) console.error('❌ Mensagem:', error.message);
+    if (error?.stack) console.error('❌ Stack:', error.stack);
   }
 });
 

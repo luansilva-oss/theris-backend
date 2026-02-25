@@ -610,21 +610,20 @@ html {
   gap: 8px;
 }
 
-/* Quadradinhos Ação Necessária */
+/* Lista vertical Ação Necessária */
 .action-tiles-wrap {
   flex: 1;
   overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  align-content: start;
+  max-width: 100%;
 }
 
 .action-tile {
   width: 100%;
-  aspect-ratio: 1;
-  min-height: 200px;
-  max-height: 220px;
+  max-width: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-card);

@@ -232,6 +232,7 @@ export default function App() {
     return o;
   });
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [actionNeededFilter, setActionNeededFilter] = useState<'ALL' | 'Pessoas' | 'Acessos' | 'Infra'>('ALL');
 
   // MODAL
   const [modalOpen, setModalOpen] = useState(false);
@@ -802,16 +803,39 @@ export default function App() {
               {(systemProfile === 'SUPER_ADMIN' || systemProfile === 'GESTOR' || systemProfile === 'ADMIN' || systemProfile === 'APPROVER') && (
                 <div className="card-base cell-tasks">
                   <div className="card-header"><span className="card-title">Ação Necessária</span></div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                    {(['ALL', 'Pessoas', 'Acessos', 'Infra'] as const).map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setActionNeededFilter(f)}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: 8,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          border: '1px solid #27272a',
+                          background: actionNeededFilter === f ? (f === 'Infra' ? 'rgba(251, 191, 36, 0.2)' : f === 'Acessos' ? 'rgba(167, 139, 250, 0.2)' : f === 'Pessoas' ? 'rgba(52, 211, 153, 0.2)' : '#27272a') : '#18181b',
+                          color: actionNeededFilter === f ? (f === 'Infra' ? '#fbbf24' : f === 'Acessos' ? '#a78bfa' : f === 'Pessoas' ? '#34d399' : '#e4e4e7') : '#71717a',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {f === 'ALL' ? 'Todos' : f}
+                      </button>
+                    ))}
+                  </div>
                   <div className="action-tiles-wrap">
                     {(() => {
                       const pendingForMe = requests.filter(r => {
                         if (!r.status.includes('PENDENTE')) return false;
                         return r.approverId === currentUser?.id || r.approverId == null;
                       });
-                      if (pendingForMe.length === 0) {
-                        return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: 14 }}>Nenhuma pendência.</div>;
+                      const byCategory = actionNeededFilter === 'ALL' ? pendingForMe : pendingForMe.filter(r => getRequestCardContent(r).category === actionNeededFilter);
+                      if (byCategory.length === 0) {
+                        return <div style={{ padding: 24, textAlign: 'center', color: '#52525b', fontSize: 14 }}>{pendingForMe.length === 0 ? 'Nenhuma pendência.' : `Nenhuma pendência em "${actionNeededFilter === 'ALL' ? 'Todos' : actionNeededFilter}".`}</div>;
                       }
-                      return pendingForMe.map(r => {
+                      return byCategory.map(r => {
                         const { category, categoryColor, title, lines } = getRequestCardContent(r);
                         return (
                           <div key={r.id} className="action-tile">
