@@ -80,6 +80,94 @@ type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER' | 'GESTOR';
 
 const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 Horas
 
+// Tipos por categoria para cards de aprovação (Visão Geral)
+const ACCESS_REQUEST_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+const PEOPLE_REQUEST_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
+const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT'];
+
+function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 'Infra'; categoryColor: string; title: string; lines: { label: string; value: string }[] } {
+  let detailsObj: Record<string, unknown> = {};
+  try {
+    detailsObj = typeof r.details === 'string' ? JSON.parse(r.details || '{}') : (r.details || {});
+  } catch (_) {}
+  const d = detailsObj as Record<string, string | Record<string, string> | undefined>;
+
+  // Infra: problema/solicitação e prioridade
+  if (INFRA_REQUEST_TYPES.includes(r.type)) {
+    const title = (d.requestTypeLabel as string) || (d.requestType as string) || 'Suporte Infra';
+    const lines: { label: string; value: string }[] = [];
+    if (d.urgencyLabel || d.urgency) lines.push({ label: 'Prioridade', value: (d.urgencyLabel as string) || (d.urgency as string) || '—' });
+    if (d.description) lines.push({ label: 'Problema / Solicitação', value: (d.description as string).slice(0, 300) });
+    return { category: 'Infra', categoryColor: '#fbbf24', title, lines };
+  }
+
+  // Pessoas: ação de RH, colaborador e mudança
+  if (PEOPLE_REQUEST_TYPES.includes(r.type)) {
+    const actionLabels: Record<string, string> = {
+      CHANGE_ROLE: 'Mudança de Cargo',
+      HIRING: 'Contratação',
+      FIRING: 'Desligamento',
+      DEPUTY_DESIGNATION: 'Indicar Deputy'
+    };
+    const actionLabel = actionLabels[r.type] || r.type;
+    const collaborator = (d.collaboratorName as string) || (d.substitute as string) || (d.info as string)?.replace(/^[^:]+:\s*/, '') || '—';
+    const title = `${actionLabel}: ${collaborator}`;
+    const lines: { label: string; value: string }[] = [];
+
+    if (r.type === 'CHANGE_ROLE') {
+      const curr = d.current as Record<string, string> | undefined;
+      const fut = d.future as Record<string, string> | undefined;
+      if (curr?.role || curr?.dept) lines.push({ label: 'Situação atual', value: [curr?.role, curr?.dept].filter(Boolean).join(' / ') });
+      if (fut?.role || fut?.dept) lines.push({ label: 'Nova situação', value: [fut?.role, fut?.dept].filter(Boolean).join(' / ') });
+      if (d.reason) lines.push({ label: 'Motivo', value: d.reason as string });
+    }
+    if (r.type === 'HIRING') {
+      if (d.startDate) lines.push({ label: 'Data de início', value: d.startDate as string });
+      if (d.role) lines.push({ label: 'Cargo', value: d.role as string });
+      if (d.dept) lines.push({ label: 'Departamento', value: d.dept as string });
+      if (d.obs) lines.push({ label: 'Observação', value: d.obs as string });
+    }
+    if (r.type === 'FIRING') {
+      if (d.role) lines.push({ label: 'Cargo', value: d.role as string });
+      if (d.dept) lines.push({ label: 'Departamento', value: d.dept as string });
+      if (d.reason) lines.push({ label: 'Motivo', value: d.reason as string });
+    }
+    if (r.type === 'DEPUTY_DESIGNATION' && !d.tool) {
+      if (d.role) lines.push({ label: 'Cargo', value: d.role as string });
+      if (d.dept) lines.push({ label: 'Departamento', value: d.dept as string });
+      if (r.justification) lines.push({ label: 'Justificativa', value: r.justification });
+    }
+    return { category: 'Pessoas', categoryColor: '#34d399', title, lines };
+  }
+
+  // Acessos: ferramenta, nível e justificativa (ou nova ferramenta com os 5 campos)
+  if (ACCESS_REQUEST_TYPES.includes(r.type) || (r.type === 'DEPUTY_DESIGNATION' && d.tool)) {
+    const isNewTool = r.type === 'ACCESS_TOOL' && (d.toolName || (d.info as string)?.toLowerCase().includes('nova ferramenta'));
+    const title = isNewTool ? (d.toolName as string) || (d.info as string) || 'Nova ferramenta' : (d.tool as string) || (d.info as string) || r.type;
+    const lines: { label: string; value: string }[] = [];
+
+    if (isNewTool) {
+      if (d.owner) lines.push({ label: 'Owner', value: d.owner as string });
+      if (d.subOwner) lines.push({ label: 'Sub-Owner', value: d.subOwner as string });
+      if (d.description) lines.push({ label: 'Descrição', value: (d.description as string).slice(0, 200) });
+      if (d.accessLevels) lines.push({ label: 'Níveis de acesso', value: (d.accessLevels as string).slice(0, 200) });
+    } else {
+      if (d.target) lines.push({ label: 'Nível desejado', value: d.target as string });
+      if (d.beneficiary) lines.push({ label: 'Beneficiário', value: d.beneficiary as string });
+      if (d.duration != null && d.unit) lines.push({ label: 'Duração', value: `${d.duration} ${d.unit}` });
+    }
+    if (r.justification) lines.push({ label: 'Justificativa', value: r.justification });
+    return { category: 'Acessos', categoryColor: '#a78bfa', title, lines };
+  }
+
+  // Fallback genérico
+  const title = (d.info as string) || r.type;
+  const lines: { label: string; value: string }[] = [];
+  if (d.info && d.info !== title) lines.push({ label: 'Resumo', value: d.info as string });
+  if (r.justification) lines.push({ label: 'Justificativa', value: r.justification });
+  return { category: 'Acessos', categoryColor: '#a78bfa', title, lines };
+}
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const s = localStorage.getItem('theris_user'); return s ? JSON.parse(s) : null;
@@ -724,36 +812,17 @@ export default function App() {
                         return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: 14 }}>Nenhuma pendência.</div>;
                       }
                       return pendingForMe.map(r => {
-                        let detailsObj: Record<string, unknown> = {};
-                        try { detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {}); } catch (_) { }
-                        const d = detailsObj as Record<string, string | Record<string, string> | undefined>;
-                        const infoLines: { label: string; value: string }[] = [];
-                        if (d.info) infoLines.push({ label: 'Resumo', value: d.info });
-                        // Movimentação (CHANGE_ROLE): setor/cargo atual e novo
-                        const curr = d.current as Record<string, string> | undefined;
-                        const fut = d.future as Record<string, string> | undefined;
-                        if (curr?.role) infoLines.push({ label: 'Cargo atual', value: curr.role });
-                        if (curr?.dept) infoLines.push({ label: 'Departamento atual', value: curr.dept });
-                        if (fut?.role) infoLines.push({ label: 'Novo cargo', value: fut.role });
-                        if (fut?.dept) infoLines.push({ label: 'Novo departamento', value: fut.dept });
-                        if (d.tool) infoLines.push({ label: 'Ferramenta', value: d.tool as string });
-                        if (d.requestType) infoLines.push({ label: 'Tipo', value: d.requestType as string });
-                        if (d.description) infoLines.push({ label: 'Descrição', value: d.description as string });
-                        if (d.urgency) infoLines.push({ label: 'Urgência', value: d.urgency as string });
-                        if (d.duration != null && d.unit) infoLines.push({ label: 'Duração', value: `${d.duration} ${d.unit}` });
-                        if (d.substitute) infoLines.push({ label: 'Substituto', value: d.substitute as string });
-                        if (d.name) infoLines.push({ label: 'Nome/Colaborador', value: d.name as string });
-                        if (!curr?.role && d.role) infoLines.push({ label: 'Cargo', value: d.role as string });
-                        if (!curr?.dept && d.dept) infoLines.push({ label: 'Departamento', value: d.dept as string });
-                        if (d.startDate) infoLines.push({ label: 'Data início', value: d.startDate as string });
-                        if (d.reason) infoLines.push({ label: 'Motivo', value: d.reason as string });
+                        const { category, categoryColor, title, lines } = getRequestCardContent(r);
                         return (
                           <div key={r.id} className="action-tile">
                             <div className="action-tile-inner">
-                              <h4>{d.info || d.tool || r.type}</h4>
-                              {infoLines.length > 1 && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: categoryColor, border: `1px solid ${categoryColor}`, padding: '2px 8px', borderRadius: 6 }}>{category}</span>
+                                <h4 style={{ margin: 0, flex: 1, fontSize: 15 }}>{title}</h4>
+                              </div>
+                              {lines.length > 0 && (
                                 <div className="action-tile-details">
-                                  {infoLines.filter(l => l.label !== 'Resumo').map((l, i) => (
+                                  {lines.map((l, i) => (
                                     <div key={i}><span className="action-tile-label">{l.label}:</span> {l.value}</div>
                                   ))}
                                 </div>
@@ -788,18 +857,21 @@ export default function App() {
                   {requests
                     .filter(r => systemProfile === 'VIEWER' ? r.requester.id === currentUser?.id : true)
                     .slice(0, 5)
-                    .map(r => (
-                      <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #27272a' }}>
-                        {r.status === 'APROVADO' ? <CheckCircle size={16} color="#10b981" /> :
-                          r.status === 'REPROVADO' ? <XCircle size={16} color="#ef4444" /> :
-                            <Clock size={16} color="#fbbf24" />}
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, color: '#d4d4d8' }}>{JSON.parse(r.details).info || r.type}</div>
-                          <div style={{ fontSize: 10, color: '#52525b', fontFamily: 'monospace' }}>#{r.id.split('-')[0].toUpperCase()}</div>
+                    .map(r => {
+                      const { category, title } = getRequestCardContent(r);
+                      return (
+                        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #27272a' }}>
+                          {r.status === 'APROVADO' ? <CheckCircle size={16} color="#10b981" /> :
+                            r.status === 'REPROVADO' ? <XCircle size={16} color="#ef4444" /> :
+                              <Clock size={16} color="#fbbf24" />}
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, color: '#d4d4d8' }}>{title}</div>
+                            <div style={{ fontSize: 10, color: '#52525b', fontFamily: 'monospace' }}>{category} · #{r.id.split('-')[0].toUpperCase()}</div>
+                          </div>
+                          <div style={{ marginLeft: 'auto', fontSize: 11, color: '#52525b' }}>{new Date(r.createdAt).toLocaleDateString()}</div>
                         </div>
-                        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#52525b' }}>{new Date(r.createdAt).toLocaleDateString()}</div>
-                      </div>
-                    ))}
+                      );
+                    })}
                 </div>
               </div>
             </div>
@@ -1303,19 +1375,25 @@ export default function App() {
                           if (d.info) parts.push(d.info);
                           if (r.type === 'CHANGE_ROLE' && d.current) parts.push(`Atual: ${d.current.role || ''} / ${d.current.dept || ''}`);
                           if (r.type === 'CHANGE_ROLE' && d.future) parts.push(`Novo: ${d.future.role || ''} / ${d.future.dept || ''}`);
+                          if (d.collaboratorName) parts.push(`Colaborador: ${d.collaboratorName}`);
+                          if (d.reason) parts.push(`Motivo: ${d.reason}`);
                           if (d.startDate) parts.push(`Início: ${d.startDate}`);
                           if (d.role) parts.push(`Cargo: ${d.role}`);
                           if (d.dept) parts.push(`Depto: ${d.dept}`);
                           if (d.tool) parts.push(`Ferramenta: ${d.tool}`);
+                          if (d.toolName) parts.push(`Ferramenta: ${d.toolName}`);
+                          if (d.owner) parts.push(`Owner: ${d.owner}`);
+                          if (d.subOwner) parts.push(`Sub-Owner: ${d.subOwner}`);
+                          if (d.accessLevels) parts.push(`Níveis: ${d.accessLevels}`);
                           if (d.current && typeof d.current === 'string') parts.push(`Nível atual: ${d.current}`);
                           if (d.target) parts.push(`Nível desejado: ${d.target}`);
                           if (d.beneficiary) parts.push(`Beneficiário: ${d.beneficiary}`);
                           if (d.duration != null && d.unit) parts.push(`Duração: ${d.duration} ${d.unit}`);
                           if (d.substitute) parts.push(`Substituto: ${d.substitute}`);
                           if (d.obs) parts.push(`Obs: ${d.obs}`);
-                          if (d.requestType) parts.push(`Tipo: ${d.requestType}`);
+                          if (d.requestTypeLabel || d.requestType) parts.push(`Tipo: ${d.requestTypeLabel || d.requestType}`);
                           if (d.description) parts.push(`Descrição: ${d.description}`);
-                          if (d.urgency) parts.push(`Urgência: ${d.urgency}`);
+                          if (d.urgencyLabel || d.urgency) parts.push(`Urgência: ${d.urgencyLabel || d.urgency}`);
                           return parts.length ? parts.join(' · ') : '-';
                         };
 
