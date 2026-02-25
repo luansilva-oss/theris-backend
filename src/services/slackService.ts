@@ -518,29 +518,29 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
   if (!view?.id || !selected) return;
 
   const metadata = { actionType: selected };
+  const actionLabels: Record<string, string> = { alterar_nivel: 'Alterar Nível', acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy', nova_ferramenta: 'Nova ferramenta' };
   let blocks: any[] = [
     {
       type: 'input',
       block_id: 'blk_acao',
       label: { type: 'plain_text', text: 'Ação Principal' },
+      dispatch_action: true,
       element: {
         type: 'static_select',
         action_id: 'acessos_action_type',
         placeholder: { type: 'plain_text', text: 'Selecione...' },
-        initial_option: { text: { type: 'plain_text', text: selected === 'nova_ferramenta' ? 'Nova ferramenta' : selected === 'alterar_nivel' ? 'Alterar Nível' : selected === 'acesso_extraordinario' ? 'Acesso Extraordinário' : 'Indicar Deputy' }, value: selected },
+        initial_option: { text: { type: 'plain_text', text: actionLabels[selected] || selected }, value: selected },
         options: [
           { text: { type: 'plain_text', text: 'Alterar Nível' }, value: 'alterar_nivel' },
           { text: { type: 'plain_text', text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
           { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' },
           { text: { type: 'plain_text', text: 'Nova ferramenta' }, value: 'nova_ferramenta' }
-        ],
-        dispatch_action: true
+        ]
       }
     }
   ];
 
   if (selected === 'nova_ferramenta') {
-    (blocks[0].element as any).initial_option = { text: { type: 'plain_text', text: 'Nova ferramenta' }, value: 'nova_ferramenta' };
     blocks = blocks.concat([
       { type: 'input', block_id: 'blk_nome_ferramenta', label: { type: 'plain_text', text: 'Nome da ferramenta' }, element: { type: 'plain_text_input', action_id: 'inp' } },
       { type: 'input', block_id: 'blk_owner', label: { type: 'plain_text', text: 'Owner' }, element: { type: 'plain_text_input', action_id: 'inp' } },
@@ -549,31 +549,18 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
       { type: 'input', block_id: 'blk_niveis', label: { type: 'plain_text', text: 'Níveis de acesso existentes' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Ex: Admin, User, Viewer' } } }
     ]);
   } else {
-    const actionLabels: Record<string, string> = { alterar_nivel: 'Alterar Nível', acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
-    blocks[0].element.initial_option = { text: { type: 'plain_text', text: actionLabels[selected] || selected }, value: selected };
     const toolOptions = TOOL_KEYS.map(k => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
     blocks = blocks.concat([
       {
         type: 'input',
         block_id: 'blk_tool',
         label: { type: 'plain_text', text: 'Ferramenta' },
+        dispatch_action: true,
         element: {
           type: 'static_select',
           action_id: 'acessos_tool_select',
           placeholder: { type: 'plain_text', text: 'Selecione a ferramenta...' },
-          options: toolOptions,
-          dispatch_action: true
-        }
-      },
-      {
-        type: 'input',
-        block_id: 'blk_level',
-        label: { type: 'plain_text', text: 'Nível de Acesso' },
-        element: {
-          type: 'static_select',
-          action_id: 'acessos_level_select',
-          placeholder: { type: 'plain_text', text: 'Selecione a ferramenta primeiro' },
-          options: []
+          options: toolOptions
         }
       },
       { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
@@ -587,7 +574,7 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
       view: {
         type: 'modal',
         callback_id: 'acessos_main_modal',
-        title: { type: 'plain_text', text: 'Gestão de Ferramentas / Acessos' },
+        title: { type: 'plain_text', text: 'Gestão de Acessos' },
         submit: { type: 'plain_text', text: 'Enviar' },
         close: { type: 'plain_text', text: 'Cancelar' },
         private_metadata: JSON.stringify(metadata),
@@ -616,12 +603,13 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
   } catch (_) {}
 
   const toolOptions = TOOL_KEYS.map(k => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
-  const actionLabels: Record<string, string> = { alterar_nivel: 'Alterar Nível', acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
+  const actionLabels: Record<string, string> = { alterar_nivel: 'Alterar Nível', acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy', nova_ferramenta: 'Nova ferramenta' };
   const blocks: any[] = [
     {
       type: 'input',
       block_id: 'blk_acao',
       label: { type: 'plain_text', text: 'Ação Principal' },
+      dispatch_action: true,
       element: {
         type: 'static_select',
         action_id: 'acessos_action_type',
@@ -632,24 +620,26 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
           { text: { type: 'plain_text', text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
           { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' },
           { text: { type: 'plain_text', text: 'Nova ferramenta' }, value: 'nova_ferramenta' }
-        ],
-        dispatch_action: true
+        ]
       }
     },
     {
       type: 'input',
       block_id: 'blk_tool',
       label: { type: 'plain_text', text: 'Ferramenta' },
+      dispatch_action: true,
       element: {
         type: 'static_select',
         action_id: 'acessos_tool_select',
         placeholder: { type: 'plain_text', text: 'Selecione a ferramenta...' },
         initial_option: { text: { type: 'plain_text', text: selectedTool }, value: selectedTool },
-        options: toolOptions,
-        dispatch_action: true
+        options: toolOptions
       }
-    },
-    {
+    }
+  ];
+
+  if (levelOptions.length >= 1) {
+    blocks.push({
       type: 'input',
       block_id: 'blk_level',
       label: { type: 'plain_text', text: 'Nível de Acesso' },
@@ -659,9 +649,10 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
         placeholder: { type: 'plain_text', text: 'Selecione o nível...' },
         options: levelOptions
       }
-    },
-    { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
-  ];
+    });
+  }
+
+  blocks.push({ type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } });
 
   try {
     await client.views.update({
@@ -670,7 +661,7 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
       view: {
         type: 'modal',
         callback_id: 'acessos_main_modal',
-        title: { type: 'plain_text', text: 'Gestão de Ferramentas / Acessos' },
+        title: { type: 'plain_text', text: 'Gestão de Acessos' },
         submit: { type: 'plain_text', text: 'Enviar' },
         close: { type: 'plain_text', text: 'Cancelar' },
         private_metadata: JSON.stringify({ actionType }),
