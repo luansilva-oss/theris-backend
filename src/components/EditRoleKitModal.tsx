@@ -113,18 +113,6 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
         if (!role) return;
         setSaving(true);
         try {
-            const nameRes = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: roleName.trim() || role.name, code: roleCode.trim() || null })
-            });
-            if (!nameRes.ok) {
-                const err = await nameRes.json();
-                showToast(err.error || 'Erro ao salvar nome do cargo.', 'error');
-                setSaving(false);
-                return;
-            }
-
             const validItems = kitItems
                 .filter(it => it.toolCode && it.toolName)
                 .map(it => ({
@@ -135,18 +123,22 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                     isCritical: it.isCritical !== false
                 }));
 
-            const kitRes = await fetch(`${API_URL}/api/structure/roles/${role.id}/kit`, {
+            const res = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: validItems })
+                body: JSON.stringify({
+                    name: roleName.trim() || role.name,
+                    code: roleCode.trim() || null,
+                    kitItems: validItems
+                })
             });
-            if (kitRes.ok) {
+            if (res.ok) {
                 showToast('Cargo e kit atualizados!', 'success');
                 onUpdate();
                 onClose();
             } else {
-                const err = await kitRes.json();
-                showToast(err.error || 'Erro ao salvar kit.', 'error');
+                const err = await res.json();
+                showToast(err.error || 'Erro ao salvar cargo.', 'error');
             }
         } catch (e) {
             showToast('Erro de conexão.', 'error');

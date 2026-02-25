@@ -47,12 +47,13 @@ interface PersonnelListViewProps {
     onEditDepartment: (dept: Department) => void;
     onDeleteDepartment: (dept: Department) => void;
     onEditRole?: (role: Role) => void;
+    onDeleteRole?: (role: Role) => void;
 }
 
 const UNIT_ORDER = ['3C+', 'Evolux', 'Dizify', 'Instituto 3C', 'FiqOn', 'Dizparos'];
 
 export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
-    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole
+    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole
 }) => {
     const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({});
     const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
@@ -182,7 +183,10 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                     </div>
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                                         {onEditRole && roleEntity && (
-                                                                            <button onClick={(e) => { e.stopPropagation(); onEditRole(roleEntity); }} title="Editar kit do cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }}><Pencil size={14} color="#a78bfa" /></button>
+                                                                            <button onClick={(e) => { e.stopPropagation(); onEditRole(roleEntity); }} title="Editar cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }}><Pencil size={14} color="#a78bfa" /></button>
+                                                                        )}
+                                                                        {onDeleteRole && roleEntity && (
+                                                                            <button onClick={(e) => { e.stopPropagation(); onDeleteRole(roleEntity); }} title="Excluir cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }}><Trash2 size={14} color="#ef4444" /></button>
                                                                         )}
                                                                         {expandedRoles[roleKey] ? <ChevronDown size={16} color="#52525b" /> : <ChevronRight size={16} color="#52525b" />}
                                                                     </div>

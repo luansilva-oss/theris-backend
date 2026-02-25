@@ -20,6 +20,7 @@ import PersonnelListView from './components/PersonnelListView';
 import { EditDepartmentModal } from './components/EditDepartmentModal';
 import { DeleteDepartmentModal } from './components/DeleteDepartmentModal';
 import { EditRoleKitModal } from './components/EditRoleKitModal';
+import { DeleteRoleModal } from './components/DeleteRoleModal';
 import { ToastContainer, Toast } from './components/ToastContainer';
 import { CustomConfirmModal } from './components/CustomConfirmModal';
 import { API_URL } from './config';
@@ -165,6 +166,8 @@ export default function App() {
   const [selectedDeptForAction, setSelectedDeptForAction] = useState<any>(null);
   const [isEditRoleKitModalOpen, setIsEditRoleKitModalOpen] = useState(false);
   const [selectedRoleForKit, setSelectedRoleForKit] = useState<any>(null);
+  const [isDeleteRoleModalOpen, setIsDeleteRoleModalOpen] = useState(false);
+  const [selectedRoleForDelete, setSelectedRoleForDelete] = useState<any>(null);
 
   // NOTIFICAÇÕES E CONFIRMAÇÕES
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -831,6 +834,13 @@ export default function App() {
                   onEditRole={['ADMIN', 'SUPER_ADMIN', 'GESTOR'].includes(systemProfile) ? (role) => {
                     setSelectedRoleForKit(role);
                     setIsEditRoleKitModalOpen(true);
+                  } : undefined}
+                  onDeleteRole={['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? (role) => {
+                    setSelectedRoleForDelete({
+                      ...role,
+                      department: role.department || { name: departments.find(d => d.id === role.departmentId)?.name ?? '' }
+                    });
+                    setIsDeleteRoleModalOpen(true);
                   } : undefined}
                 />
               </div>
@@ -1530,6 +1540,19 @@ export default function App() {
         onClose={() => { setIsEditRoleKitModalOpen(false); setSelectedRoleForKit(null); }}
         role={selectedRoleForKit}
         onUpdate={loadData}
+        showToast={showToast}
+      />
+
+      <DeleteRoleModal
+        isOpen={isDeleteRoleModalOpen}
+        onClose={() => { setIsDeleteRoleModalOpen(false); setSelectedRoleForDelete(null); }}
+        role={selectedRoleForDelete}
+        units={units}
+        userCountInRole={selectedRoleForDelete ? allUsers.filter(u =>
+          u.roleId === selectedRoleForDelete.id ||
+          (u.jobTitle === selectedRoleForDelete.name && u.department === departments.find(d => d.id === selectedRoleForDelete.departmentId)?.name)
+        ).length : 0}
+        onDeleted={loadData}
         showToast={showToast}
       />
 

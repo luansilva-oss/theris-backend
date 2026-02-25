@@ -119,26 +119,49 @@ export const createRole = async (req: Request, res: Response) => {
 
 export const updateRole = async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { name, departmentId, code } = req.body;
+    const { name, departmentId, code, kitItems } = req.body;
     try {
-        // 1. Get old role
-        const oldRole = await prisma.role.findUnique({ where: { id } });
+        const oldRole = await prisma.role.findUnique({ where: { id }, include: { department: true } });
         if (!oldRole) return res.status(404).json({ error: "Cargo não encontrado." });
+
+        const data: { name?: string; departmentId?: string; code?: string | null } = {};
+        if (name !== undefined) data.name = name;
+        if (departmentId !== undefined) data.departmentId = departmentId;
+        if (code !== undefined) data.code = code || null;
 
         const role = await prisma.role.update({
             where: { id },
-            data: { name, departmentId, code: code !== undefined ? code : undefined }
+            data: Object.keys(data).length ? data : undefined
         });
 
-        // 2. Sync with Users (if name changed)
-        if (oldRole.name !== name) {
+        // Sync jobTitle/department for users linked by roleId or by jobTitle+department
+        if (oldRole.name !== name && name) {
             await prisma.user.updateMany({
-                where: { jobTitle: oldRole.name },
+                where: { OR: [{ roleId: id }, { jobTitle: oldRole.name, department: oldRole.department?.name ?? '' }] },
                 data: { jobTitle: name }
             });
         }
 
-        return res.json(role);
+        // Sincronizar RoleKitItem se enviado
+        if (Array.isArray(kitItems)) {
+            await prisma.roleKitItem.deleteMany({ where: { roleId: id } });
+            if (kitItems.length > 0) {
+                await prisma.roleKitItem.createMany({
+                    data: kitItems.map((it: { toolCode?: string; toolName?: string; accessLevelDesc?: string }) => ({
+                        roleId: id,
+                        toolCode: it.toolCode || '',
+                        toolName: it.toolName || '',
+                        accessLevelDesc: it.accessLevelDesc ?? null
+                    }))
+                });
+            }
+        }
+
+        const updated = await prisma.role.findUnique({
+            where: { id },
+            include: { kitItems: true, department: true }
+        });
+        return res.json(updated);
     } catch (error) {
         return res.status(500).json({ error: "Erro ao atualizar cargo." });
     }
@@ -146,16 +169,63 @@ export const updateRole = async (req: Request, res: Response) => {
 
 export const deleteRole = async (req: Request, res: Response) => {
     const { id } = req.params;
+    const { fallbackRoleId } = req.body as { fallbackRoleId?: string };
     try {
-        const role = await prisma.role.findUnique({ where: { id } });
-        if (role) {
-            const userCount = await prisma.user.count({ where: { jobTitle: role.name } });
-            if (userCount > 0) return res.status(400).json({ error: `Não é possível excluir: existem ${userCount} usuários neste cargo.` });
+        const role = await prisma.role.findUnique({
+            where: { id },
+            include: { department: { include: { unit: true } } }
+        });
+        if (!role) return res.status(404).json({ error: "Cargo não encontrado." });
+
+        // Usuários vinculados: por roleId ou por jobTitle + department (dados em texto no User)
+        const deptName = role.department?.name ?? '';
+        const userCount = await prisma.user.count({
+            where: {
+                OR: [
+                    { roleId: id },
+                    { jobTitle: role.name, department: deptName }
+                ]
+            }
+        });
+
+        if (userCount > 0) {
+            if (!fallbackRoleId) {
+                return res.status(400).json({
+                    error: `Existem ${userCount} colaborador(es) neste cargo. Selecione o novo cargo de destino antes de excluir.`,
+                    requireFallback: true,
+                    userCount
+                });
+            }
+            const targetRole = await prisma.role.findUnique({
+                where: { id: fallbackRoleId },
+                include: { department: { include: { unit: true } } }
+            });
+            if (!targetRole) return res.status(400).json({ error: "Cargo de destino não encontrado." });
+            if (targetRole.id === id) return res.status(400).json({ error: "O cargo de destino não pode ser o mesmo que está sendo excluído." });
+
+            const targetDeptName = targetRole.department?.name ?? '';
+            const targetUnitName = targetRole.department?.unit?.name ?? '';
+
+            await prisma.user.updateMany({
+                where: {
+                    OR: [
+                        { roleId: id },
+                        { jobTitle: role.name, department: deptName }
+                    ]
+                },
+                data: {
+                    roleId: fallbackRoleId,
+                    jobTitle: targetRole.name,
+                    department: targetDeptName,
+                    unit: targetUnitName
+                }
+            });
         }
 
         await prisma.role.delete({ where: { id } });
         return res.json({ success: true });
     } catch (error) {
+        console.error("Erro ao excluir cargo:", error);
         return res.status(500).json({ error: "Erro ao excluir cargo." });
     }
 };
