@@ -185,6 +185,7 @@ function buildAcessosInitialBlocks() {
       type: 'input' as const,
       block_id: 'blk_acao',
       label: { type: 'plain_text' as const, text: 'Ação Principal' },
+      dispatch_action: true,
       element: {
         type: 'static_select' as const,
         action_id: 'acessos_action_type',
@@ -194,8 +195,7 @@ function buildAcessosInitialBlocks() {
           { text: { type: 'plain_text' as const, text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
           { text: { type: 'plain_text' as const, text: 'Indicar Deputy' }, value: 'indicar_deputy' },
           { text: { type: 'plain_text' as const, text: 'Nova ferramenta' }, value: 'nova_ferramenta' }
-        ],
-        dispatch_action: true
+        ]
       }
     }
   ];
@@ -207,7 +207,7 @@ slackApp.command('/acessos', async ({ ack, body, client }) => {
     const viewPayload = {
       type: 'modal' as const,
       callback_id: 'acessos_main_modal',
-      title: { type: 'plain_text' as const, text: 'Gestão de Ferramentas / Acessos' },
+      title: { type: 'plain_text' as const, text: 'Gestão de Acessos' },
       submit: { type: 'plain_text' as const, text: 'Continuar' },
       close: { type: 'plain_text' as const, text: 'Cancelar' },
       private_metadata: JSON.stringify({ actionType: '' }),
