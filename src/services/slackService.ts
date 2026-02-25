@@ -518,7 +518,30 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
   const actionType = selected;
   const metadata = { actionType };
   const actionLabels: Record<string, string> = { acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
-  const toolOptions = TOOL_KEYS.map(k => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
+
+  let toolOptions: { text: { type: 'plain_text'; text: string }; value: string }[];
+  if (actionType === 'indicar_deputy') {
+    let ownedTools: { name: string }[] = [];
+    try {
+      const slackUserId = b.user?.id;
+      if (slackUserId) {
+        const info = await client.users.info({ user: slackUserId });
+        const email = info.user?.profile?.email;
+        if (email) {
+          const userDb = await prisma.user.findUnique({
+            where: { email },
+            select: { toolsOwned: { select: { name: true } } }
+          });
+          ownedTools = userDb?.toolsOwned ?? [];
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao buscar ferramentas do Owner (indicar_deputy):', err);
+    }
+    toolOptions = ownedTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.name }));
+  } else {
+    toolOptions = TOOL_KEYS.map((k) => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
+  }
 
   const blocks: any[] = [
     {
@@ -536,8 +559,17 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
           { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' }
         ]
       }
-    },
-    {
+    }
+  ];
+
+  if (actionType === 'indicar_deputy' && toolOptions.length === 0) {
+    blocks.push({
+      type: 'section',
+      block_id: 'blk_deputy_no_owner',
+      text: { type: 'mrkdwn', text: '⚠️ Você não é proprietário de nenhuma ferramenta no momento. Apenas Owners podem indicar um Deputy.' }
+    });
+  } else {
+    blocks.push({
       type: 'input',
       block_id: 'blk_tool',
       label: { type: 'plain_text', text: 'Ferramenta' },
@@ -548,9 +580,10 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
         placeholder: { type: 'plain_text', text: 'Selecione a ferramenta...' },
         options: toolOptions
       }
-    },
-    { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
-  ];
+    });
+  }
+
+  blocks.push({ type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } });
 
   try {
     await client.views.update({
@@ -589,7 +622,32 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
     actionType = parsed.actionType || actionType;
   } catch (_) {}
 
-  const toolOptions = TOOL_KEYS.map(k => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
+  let toolOptions: { text: { type: 'plain_text'; text: string }; value: string }[];
+  if (actionType === 'indicar_deputy') {
+    let ownedTools: { name: string }[] = [];
+    try {
+      const slackUserId = b.user?.id;
+      if (slackUserId) {
+        const info = await client.users.info({ user: slackUserId });
+        const email = info.user?.profile?.email;
+        if (email) {
+          const userDb = await prisma.user.findUnique({
+            where: { email },
+            select: { toolsOwned: { select: { name: true } } }
+          });
+          ownedTools = userDb?.toolsOwned ?? [];
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao buscar ferramentas do Owner (tool_select deputy):', err);
+    }
+    toolOptions = ownedTools.length > 0
+      ? ownedTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.name }))
+      : [{ text: { type: 'plain_text' as const, text: selectedTool }, value: selectedTool }];
+  } else {
+    toolOptions = TOOL_KEYS.map((k) => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
+  }
+
   const actionLabels: Record<string, string> = { acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
 
   const blocks: any[] = [
@@ -915,6 +973,10 @@ slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
     const details = { info: `Acesso extraordinário: ${toolName}`, tool: toolName, target: levelLabel, targetValue: levelValue };
     await saveRequest(body, client, 'ACCESS_TOOL_EXTRA', details, reason, `🔥 Acesso extraordinário para *${toolName}* enviado ao time de Segurança.`, true);
   } else if (actionType === 'indicar_deputy') {
+    if (!toolName) {
+      await (client as any).chat.postMessage({ channel: body.user.id, text: '⚠️ Apenas Owners de ferramentas podem indicar um Deputy. Você não é proprietário de nenhuma ferramenta no momento.' });
+      return;
+    }
     const details = {
       info: `Indicar Deputy: ${toolName}`,
       tool: toolName,
