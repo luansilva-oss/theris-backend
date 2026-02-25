@@ -4,7 +4,7 @@ exports.EditUserModal = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers, showToast }) => {
     if (!isOpen)
         return null;
@@ -30,11 +30,14 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers,
     }, [user]);
     const loadStructure = async () => {
         try {
-            const res = await fetch(`${API_URL}/api/structure`);
+            const res = await fetch(`${config_1.API_URL}/api/structure`);
             if (res.ok) {
                 const data = await res.json();
-                setAvailableDepts(data.departments);
-                setAvailableRoles(data.roles);
+                const unitList = data.units || [];
+                const depts = unitList.flatMap((u) => u.departments || []);
+                const roles = depts.flatMap((d) => d.roles || []);
+                setAvailableDepts(depts);
+                setAvailableRoles(roles);
             }
         }
         catch (e) {
@@ -44,7 +47,7 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers,
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            const res = await fetch(`${API_URL}/api/users/${user.id}`, {
+            const res = await fetch(`${config_1.API_URL}/api/users/${user.id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',

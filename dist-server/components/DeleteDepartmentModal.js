@@ -4,7 +4,7 @@ exports.DeleteDepartmentModal = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const DeleteDepartmentModal = ({ isOpen, onClose, department, allDepartments, userCount, onDeleted, showToast, customConfirm }) => {
     const [redirectToId, setRedirectToId] = (0, react_1.useState)('');
     const [isDeleting, setIsDeleting] = (0, react_1.useState)(false);
@@ -23,7 +23,7 @@ const DeleteDepartmentModal = ({ isOpen, onClose, department, allDepartments, us
             onConfirm: async () => {
                 setIsDeleting(true);
                 try {
-                    const res = await fetch(`${API_URL}/api/structure/departments/${department.id}`, {
+                    const res = await fetch(`${config_1.API_URL}/api/structure/departments/${department.id}`, {
                         method: 'DELETE',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ redirectToDepartmentId: redirectToId || null })

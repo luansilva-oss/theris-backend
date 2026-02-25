@@ -86,6 +86,21 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
+/** Marca que o usuário alterou as senhas (ciclo 90 dias). */
+export const markPasswordChanged = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const user = await prisma.user.update({
+      where: { id },
+      data: { lastPasswordChangeAt: new Date() },
+    });
+    return res.json(user);
+  } catch (error) {
+    console.error("Erro ao marcar troca de senha:", error);
+    return res.status(500).json({ error: "Erro ao atualizar data de troca de senha." });
+  }
+};
+
 export const deleteUser = async (req: Request, res: Response) => {
   const { id } = req.params;
 

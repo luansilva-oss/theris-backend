@@ -4,7 +4,7 @@ exports.EditRoleKitModal = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const EditRoleKitModal = ({ isOpen, onClose, role, onUpdate, showToast }) => {
     if (!isOpen)
         return null;
@@ -20,8 +20,8 @@ const EditRoleKitModal = ({ isOpen, onClose, role, onUpdate, showToast }) => {
             setRoleCode(role.code || '');
             setLoading(true);
             Promise.all([
-                fetch(`${API_URL}/api/structure/roles/${role.id}/kit`).then(r => r.ok ? r.json() : null),
-                fetch(`${API_URL}/api/tools`).then(r => r.ok ? r.json() : [])
+                fetch(`${config_1.API_URL}/api/structure/roles/${role.id}/kit`).then(r => r.ok ? r.json() : null),
+                fetch(`${config_1.API_URL}/api/tools`).then(r => r.ok ? r.json() : [])
             ]).then(([roleData, toolsList]) => {
                 setKitItems(roleData?.kitItems?.map((it) => ({
                     toolCode: it.toolCode,
@@ -77,7 +77,7 @@ const EditRoleKitModal = ({ isOpen, onClose, role, onUpdate, showToast }) => {
             return;
         setSaving(true);
         try {
-            const nameRes = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
+            const nameRes = await fetch(`${config_1.API_URL}/api/structure/roles/${role.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: roleName.trim() || role.name, code: roleCode.trim() || null })
@@ -97,7 +97,7 @@ const EditRoleKitModal = ({ isOpen, onClose, role, onUpdate, showToast }) => {
                 criticality: it.criticality || null,
                 isCritical: it.isCritical !== false
             }));
-            const kitRes = await fetch(`${API_URL}/api/structure/roles/${role.id}/kit`, {
+            const kitRes = await fetch(`${config_1.API_URL}/api/structure/roles/${role.id}/kit`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ items: validItems })

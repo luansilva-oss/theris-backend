@@ -4,7 +4,7 @@ exports.RoleKitModal = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const RoleKitModal = ({ isOpen, onClose, roleId, roleName, departmentName, onUpdate, showToast }) => {
     const [items, setItems] = (0, react_1.useState)([]);
     const [loading, setLoading] = (0, react_1.useState)(false);
@@ -12,7 +12,7 @@ const RoleKitModal = ({ isOpen, onClose, roleId, roleName, departmentName, onUpd
     (0, react_1.useEffect)(() => {
         if (isOpen && roleId) {
             setLoading(true);
-            fetch(`${API_URL}/api/structure/roles/${roleId}/kit`)
+            fetch(`${config_1.API_URL}/api/structure/roles/${roleId}/kit`)
                 .then(res => res.ok ? res.json() : Promise.reject(res))
                 .then((data) => {
                 setItems((data.kitItems || []).map(k => ({
@@ -53,7 +53,7 @@ const RoleKitModal = ({ isOpen, onClose, roleId, roleName, departmentName, onUpd
                 criticality: (it.criticality || '').trim() || undefined,
                 isCritical: it.isCritical !== false
             }));
-            const res = await fetch(`${API_URL}/api/structure/roles/${roleId}/kit`, {
+            const res = await fetch(`${config_1.API_URL}/api/structure/roles/${roleId}/kit`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ items: payload })

@@ -1,14 +1,21 @@
 /**
- * Seed: Gestão de Pessoas por Unidade
- * Estrutura 100% conforme a lista: Unidade > Departamento > Cargo > Colaboradores.
- * Recria departamentos e cargos e atualiza usuários com unit, department, jobTitle.
+ * Dados oficiais para seed_master.ts
+ * Hierarquia: Unit -> Department -> Role -> People
+ * KBS: (department, roleName) -> code + kitItems (toolCode, toolName, accessLevelDesc)
  */
-import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+export const UNIT_NAMES = ['3C+', 'Evolux', 'Dizify', 'Instituto 3C', 'FiqOn', 'Dizparos'] as const;
 
-// Lista exata: unit, department, jobTitle, email (nome resolvido por email no upsert)
-const ROWS: { unit: string; department: string; jobTitle: string; name: string; email: string }[] = [
+export interface PersonRow {
+  unit: string;
+  department: string;
+  jobTitle: string;
+  name: string;
+  email: string;
+}
+
+/** Lista mestra: Unidade -> Departamento -> Cargo -> Colaborador (email) */
+export const PEOPLE: PersonRow[] = [
   { unit: '3C+', department: 'Board', jobTitle: 'CEO', name: 'Ney Eurico Pereira', email: 'ney.pereira@grupo-3c.com' },
   { unit: '3C+', department: 'Board', jobTitle: 'CFO', name: 'Aline Alda da Fonseca Bocchi', email: 'aline.fonseca@grupo-3c.com' },
   { unit: '3C+', department: 'Board', jobTitle: 'CMO', name: 'Wagner Wolff Pretto', email: 'wagner.wolff@grupo-3c.com' },
@@ -118,15 +125,16 @@ const ROWS: { unit: string; department: string; jobTitle: string; name: string; 
   { unit: 'Evolux', department: 'Evolux', jobTitle: 'Desenvolvedor Full Stack', name: 'Luis Fernando Paganini', email: 'luis.paganini@grupo-3c.com' },
   { unit: 'Evolux', department: 'Evolux', jobTitle: 'Desenvolvedor Full Stack', name: 'Pedro Henrique Ferreira do Nascimento', email: 'pedro.nascimento@grupo-3c.com' },
   { unit: 'Evolux', department: 'Evolux', jobTitle: 'DevOps', name: 'Bruno Levy de Arruda', email: 'bruno.levy@grupo-3c.com' },
+  { unit: 'Evolux', department: 'Evolux', jobTitle: 'Líder de Produto', name: 'Italo Rossi Batista Cocentino', email: 'italo.rossi@grupo-3c.com' },
   { unit: 'Evolux', department: 'Evolux', jobTitle: 'Tech Lead', name: 'Carlos Henrique Marques', email: 'carlos.marques@grupo-3c.com' },
   { unit: 'Dizify', department: 'Dizify', jobTitle: 'CEO', name: 'Pietro Giovani Franciosi Limberger', email: 'pietro.limberger@grupo-3c.com' },
   { unit: 'Dizify', department: 'Dizify', jobTitle: 'Capitão Comercial', name: 'Taryk de Souza Ferreira', email: 'taryk.ferreira@grupo-3c.com' },
   { unit: 'Dizify', department: 'Dizify', jobTitle: 'Closer', name: 'Eduardo Elias do Nascimento', email: 'eduardo.nascimento@grupo-3c.com' },
   { unit: 'Dizify', department: 'Dizify', jobTitle: 'Closer', name: 'Iago Moura do Prado', email: 'iago.prado@grupo-3c.com' },
-  { unit: 'Dizify', department: 'Dizify', jobTitle: 'Desenvolvedor Back-End', name: 'Marieli Aparecida Ferreira Thomen', email: 'marieli.ferreira@grupo-3c.com' },
   { unit: 'Dizify', department: 'Dizify', jobTitle: 'Desenvolvedor Back-End', name: 'Jeferson da Cruz', email: 'jeferson.cruz@grupo-3c.com' },
   { unit: 'Dizify', department: 'Dizify', jobTitle: 'Desenvolvedor Back-End', name: 'Julia Gabrielly Martins Araujo', email: 'julia.araujo@grupo-3c.com' },
   { unit: 'Dizify', department: 'Dizify', jobTitle: 'Tech Lead', name: 'Maria Fernanda Ribeiro', email: 'maria.ribeiro@grupo-3c.com' },
+  { unit: 'Dizify', department: 'Dizify', jobTitle: 'Tech Lead', name: 'Marieli Aparecida Ferreira Thomen', email: 'marieli.ferreira@grupo-3c.com' },
   { unit: 'Instituto 3C', department: 'Instituto 3C', jobTitle: 'Assistente de Recrutamento e Seleção', name: 'Gabrieli Estefani dos Anjos Almeida', email: 'gabrieli.almeida@grupo-3c.com' },
   { unit: 'Instituto 3C', department: 'Instituto 3C', jobTitle: 'Coordenadora do Instituto 3C', name: 'Kawanna Barbosa Cordeiro', email: 'kawanna.cordeiro@grupo-3c.com' },
   { unit: 'Instituto 3C', department: 'Instituto 3C', jobTitle: 'Monitor Instituto 3C', name: 'Gladston Kordiak', email: 'gladston.kordiak@grupo-3c.com' },
@@ -139,42 +147,102 @@ const ROWS: { unit: string; department: string; jobTitle: string; name: string; 
   { unit: 'Dizparos', department: 'Produto Dizparos', jobTitle: 'Desenvolvedor Full Stack', name: 'Gustavo Delonzek Brizola', email: 'gustavo.delonzek@grupo-3c.com' },
 ];
 
-async function main() {
-  console.log('🌱 Seed Gestão por Unidade — atualiza usuários (unit, department, jobTitle). Estrutura Unit/Department/Role deve vir do seed_units.ts');
-
-  for (const row of ROWS) {
-    const email = row.email.toLowerCase().trim();
-    const existing = await prisma.user.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' } },
-    });
-    const systemProfile = (existing as any)?.systemProfile === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'VIEWER';
-    if (existing) {
-      await prisma.user.update({
-        where: { id: existing.id },
-        data: {
-          name: row.name,
-          unit: row.unit,
-          department: row.department,
-          jobTitle: row.jobTitle,
-        },
-      });
-    } else {
-      await prisma.user.create({
-        data: {
-          name: row.name,
-          email,
-          unit: row.unit,
-          department: row.department,
-          jobTitle: row.jobTitle,
-          systemProfile,
-        },
-      });
-    }
-  }
-  console.log(`   ${ROWS.length} colaboradores processados.`);
-  console.log('✅ Seed Gestão por Unidade concluído.');
+/** Chave (department, roleName) -> código KBS e itens do kit. department = nome usado na hierarquia (ex: Board). */
+export interface KitEntry {
+  dept: string;
+  roleName: string;
+  code: string;
+  toolCode: string;
+  toolName: string;
+  accessLevelDesc: string;
 }
 
-main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(async () => { await prisma.$disconnect(); });
+/** Mapeamento KBS: departamento na nossa hierarquia -> nome no KBS (quando diferente). */
+export const KBS_DEPT_ALIAS: Record<string, string> = {
+  'Board': 'Board e Diretoria (BO)',
+  'Tecnologia e Segurança (SI)': 'Tecnologia e Segurança (SI)',
+  'Administrativo': 'Administrativo (AD)',
+  'Comercial Contact': 'Comercial (CO)',
+  'Expansão': 'Comercial (CO)',
+  'Marketing': 'Marketing (MK)',
+  'Parcerias': 'Marketing (MK)',
+  'Atendimento ao Cliente': 'Atendimento (AT)',
+  'Professional Service': 'Atendimento (AT)',
+  'Operações': 'Operações (OP)',
+  'Pessoas e Performance': 'Pessoas & perfomance (PC)',
+  'Produto 3C+': 'Produto & Desenvolvimento (PD)',
+  'RevOps': 'RevOps (RA)',
+  'Instituto 3C': 'Instituto 3C (IN)',
+  'Evolux': 'Produto & Desenvolvimento (PD)',
+  'Dizify': 'Produto & Desenvolvimento (PD)',
+  'Produto FiqOn': 'Produto & Desenvolvimento (PD)',
+  'Produto Dizparos': 'Produto & Desenvolvimento (PD)',
+};
+
+/** Lista KBS: (dept nossa, roleName) -> code + lista de { toolCode, toolName, accessLevelDesc }. Agrupado por (dept, roleName). */
+export const KIT_ENTRIES: KitEntry[] = [
+  { dept: 'Board', roleName: 'CEO', code: 'KBS-BO-1', toolCode: 'ap_A3-3', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 3 da Aplicação da 3C' },
+  { dept: 'Board', roleName: 'CEO', code: 'KBS-BO-1', toolCode: 'ap_CK-1', toolName: 'ClickUp', accessLevelDesc: 'Administrador (Admin) do ClickUp' },
+  { dept: 'Board', roleName: 'CEO', code: 'KBS-BO-1', toolCode: 'ap_CV-1', toolName: 'Convenia', accessLevelDesc: 'Owner do Convenia' },
+  { dept: 'Board', roleName: 'CEO', code: 'KBS-BO-1', toolCode: 'ap_HC-1', toolName: 'Hik-Connect', accessLevelDesc: 'Administrador da ferramenta Hik-Connect' },
+  { dept: 'Board', roleName: 'CEO', code: 'KBS-BO-1', toolCode: 'ap_OR-4', toolName: 'Oracle – Next Suit', accessLevelDesc: 'Executivo da Oracle' },
+  { dept: 'Board', roleName: 'CMO', code: 'KBS-BO-2', toolCode: 'ap_CG-1', toolName: 'ChatGPT', accessLevelDesc: 'Proprietário do Chat GPT' },
+  { dept: 'Board', roleName: 'CMO', code: 'KBS-BO-2', toolCode: 'ap_CK-2', toolName: 'ClickUp', accessLevelDesc: 'Membro (Member)' },
+  { dept: 'Board', roleName: 'CMO', code: 'KBS-BO-2', toolCode: 'ap_GC-3', toolName: 'GCP', accessLevelDesc: 'Editor / Viewer / Usuário Padrão do GCP' },
+  { dept: 'Board', roleName: 'CMO', code: 'KBS-BO-2', toolCode: 'ap_HC-1', toolName: 'Hik-Connect', accessLevelDesc: 'Administrador da ferramenta Hik-Connect' },
+  { dept: 'Board', roleName: 'CMO', code: 'KBS-BO-2', toolCode: 'ap_HS-1', toolName: 'HubSpot', accessLevelDesc: 'Administrador do HubSpot' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_AE-1', toolName: 'Aplicação Evolux', accessLevelDesc: 'Developer Group da Aplicação da Evolux' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_AS-1', toolName: 'AWS', accessLevelDesc: 'Admin da AWS' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_CK-1', toolName: 'ClickUp', accessLevelDesc: 'Administrador (Admin) do ClickUp' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_GC-1', toolName: 'GCP', accessLevelDesc: 'Owner do GCP' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_GL-1', toolName: 'GitLab', accessLevelDesc: 'Administrador do GitLab' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_JC-1', toolName: 'JumpCloud', accessLevelDesc: 'Administrador With Billing do JumpCloud' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_FU-1', toolName: 'Focus', accessLevelDesc: 'Administrador do Focus' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_RR-1', toolName: 'Router', accessLevelDesc: 'Administrador da ferramenta Router' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_VI-1', toolName: 'Vindi', accessLevelDesc: 'Administrador da Vindi' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_FG-4', toolName: 'Figma', accessLevelDesc: 'Viwer do Figma' },
+  { dept: 'Board', roleName: 'CTO', code: 'KBS-BO-6', toolCode: 'ap_HS-5', toolName: 'HubSpot', accessLevelDesc: 'Nível personalizado do HubSpot' },
+  { dept: 'Board', roleName: 'CFO', code: 'KBS-BO-7', toolCode: 'ap_CG-2', toolName: 'ChatGPT', accessLevelDesc: 'Membro do Chat GPT' },
+  { dept: 'Board', roleName: 'CFO', code: 'KBS-BO-7', toolCode: 'ap_CS-2', toolName: 'ClickSign', accessLevelDesc: 'Membro da ferramenta ClickSign' },
+  { dept: 'Board', roleName: 'CFO', code: 'KBS-BO-7', toolCode: 'ap_FU-1', toolName: 'Focus', accessLevelDesc: 'Administrador do Focus' },
+  { dept: 'Board', roleName: 'CFO', code: 'KBS-BO-7', toolCode: 'ap_OR-1', toolName: 'Oracle – Next Suit', accessLevelDesc: 'Administrador da Oracle' },
+  { dept: 'Board', roleName: 'CPOX', code: 'KBS-BO-3', toolCode: 'ap_CK-1', toolName: 'ClickUp', accessLevelDesc: 'Administrador (Admin) do ClickUp' },
+  { dept: 'Board', roleName: 'CPOX', code: 'KBS-BO-3', toolCode: 'ap_DZ-1', toolName: 'Dizify', accessLevelDesc: 'Administrador da ferramenta Dizify' },
+  { dept: 'Board', roleName: 'CPO', code: 'KBS-BO-4', toolCode: 'ap_CK-2', toolName: 'ClickUp', accessLevelDesc: 'Membro (Member)' },
+  { dept: 'Board', roleName: 'CPO', code: 'KBS-BO-4', toolCode: 'ap_CV-1', toolName: 'Convenia', accessLevelDesc: 'Owner do Convenia' },
+  { dept: 'Board', roleName: 'CPO', code: 'KBS-BO-4', toolCode: 'ap_DZ-1', toolName: 'Dizify', accessLevelDesc: 'Administrador da ferramenta Dizify' },
+  { dept: 'Board', roleName: 'COO', code: 'KBS-BO-5', toolCode: 'ap_A3-2', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 2 da Aplicação da 3C' },
+  { dept: 'Board', roleName: 'COO', code: 'KBS-BO-5', toolCode: 'ap_CK-1', toolName: 'ClickUp', accessLevelDesc: 'Administrador (Admin) do ClickUp' },
+  { dept: 'Board', roleName: 'COO', code: 'KBS-BO-5', toolCode: 'ap_HS-1', toolName: 'HubSpot', accessLevelDesc: 'Administrador do HubSpot' },
+  { dept: 'Board', roleName: 'CSO', code: 'KBS-BO-8', toolCode: 'ap_AE-2', toolName: 'Aplicação Evolux', accessLevelDesc: 'Tenant support da Aplicação da Evolux' },
+  { dept: 'Board', roleName: 'CSO', code: 'KBS-BO-8', toolCode: 'ap_CK-2', toolName: 'ClickUp', accessLevelDesc: 'Membro (Member)' },
+  { dept: 'Board', roleName: 'CSO', code: 'KBS-BO-8', toolCode: 'ap_HC-1', toolName: 'Hik-Connect', accessLevelDesc: 'Administrador da ferramenta Hik-Connect' },
+  { dept: 'Tecnologia e Segurança (SI)', roleName: 'Líder de Segurança da Informação', code: 'KBS-SI-1', toolCode: 'ap_AS-1', toolName: 'AWS', accessLevelDesc: 'Admin da AWS' },
+  { dept: 'Tecnologia e Segurança (SI)', roleName: 'Líder de Segurança da Informação', code: 'KBS-SI-1', toolCode: 'ap_GC-1', toolName: 'GCP', accessLevelDesc: 'Owner do GCP' },
+  { dept: 'Tecnologia e Segurança (SI)', roleName: 'Líder de Segurança da Informação', code: 'KBS-SI-1', toolCode: 'ap_JC-1', toolName: 'JumpCloud', accessLevelDesc: 'Administrador With Billing do JumpCloud' },
+  { dept: 'Tecnologia e Segurança (SI)', roleName: 'Analista de SI e Infraestrutura', code: 'KBS-SI-2', toolCode: 'ap_A3-2', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 2 da Aplicação da 3C' },
+  { dept: 'Tecnologia e Segurança (SI)', roleName: 'Analista de Custos / Telecom', code: 'KBS-SI-3', toolCode: 'ap_A3-2', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 2 da Aplicação da 3C' },
+  { dept: 'Tecnologia e Segurança (SI)', roleName: 'DevOps', code: 'KBS-SI-4', toolCode: 'ap_AE-1', toolName: 'Aplicação Evolux', accessLevelDesc: 'Developer Group da Aplicação da Evolux' },
+  { dept: 'Tecnologia e Segurança (SI)', roleName: 'DevOps', code: 'KBS-SI-4', toolCode: 'ap_GL-1', toolName: 'GitLab', accessLevelDesc: 'Administrador do GitLab' },
+  { dept: 'Tecnologia e Segurança (SI)', roleName: 'Líder de Segurança da Informação', code: 'KBS-SI-1', toolCode: 'ap_HC-1', toolName: 'Hik-Connect', accessLevelDesc: 'Grupo de Nível de Administrador da ferramenta Hik-Connect' },
+  { dept: 'RevOps', roleName: 'Líder de RevOps', code: 'KBS-RA-1', toolCode: 'ap_A3-3', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 3 da Aplicação da 3C' },
+  { dept: 'RevOps', roleName: 'Líder de RevOps', code: 'KBS-RA-1', toolCode: 'ap_CK-1', toolName: 'ClickUp', accessLevelDesc: 'Administrador (Admin) do ClickUp' },
+  { dept: 'RevOps', roleName: 'Líder de RevOps', code: 'KBS-RA-1', toolCode: 'ap_HS-1', toolName: 'HubSpot', accessLevelDesc: 'Administrador do HubSpot' },
+  { dept: 'RevOps', roleName: 'Analista de Automações', code: 'KBS-RA-2', toolCode: 'ap_CK-2', toolName: 'ClickUp', accessLevelDesc: 'Membro (Member)' },
+  { dept: 'RevOps', roleName: 'Analista de Automações', code: 'KBS-RA-2', toolCode: 'ap_HS-1', toolName: 'HubSpot', accessLevelDesc: 'Administrador do HubSpot' },
+  { dept: 'Produto 3C+', roleName: 'Tech Lead', code: 'KBS-PD-1', toolCode: 'ap_GL-1', toolName: 'GitLab', accessLevelDesc: 'Administrador do GitLab' },
+  { dept: 'Produto 3C+', roleName: 'Desenvolvedor Full Stack', code: 'KBS-PD-5', toolCode: 'ap_A3-3', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 3 da Aplicação da 3C' },
+  { dept: 'Produto 3C+', roleName: 'Desenvolvedor Full Stack', code: 'KBS-PD-5', toolCode: 'ap_GL-2', toolName: 'GitLab', accessLevelDesc: 'Regular do GitLab' },
+  { dept: 'Produto 3C+', roleName: 'Analista de Negócios (PO)', code: 'KBS-PD-6', toolCode: 'ap_A3-3', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 3 da Aplicação da 3C' },
+  { dept: 'Produto 3C+', roleName: 'UX Designer', code: 'KBS-PD-7', toolCode: 'ap_FG-1', toolName: 'Figma', accessLevelDesc: 'Nível Full do Figma' },
+  { dept: 'Pessoas e Performance', roleName: 'Analista de Pessoas e Performance', code: 'KBS-PC-1', toolCode: 'ap_CK-1', toolName: 'ClickUp', accessLevelDesc: 'Administrador (Admin) do ClickUp' },
+  { dept: 'Pessoas e Performance', roleName: 'Analista de Pessoas e Performance', code: 'KBS-PC-1', toolCode: 'ap_CV-2', toolName: 'Convenia', accessLevelDesc: 'Pessoas e Cultura do Convenia' },
+  { dept: 'Pessoas e Performance', roleName: 'Analista de Recrutamento e Seleção', code: 'KBS-PC-2', toolCode: 'ap_CK-2', toolName: 'ClickUp', accessLevelDesc: 'Membro (Member)' },
+  { dept: 'Comercial Contact', roleName: 'Closer', code: 'KBS-CO-7', toolCode: 'ap_A3-2', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 2 da Aplicação da 3C' },
+  { dept: 'Comercial Contact', roleName: 'Closer', code: 'KBS-CO-7', toolCode: 'ap_HS-3', toolName: 'HubSpot', accessLevelDesc: 'Closer/Analista do HubSpot' },
+  { dept: 'Comercial Contact', roleName: 'Head Comercial', code: 'KBS-CO-2', toolCode: 'ap_HS-2', toolName: 'HubSpot', accessLevelDesc: 'Líder Comercial do HubSpot' },
+  { dept: 'Atendimento ao Cliente', roleName: 'Líder de Atendimento ao Cliente', code: 'KBS-AT-1', toolCode: 'ap_A3-2', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 2 da Aplicação da 3C' },
+  { dept: 'Atendimento ao Cliente', roleName: 'Customer Success', code: 'KBS-AT-3', toolCode: 'ap_A3-2', toolName: 'Aplicação da 3C', accessLevelDesc: 'Administrador nível 2 da Aplicação da 3C' },
+  { dept: 'Marketing', roleName: 'Líder de Marketing', code: 'KBS-MK-1', toolCode: 'ap_HS-1', toolName: 'HubSpot', accessLevelDesc: 'Administrador do HubSpot' },
+  { dept: 'Operações', roleName: 'Gestor de Projetos', code: 'KBS-OP-1', toolCode: 'ap_CK-1', toolName: 'ClickUp', accessLevelDesc: 'Administrador (Admin) do ClickUp' },
+];

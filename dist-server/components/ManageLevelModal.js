@@ -4,7 +4,7 @@ exports.ManageLevelModal = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react"); // Added icons
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, showToast, customConfirm }) => {
     if (!isOpen)
         return null;
@@ -39,7 +39,7 @@ const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, showToas
     }, [levelName]);
     const loadUsers = async () => {
         try {
-            const res = await fetch(`${API_URL}/api/users`);
+            const res = await fetch(`${config_1.API_URL}/api/users`);
             if (res.ok)
                 setAllUsers(await res.json());
         }
@@ -54,7 +54,7 @@ const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, showToas
     const handleSaveInfo = async () => {
         setIsSaving(true);
         try {
-            const res = await fetch(`${API_URL}/api/tools/${tool.id}/level/${encodeURIComponent(levelName)}`, {
+            const res = await fetch(`${config_1.API_URL}/api/tools/${tool.id}/level/${encodeURIComponent(levelName)}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -80,7 +80,7 @@ const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, showToas
     };
     const addUser = async (userId) => {
         try {
-            const res = await fetch(`${API_URL}/api/tools/${tool.id}/access`, {
+            const res = await fetch(`${config_1.API_URL}/api/tools/${tool.id}/access`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, level: levelName })
@@ -106,7 +106,7 @@ const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, showToas
             confirmLabel: "Remover",
             onConfirm: async () => {
                 try {
-                    const res = await fetch(`${API_URL}/api/tools/${tool.id}/access/${userId}`, { method: 'DELETE' });
+                    const res = await fetch(`${config_1.API_URL}/api/tools/${tool.id}/access/${userId}`, { method: 'DELETE' });
                     if (res.ok) {
                         onUpdate();
                         showToast("Acesso removido.", "info");
@@ -132,7 +132,7 @@ const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, showToas
     const confirmDelete = async () => {
         setIsDeleteConfirmOpen(false);
         try {
-            const res = await fetch(`${API_URL}/api/tools/${tool.id}/level/${encodeURIComponent(levelName)}`, {
+            const res = await fetch(`${config_1.API_URL}/api/tools/${tool.id}/level/${encodeURIComponent(levelName)}`, {
                 method: 'DELETE'
             });
             if (res.ok) {

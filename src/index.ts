@@ -8,11 +8,12 @@ import path from 'path';
 import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
-import { getAllUsers, updateUser, deleteUser } from './controllers/userController';
+import { getAllUsers, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
 // NOVO: Importar o controlador de reset
 import { resetCatalog } from './controllers/adminController';
 import * as structureController from './controllers/structureController';
 import { syncStructureFromUsers } from './services/structureSync'; // Import sync service
+import { startPasswordReminderCron } from './jobs/passwordReminderCron';
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -24,6 +25,9 @@ const prisma = new PrismaClient();
 
 // Auto-sync structure on startup
 syncStructureFromUsers();
+
+// Cron: lembrete de troca de senha a cada 90 dias (DM Slack às 09:00)
+startPasswordReminderCron();
 
 // --- CORS ---
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
@@ -83,6 +87,7 @@ app.patch('/api/tools/:toolId/access/:userId', updateToolAccess); // Atualizar d
 // 3. Usuários
 app.get('/api/users', getAllUsers);
 app.put('/api/users/:id', updateUser);
+app.patch('/api/users/:id/password-changed', markPasswordChanged);
 app.delete('/api/users/:id', deleteUser);
 
 // ============================================================

@@ -86,7 +86,10 @@ model User {
 
   // MFA
   mfaCode       String?   
-  mfaExpiresAt  DateTime? 
+  mfaExpiresAt  DateTime?
+
+  // Lembrete de troca de senha (automação 90 dias)
+  lastPasswordChangeAt DateTime? @default(now())
 }
 
 model Tool {

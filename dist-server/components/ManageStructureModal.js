@@ -5,16 +5,19 @@ const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
 const RoleKitModal_1 = require("./RoleKitModal");
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, allUsers, showToast, customConfirm }) => {
-    const [departments, setDepartments] = (0, react_1.useState)([]);
-    const [roles, setRoles] = (0, react_1.useState)([]);
+    const [units, setUnits] = (0, react_1.useState)([]);
     const [isLoading, setIsLoading] = (0, react_1.useState)(false);
+    // Derived: lista plana para buscar dept/roles por id
+    const flatDepartments = units.flatMap(u => (u.departments || []).map(d => ({ ...d, unitId: d.unitId ?? u.id })));
+    const flatRoles = flatDepartments.flatMap(d => (d.roles || []));
     // Editing States
     const [viewMode, setViewMode] = (0, react_1.useState)('GLOBAL');
     const [currentDept, setCurrentDept] = (0, react_1.useState)(null);
-    // Global: Create Dept
+    // Global: Create Dept (precisa de unitId)
     const [newDeptName, setNewDeptName] = (0, react_1.useState)('');
+    const [newDeptUnitId, setNewDeptUnitId] = (0, react_1.useState)('');
     // Department View: Edit Name
     const [isEditingDeptName, setIsEditingDeptName] = (0, react_1.useState)(false);
     const [editedDeptName, setEditedDeptName] = (0, react_1.useState)('');
@@ -42,13 +45,14 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const res = await fetch(`${API_URL}/api/structure`);
+            const res = await fetch(`${config_1.API_URL}/api/structure`);
             if (res.ok) {
                 const data = await res.json();
-                setDepartments(data.departments);
-                setRoles(data.roles);
+                const unitList = data.units || [];
+                setUnits(unitList);
+                const depts = unitList.flatMap((u) => (u.departments || []).map((d) => ({ ...d, unitId: d.unitId ?? u.id })));
                 if (initialDepartment) {
-                    const dept = data.departments.find((d) => d.name === initialDepartment);
+                    const dept = depts.find((d) => d.name === initialDepartment);
                     if (dept) {
                         setCurrentDept(dept);
                         setViewMode('DEPARTMENT');
@@ -56,7 +60,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
                     }
                 }
                 else if (currentDept) {
-                    const refreshed = data.departments.find((d) => d.id === currentDept.id);
+                    const refreshed = depts.find((d) => d.id === currentDept.id);
                     if (refreshed)
                         setCurrentDept(refreshed);
                 }
@@ -69,16 +73,19 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
     };
     // --- ACTIONS ---
     const handleCreateDept = async () => {
-        if (!newDeptName)
+        if (!newDeptName || !newDeptUnitId) {
+            showToast("Selecione a unidade e informe o nome do departamento.", "warning");
             return;
+        }
         try {
-            const res = await fetch(`${API_URL}/api/structure/departments`, {
+            const res = await fetch(`${config_1.API_URL}/api/structure/departments`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newDeptName })
+                body: JSON.stringify({ name: newDeptName, unitId: newDeptUnitId })
             });
             if (res.ok) {
                 setNewDeptName('');
+                setNewDeptUnitId('');
                 loadData();
                 onUpdate();
                 showToast("Departamento criado!", "success");
@@ -96,7 +103,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
         if (!currentDept || !editedDeptName)
             return;
         try {
-            const res = await fetch(`${API_URL}/api/structure/departments/${currentDept.id}`, {
+            const res = await fetch(`${config_1.API_URL}/api/structure/departments/${currentDept.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: editedDeptName })
@@ -124,7 +131,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
             confirmLabel: "Sim, Excluir",
             onConfirm: async () => {
                 try {
-                    const res = await fetch(`${API_URL}/api/structure/departments/${id}`, { method: 'DELETE' });
+                    const res = await fetch(`${config_1.API_URL}/api/structure/departments/${id}`, { method: 'DELETE' });
                     if (res.ok) {
                         if (viewMode === 'DEPARTMENT') {
                             setViewMode('GLOBAL');
@@ -150,7 +157,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
         if (!newRoleName || !currentDept)
             return;
         try {
-            const res = await fetch(`${API_URL}/api/structure/roles`, {
+            const res = await fetch(`${config_1.API_URL}/api/structure/roles`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newRoleName, departmentId: currentDept.id })
@@ -174,7 +181,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
         if (!currentDept)
             return;
         try {
-            const res = await fetch(`${API_URL}/api/structure/roles/${id}`, {
+            const res = await fetch(`${config_1.API_URL}/api/structure/roles/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: editingRoleName, departmentId: currentDept.id })
@@ -202,7 +209,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
             confirmLabel: "Excluir",
             onConfirm: async () => {
                 try {
-                    const res = await fetch(`${API_URL}/api/structure/roles/${id}`, { method: 'DELETE' });
+                    const res = await fetch(`${config_1.API_URL}/api/structure/roles/${id}`, { method: 'DELETE' });
                     if (res.ok) {
                         loadData();
                         onUpdate();
@@ -227,7 +234,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
             const user = allUsers.find(u => u.id === userId);
             if (!user)
                 return;
-            const res = await fetch(`${API_URL}/api/users/${userId}`, {
+            const res = await fetch(`${config_1.API_URL}/api/users/${userId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -260,7 +267,7 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
             isDestructive: true,
             onConfirm: async () => {
                 try {
-                    const res = await fetch(`${API_URL}/api/users/${user.id}`, {
+                    const res = await fetch(`${config_1.API_URL}/api/users/${user.id}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -290,22 +297,22 @@ const ManageStructureModal = ({ isOpen, onClose, onUpdate, initialDepartment, al
         u.jobTitle !== targetRole?.name);
     if (!isOpen)
         return null;
-    return ((0, jsx_runtime_1.jsx)("div", { className: "modal-overlay", children: (0, jsx_runtime_1.jsxs)("div", { className: "modal-content", style: { maxWidth: '800px', width: '95%', height: '85vh', display: 'flex', flexDirection: 'column' }, children: [(0, jsx_runtime_1.jsxs)("div", { className: "modal-header", children: [(0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Building2, { size: 24, color: "#a78bfa" }), (0, jsx_runtime_1.jsx)("h2", { style: { margin: 0 }, children: viewMode === 'DEPARTMENT' && currentDept ? 'Gerenciar Departamento' : 'Estrutura Organizacional' })] }), (0, jsx_runtime_1.jsx)("button", { onClick: onClose, className: "btn-icon", children: (0, jsx_runtime_1.jsx)(lucide_react_1.X, { size: 20 }) })] }), (0, jsx_runtime_1.jsx)("div", { className: "modal-body", style: { flex: 1, padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: viewMode === 'GLOBAL' ? ((0, jsx_runtime_1.jsxs)("div", { style: { padding: 24, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: [(0, jsx_runtime_1.jsx)("h4", { style: { color: '#d4d4d8', marginTop: 0, marginBottom: 16 }, children: "Departamentos" }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8, marginBottom: 20, flexShrink: 0 }, children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", placeholder: "Novo Departamento...", value: newDeptName, onChange: e => setNewDeptName(e.target.value), style: { flex: 1 } }), (0, jsx_runtime_1.jsxs)("button", { className: "btn-verify", style: { margin: 0, width: 'auto' }, onClick: handleCreateDept, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Plus, { size: 16 }), " Criar"] })] }), (0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', paddingRight: 8, flex: 1 }, children: departments.map(d => ((0, jsx_runtime_1.jsxs)("div", { onClick: () => {
-                                        setCurrentDept(d);
-                                        setViewMode('DEPARTMENT');
-                                        setEditedDeptName(d.name);
-                                    }, className: "card-base hover-card", style: {
-                                        padding: '16px 20px',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                        border: '1px solid #27272a',
-                                        position: 'relative',
-                                        minHeight: '56px'
-                                    }, children: [(0, jsx_runtime_1.jsx)("span", { style: { fontSize: 16, fontWeight: 500, color: 'white', textAlign: 'center' }, children: d.name }), (0, jsx_runtime_1.jsx)(lucide_react_1.ChevronRight, { size: 20, color: "#52525b", style: { position: 'absolute', right: 16 } })] }, d.id))) })] })) : (
+    return ((0, jsx_runtime_1.jsx)("div", { className: "modal-overlay", children: (0, jsx_runtime_1.jsxs)("div", { className: "modal-content", style: { maxWidth: '800px', width: '95%', height: '85vh', display: 'flex', flexDirection: 'column' }, children: [(0, jsx_runtime_1.jsxs)("div", { className: "modal-header", children: [(0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Building2, { size: 24, color: "#a78bfa" }), (0, jsx_runtime_1.jsx)("h2", { style: { margin: 0 }, children: viewMode === 'DEPARTMENT' && currentDept ? 'Gerenciar Departamento' : 'Estrutura Organizacional' })] }), (0, jsx_runtime_1.jsx)("button", { onClick: onClose, className: "btn-icon", children: (0, jsx_runtime_1.jsx)(lucide_react_1.X, { size: 20 }) })] }), (0, jsx_runtime_1.jsx)("div", { className: "modal-body", style: { flex: 1, padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: viewMode === 'GLOBAL' ? ((0, jsx_runtime_1.jsxs)("div", { style: { padding: 24, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: [(0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8, marginBottom: 20, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }, children: [(0, jsx_runtime_1.jsxs)("select", { className: "form-input", value: newDeptUnitId, onChange: e => setNewDeptUnitId(e.target.value), style: { minWidth: 160 }, children: [(0, jsx_runtime_1.jsx)("option", { value: "", children: "Unidade" }), units.map(u => ((0, jsx_runtime_1.jsx)("option", { value: u.id, children: u.name }, u.id)))] }), (0, jsx_runtime_1.jsx)("input", { className: "form-input", placeholder: "Novo Departamento...", value: newDeptName, onChange: e => setNewDeptName(e.target.value), style: { flex: 1, minWidth: 180 } }), (0, jsx_runtime_1.jsxs)("button", { className: "btn-verify", style: { margin: 0, width: 'auto' }, onClick: handleCreateDept, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Plus, { size: 16 }), " Criar"] })] }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', paddingRight: 8, flex: 1 }, children: [units.map(unit => ((0, jsx_runtime_1.jsxs)("div", { style: { flexShrink: 0 }, children: [(0, jsx_runtime_1.jsxs)("div", { style: { fontSize: 12, color: '#8b5cf6', fontWeight: 700, textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }, children: ["UNIDADE: ", unit.name] }), (0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 }, children: (unit.departments || []).length === 0 ? ((0, jsx_runtime_1.jsx)("div", { style: { padding: 12, color: '#52525b', fontSize: 13, fontStyle: 'italic', border: '1px dashed #27272a', borderRadius: 8 }, children: "Nenhum departamento nesta unidade." })) : ((unit.departments || []).map(d => ((0, jsx_runtime_1.jsxs)("div", { onClick: () => {
+                                                        setCurrentDept({ ...d, unitId: d.unitId ?? unit.id });
+                                                        setViewMode('DEPARTMENT');
+                                                        setEditedDeptName(d.name);
+                                                    }, className: "card-base hover-card", style: {
+                                                        padding: '16px 20px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        justifyContent: 'center',
+                                                        alignItems: 'center',
+                                                        border: '1px solid #27272a',
+                                                        position: 'relative',
+                                                        minHeight: '56px'
+                                                    }, children: [(0, jsx_runtime_1.jsx)("span", { style: { fontSize: 16, fontWeight: 500, color: 'white', textAlign: 'center' }, children: d.name }), (0, jsx_runtime_1.jsx)(lucide_react_1.ChevronRight, { size: 20, color: "#52525b", style: { position: 'absolute', right: 16 } })] }, d.id)))) })] }, unit.id))), units.length === 0 && !isLoading && ((0, jsx_runtime_1.jsx)("div", { style: { padding: 24, textAlign: 'center', color: '#71717a', fontSize: 14 }, children: "Nenhuma unidade carregada. Execute seed_units no deploy." }))] })] })) : (
                     // DEPARTMENT VIEW
-                    currentDept && ((0, jsx_runtime_1.jsxs)("div", { style: { padding: 24, flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }, children: [(0, jsx_runtime_1.jsxs)("button", { onClick: () => { setViewMode('GLOBAL'); setCurrentDept(null); }, style: { background: 'transparent', border: 'none', color: '#a1a1aa', display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer', width: 'fit-content' }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.ChevronDown, { size: 14, style: { transform: 'rotate(90deg)' } }), " Voltar para Lista"] }), (0, jsx_runtime_1.jsxs)("div", { style: { background: '#18181b', padding: 20, borderRadius: 8, border: '1px solid #27272a' }, children: [(0, jsx_runtime_1.jsx)("div", { style: { fontSize: 12, color: '#71717a', textTransform: 'uppercase', marginBottom: 8, fontWeight: 700 }, children: "Nome do Departamento" }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 10, alignItems: 'center' }, children: [isEditingDeptName ? ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", value: editedDeptName, onChange: e => setEditedDeptName(e.target.value), style: { flex: 1, fontSize: 18, fontWeight: 600 }, autoFocus: true }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: handleUpdateDeptName, children: (0, jsx_runtime_1.jsx)(lucide_react_1.Check, { size: 20, color: "#4ade80" }) })] })) : ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsx)("h1", { style: { margin: 0, fontSize: 24, color: 'white' }, children: currentDept.name }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => setIsEditingDeptName(true), children: (0, jsx_runtime_1.jsx)(lucide_react_1.Edit2, { size: 16, color: "#71717a" }) })] })), (0, jsx_runtime_1.jsx)("div", { style: { flex: 1 } }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => handleDeleteDept(currentDept.id), title: "Excluir Departamento", children: (0, jsx_runtime_1.jsx)(lucide_react_1.Trash2, { size: 18, color: "#b91c1c" }) })] })] }), (0, jsx_runtime_1.jsxs)("div", { children: [(0, jsx_runtime_1.jsx)("h3", { style: { color: '#e4e4e7', marginBottom: 15 }, children: "Cargos e Colaboradores" }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8, marginBottom: 20 }, children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", placeholder: "Novo Cargo...", value: newRoleName, onChange: e => setNewRoleName(e.target.value), style: { flex: 1 } }), (0, jsx_runtime_1.jsxs)("button", { className: "btn-mini", onClick: handleCreateRole, style: { background: '#27272a', border: '1px solid #3f3f46' }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Plus, { size: 14 }), " Adicionar Cargo"] })] }), (0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '400px', overflowY: 'auto', paddingRight: 8 }, children: roles.filter(r => r.departmentId === currentDept.id).map(role => {
+                    currentDept && ((0, jsx_runtime_1.jsxs)("div", { style: { padding: 24, flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }, children: [(0, jsx_runtime_1.jsxs)("button", { onClick: () => { setViewMode('GLOBAL'); setCurrentDept(null); }, style: { background: 'transparent', border: 'none', color: '#a1a1aa', display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer', width: 'fit-content' }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.ChevronDown, { size: 14, style: { transform: 'rotate(90deg)' } }), " Voltar para Lista"] }), (0, jsx_runtime_1.jsxs)("div", { style: { background: '#18181b', padding: 20, borderRadius: 8, border: '1px solid #27272a' }, children: [(0, jsx_runtime_1.jsx)("div", { style: { fontSize: 12, color: '#71717a', textTransform: 'uppercase', marginBottom: 8, fontWeight: 700 }, children: "Nome do Departamento" }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 10, alignItems: 'center' }, children: [isEditingDeptName ? ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", value: editedDeptName, onChange: e => setEditedDeptName(e.target.value), style: { flex: 1, fontSize: 18, fontWeight: 600 }, autoFocus: true }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: handleUpdateDeptName, children: (0, jsx_runtime_1.jsx)(lucide_react_1.Check, { size: 20, color: "#4ade80" }) })] })) : ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsx)("h1", { style: { margin: 0, fontSize: 24, color: 'white' }, children: currentDept.name }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => setIsEditingDeptName(true), children: (0, jsx_runtime_1.jsx)(lucide_react_1.Edit2, { size: 16, color: "#71717a" }) })] })), (0, jsx_runtime_1.jsx)("div", { style: { flex: 1 } }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => handleDeleteDept(currentDept.id), title: "Excluir Departamento", children: (0, jsx_runtime_1.jsx)(lucide_react_1.Trash2, { size: 18, color: "#b91c1c" }) })] })] }), (0, jsx_runtime_1.jsxs)("div", { children: [(0, jsx_runtime_1.jsx)("h3", { style: { color: '#e4e4e7', marginBottom: 15 }, children: "Cargos e Colaboradores" }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8, marginBottom: 20 }, children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", placeholder: "Novo Cargo...", value: newRoleName, onChange: e => setNewRoleName(e.target.value), style: { flex: 1 } }), (0, jsx_runtime_1.jsxs)("button", { className: "btn-mini", onClick: handleCreateRole, style: { background: '#27272a', border: '1px solid #3f3f46' }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Plus, { size: 14 }), " Adicionar Cargo"] })] }), (0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '400px', overflowY: 'auto', paddingRight: 8 }, children: flatRoles.filter(r => r.departmentId === currentDept.id).map(role => {
                                             const roleUsers = allUsers.filter(u => u.jobTitle === role.name && u.department === currentDept.name);
                                             return ((0, jsx_runtime_1.jsxs)("div", { style: { border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden', flexShrink: 0, display: 'flex', flexDirection: 'column' }, children: [(0, jsx_runtime_1.jsxs)("div", { style: { background: '#27272a', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: [editingRoleId === role.id ? ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8, flex: 1 }, children: [(0, jsx_runtime_1.jsx)("input", { className: "form-input", value: editingRoleName, onChange: e => setEditingRoleName(e.target.value), style: { height: 30, fontSize: 13 } }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => handleUpdateRole(role.id), children: (0, jsx_runtime_1.jsx)(lucide_react_1.Check, { size: 14, color: "#4ade80" }) })] })) : ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 8 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Briefcase, { size: 14, color: "#a1a1aa" }), (0, jsx_runtime_1.jsx)("span", { style: { fontWeight: 600, color: '#e4e4e7', fontSize: 14 }, children: role.name }), (0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => { setEditingRoleId(role.id); setEditingRoleName(role.name); }, title: "Editar nome do cargo", children: (0, jsx_runtime_1.jsx)(lucide_react_1.Edit2, { size: 12, color: "#52525b" }) })] })), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: 8, alignItems: 'center' }, children: [(0, jsx_runtime_1.jsx)("button", { className: "btn-icon", onClick: () => setRoleForKit({ id: role.id, name: role.name, departmentName: currentDept.name }), title: "Ver/Editar Kit B\u00E1sico do cargo", children: (0, jsx_runtime_1.jsx)(lucide_react_1.Package, { size: 14, color: "#a78bfa" }) }), (0, jsx_runtime_1.jsxs)("button", { className: "btn-mini", onClick: () => {
                                                                             setTargetRole(role);

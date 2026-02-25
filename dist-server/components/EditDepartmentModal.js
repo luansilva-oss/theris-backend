@@ -4,7 +4,7 @@ exports.EditDepartmentModal = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const EditDepartmentModal = ({ isOpen, onClose, department, onUpdated, showToast }) => {
     const [name, setName] = (0, react_1.useState)('');
     const [isSaving, setIsSaving] = (0, react_1.useState)(false);
@@ -20,7 +20,7 @@ const EditDepartmentModal = ({ isOpen, onClose, department, onUpdated, showToast
             return showToast("Nome é obrigatório.", "warning");
         setIsSaving(true);
         try {
-            const res = await fetch(`${API_URL}/api/structure/departments/${department.id}`, {
+            const res = await fetch(`${config_1.API_URL}/api/structure/departments/${department.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name })

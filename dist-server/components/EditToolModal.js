@@ -4,7 +4,7 @@ exports.EditToolModal = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const EditToolModal = ({ isOpen, onClose, tool, onUpdate, showToast }) => {
     if (!isOpen)
         return null;
@@ -28,8 +28,8 @@ const EditToolModal = ({ isOpen, onClose, tool, onUpdate, showToast }) => {
     const loadAuxData = async () => {
         try {
             const [resGroups, resUsers] = await Promise.all([
-                fetch(`${API_URL}/api/tool-groups`),
-                fetch(`${API_URL}/api/users`)
+                fetch(`${config_1.API_URL}/api/tool-groups`),
+                fetch(`${config_1.API_URL}/api/users`)
             ]);
             if (resGroups.ok)
                 setAvailableGroups(await resGroups.json());
@@ -43,7 +43,7 @@ const EditToolModal = ({ isOpen, onClose, tool, onUpdate, showToast }) => {
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            const res = await fetch(`${API_URL}/api/tools/${tool.id}`, {
+            const res = await fetch(`${config_1.API_URL}/api/tools/${tool.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -74,7 +74,7 @@ const EditToolModal = ({ isOpen, onClose, tool, onUpdate, showToast }) => {
         if (!newGroupName)
             return;
         try {
-            const res = await fetch(`${API_URL}/api/tool-groups`, {
+            const res = await fetch(`${config_1.API_URL}/api/tool-groups`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newGroupName })

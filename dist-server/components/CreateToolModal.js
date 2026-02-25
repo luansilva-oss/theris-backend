@@ -4,7 +4,7 @@ exports.CreateToolModal = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const CreateToolModal = ({ isOpen, onClose, onCreated, showToast }) => {
     if (!isOpen)
         return null;
@@ -22,10 +22,10 @@ const CreateToolModal = ({ isOpen, onClose, onCreated, showToast }) => {
     const [newGroupMode, setNewGroupMode] = (0, react_1.useState)(false);
     const [newGroupName, setNewGroupName] = (0, react_1.useState)('');
     (0, react_1.useEffect)(() => {
-        fetch(`${API_URL}/api/tool-groups`)
+        fetch(`${config_1.API_URL}/api/tool-groups`)
             .then(res => res.json())
             .then(setGroups);
-        fetch(`${API_URL}/api/users`)
+        fetch(`${config_1.API_URL}/api/users`)
             .then(res => res.json())
             .then(setUsers);
     }, []);
@@ -34,7 +34,7 @@ const CreateToolModal = ({ isOpen, onClose, onCreated, showToast }) => {
             return showToast("Nome é obrigatório.", "warning");
         setIsSaving(true);
         try {
-            const res = await fetch(`${API_URL}/api/tools`, {
+            const res = await fetch(`${config_1.API_URL}/api/tools`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -74,7 +74,7 @@ const CreateToolModal = ({ isOpen, onClose, onCreated, showToast }) => {
         if (!newGroupName.trim())
             return;
         try {
-            const res = await fetch(`${API_URL}/api/tool-groups`, {
+            const res = await fetch(`${config_1.API_URL}/api/tool-groups`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newGroupName })

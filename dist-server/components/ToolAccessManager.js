@@ -37,7 +37,7 @@ exports.ToolAccessManager = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = __importStar(require("react"));
 const lucide_react_1 = require("lucide-react");
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+const config_1 = require("../config");
 const ToolAccessManager = ({ tool, tools, allUsers, onSelectTool, onUpdate, showToast, customConfirm }) => {
     const [accessLevels, setAccessLevels] = (0, react_1.useState)([]);
     const [newLevelInput, setNewLevelInput] = (0, react_1.useState)('');
@@ -58,7 +58,7 @@ const ToolAccessManager = ({ tool, tools, allUsers, onSelectTool, onUpdate, show
     const saveLevels = async () => {
         setIsSavingLevels(true);
         try {
-            const res = await fetch(`${API_URL}/api/tools/${tool.id}`, {
+            const res = await fetch(`${config_1.API_URL}/api/tools/${tool.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ availableAccessLevels: accessLevels })
@@ -79,7 +79,7 @@ const ToolAccessManager = ({ tool, tools, allUsers, onSelectTool, onUpdate, show
     };
     const addUser = async (userId, level) => {
         try {
-            const res = await fetch(`${API_URL}/api/tools/${tool.id}/access`, {
+            const res = await fetch(`${config_1.API_URL}/api/tools/${tool.id}/access`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, level })
@@ -108,7 +108,7 @@ const ToolAccessManager = ({ tool, tools, allUsers, onSelectTool, onUpdate, show
             confirmLabel: 'Remover',
             onConfirm: async () => {
                 try {
-                    const res = await fetch(`${API_URL}/api/tools/${tool.id}/access/${userId}`, { method: 'DELETE' });
+                    const res = await fetch(`${config_1.API_URL}/api/tools/${tool.id}/access/${userId}`, { method: 'DELETE' });
                     if (res.ok) {
                         showToast('Acesso removido.', 'info');
                         onUpdate();

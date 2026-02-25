@@ -86,7 +86,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
         <div className="personnel-list-view" style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: 24 }}>
             {unitList.length === 0 ? (
                 <div style={{ padding: 24, textAlign: 'center', background: '#18181b', borderRadius: 12, color: '#a1a1aa', fontSize: 14, lineHeight: 1.6 }}>
-                    Estrutura não carregada. No deploy são executados <strong>seed_units</strong> e <strong>seed_gestao_por_unidade</strong>; após isso, aqui aparecerão as 6 unidades (3C+, Evolux, Dizify, Instituto 3C, FiqOn, Dizparos) com departamentos, cargos e colaboradores.
+                    Estrutura não carregada. Execute o seed mestre (<strong>npm run seed:master</strong>); após isso, aqui aparecerão as 6 unidades (3C+, Evolux, Dizify, Instituto 3C, FiqOn, Dizparos) com departamentos, cargos, colaboradores e ferramentas KBS por cargo.
                 </div>
             ) : unitList.map(({ name: unitName, departments: unitDepts }) => {
                 const usersInUnit = users.filter(u => matchUserToUnit(u, unitName));
@@ -153,10 +153,12 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
 
                                             {expandedDepts[deptKey] && (
                                                 <div style={{ padding: '8px 12px 12px 24px', background: '#09090b' }}>
-                                                    {jobTitles.map((jobTitle: string) => {
+                                                    {(dept.roles && dept.roles.length > 0 ? dept.roles : jobTitles.map((jt: string) => ({ name: jt, kitItems: [] as unknown[] }))).map((roleOrPlaceholder: { name: string; code?: string | null; kitItems?: unknown[] }) => {
+                                                        const jobTitle = roleOrPlaceholder.name;
                                                         const roleUsers = getUsersByUnitDeptJob(unitName, deptName, jobTitle);
                                                         const roleEntity = findRole(deptName, jobTitle);
                                                         const roleKey = `${deptKey}-${jobTitle}`;
+                                                        const kitItems = (roleOrPlaceholder.kitItems || []) as { toolCode?: string; toolName?: string; accessLevelDesc?: string }[];
                                                         return (
                                                             <div key={roleKey} style={{ marginBottom: 8, border: '1px solid #27272a', borderRadius: '8px', overflow: 'hidden' }}>
                                                                 <div
@@ -174,6 +176,9 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                                         <Briefcase size={16} color="#71717a" />
                                                                         <span style={{ fontWeight: 500, color: '#e4e4e7', fontSize: '13px' }}>{jobTitle}</span>
+                                                                        {roleOrPlaceholder.code && (
+                                                                            <span style={{ fontSize: '11px', color: '#71717a', fontWeight: 500 }}>{roleOrPlaceholder.code}</span>
+                                                                        )}
                                                                     </div>
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                                         {onEditRole && roleEntity && (
@@ -220,6 +225,18 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                                     )}
                                                                                 </div>
                                                                             ))
+                                                                        )}
+                                                                        {kitItems.length > 0 && (
+                                                                            <div style={{ padding: '10px 14px 10px 38px', borderTop: '1px solid #1f1f22' }}>
+                                                                                <div style={{ fontSize: '11px', color: '#71717a', fontWeight: 600, marginBottom: 6 }}>Ferramentas KBS</div>
+                                                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                                                                    {kitItems.map((item, idx) => (
+                                                                                        <span key={idx} style={{ fontSize: '11px', color: '#a1a1aa', background: '#18181b', padding: '4px 8px', borderRadius: 6 }}>
+                                                                                            {item.toolName || item.toolCode} {item.accessLevelDesc && <span style={{ color: '#52525b' }}>({item.accessLevelDesc})</span>}
+                                                                                        </span>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
                                                                         )}
                                                                     </div>
                                                                 )}
