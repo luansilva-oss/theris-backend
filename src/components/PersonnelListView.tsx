@@ -154,10 +154,10 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
 
                                             {expandedDepts[deptKey] && (
                                                 <div style={{ padding: '8px 12px 12px 24px', background: '#09090b' }}>
-                                                    {(dept.roles && dept.roles.length > 0 ? dept.roles : jobTitles.map((jt: string) => ({ name: jt, kitItems: [] as unknown[] }))).map((roleOrPlaceholder: { name: string; code?: string | null; kitItems?: unknown[] }) => {
+                                                    {(dept.roles && dept.roles.length > 0 ? dept.roles : jobTitles.map((jt: string) => ({ name: jt, kitItems: [] as unknown[] }))).map((roleOrPlaceholder: { id?: string; name: string; code?: string | null; departmentId?: string; department?: { name: string }; kitItems?: unknown[] }) => {
                                                         const jobTitle = roleOrPlaceholder.name;
                                                         const roleUsers = getUsersByUnitDeptJob(unitName, deptName, jobTitle);
-                                                        const roleEntity = findRole(deptName, jobTitle);
+                                                        const roleEntity = findRole(deptName, jobTitle) ?? (roleOrPlaceholder.id ? (roleOrPlaceholder as Role) : null);
                                                         const roleKey = `${deptKey}-${jobTitle}`;
                                                         const kitItems = (roleOrPlaceholder.kitItems || []) as { toolCode?: string; toolName?: string; accessLevelDesc?: string }[];
                                                         return (
@@ -181,12 +181,12 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                             <span style={{ fontSize: '11px', color: '#71717a', fontWeight: 500 }}>{roleOrPlaceholder.code}</span>
                                                                         )}
                                                                     </div>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
                                                                         {onEditRole && roleEntity && (
-                                                                            <button onClick={(e) => { e.stopPropagation(); onEditRole(roleEntity); }} title="Editar cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }}><Pencil size={14} color="#a78bfa" /></button>
+                                                                            <button onClick={(e) => { e.stopPropagation(); onEditRole(roleEntity); }} title="Editar cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.8 }}><Pencil size={14} color="#a78bfa" /></button>
                                                                         )}
                                                                         {onDeleteRole && roleEntity && (
-                                                                            <button onClick={(e) => { e.stopPropagation(); onDeleteRole(roleEntity); }} title="Excluir cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }}><Trash2 size={14} color="#ef4444" /></button>
+                                                                            <button onClick={(e) => { e.stopPropagation(); onDeleteRole(roleEntity); }} title="Excluir cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.8 }}><Trash2 size={14} color="#ef4444" /></button>
                                                                         )}
                                                                         {expandedRoles[roleKey] ? <ChevronDown size={16} color="#52525b" /> : <ChevronRight size={16} color="#52525b" />}
                                                                     </div>
