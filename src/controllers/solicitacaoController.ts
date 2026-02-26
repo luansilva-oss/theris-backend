@@ -5,6 +5,20 @@ import { sendSlackNotification } from '../services/slackService';
 
 const prisma = new PrismaClient();
 
+// Bypass RH: solicitante Renata Czapiewski Silva pula gestor e vai direto para SI
+const RH_BYPASS_REQUESTER_NAME = 'Renata Czapiewski Silva';
+function isRhBypassRequester(name: string | null | undefined): boolean {
+  const n = (name || '').trim();
+  return n === RH_BYPASS_REQUESTER_NAME || n.toLowerCase().includes('renata czapiewski');
+}
+
+// Aprovadores SI autorizados para solicitações com bypass (Renata): Luan Matheus, Allan Von Stain, Vladimir Sesar.
+// Defina no .env: SI_BYPASS_APPROVER_EMAILS=email1@empresa.com,email2@empresa.com,email3@empresa.com
+const SI_BYPASS_APPROVER_EMAILS = (process.env.SI_BYPASS_APPROVER_EMAILS || '')
+  .split(',')
+  .map((s: string) => s.trim().toLowerCase())
+  .filter(Boolean);
+
 // ============================================================
 // AUXILIAR: Encontrar Aprovador da Ferramenta (Lógica Avançada)
 // ============================================================
@@ -76,11 +90,27 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       currentApproverRole = 'SI_ANALYST';
       approverId = null;
     }
-    // ROTA B: GESTÃO DE PESSOAS / DEPUTY
+    // ROTA B: GESTÃO DE PESSOAS / DEPUTY — gestor aprova; exceção: Renata Czapiewski Silva vai direto para SI
     else if (['DEPUTY_DESIGNATION', 'CHANGE_ROLE', 'HIRING', 'FIRING', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'].includes(safeType)) {
-      status = 'PENDENTE_SI';
-      currentApproverRole = 'SI_ANALYST';
-      approverId = null;
+      const requester = await prisma.user.findUnique({
+        where: { id: safeRequesterId },
+        include: { manager: true }
+      });
+      if (isRhBypassRequester(requester?.name)) {
+        status = 'PENDENTE_SI';
+        currentApproverRole = 'SI_ANALYST';
+        approverId = null;
+        detailsObj = { ...detailsObj, bypassGestor: true };
+        detailsString = JSON.stringify(detailsObj);
+      } else if (requester?.managerId) {
+        approverId = requester.managerId;
+        status = 'PENDENTE_GESTOR';
+        currentApproverRole = 'MANAGER';
+      } else {
+        status = 'PENDENTE_SI';
+        currentApproverRole = 'SI_ANALYST';
+        approverId = null;
+      }
     }
     // ROTA C: GENÉRICA
     else {
@@ -163,6 +193,24 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     // REGRA DE NEGÓCIO: BLOQUEAR AUTO-APROVAÇÃO
     if (approverId === request.requesterId) {
       return res.status(403).json({ error: 'Você não pode aprovar ou reprovar sua própria solicitação.' });
+    }
+
+    // REGRA BYPASS RH: só Luan, Allan ou Vladimir podem aprovar solicitações com bypassGestor (Renata)
+    let detailsParsed: any = {};
+    try {
+      detailsParsed = JSON.parse(request.details || '{}');
+    } catch (_) {}
+    if (detailsParsed.bypassGestor === true && request.status === 'PENDENTE_SI' && SI_BYPASS_APPROVER_EMAILS.length > 0) {
+      const allowedApprovers = await prisma.user.findMany({
+        where: { email: { in: SI_BYPASS_APPROVER_EMAILS } },
+        select: { id: true }
+      });
+      const allowedIds = new Set(allowedApprovers.map((u) => u.id));
+      if (!allowedIds.has(approverId)) {
+        return res.status(403).json({
+          error: 'Apenas aprovadores autorizados de SI (Luan Matheus, Allan Von Stain ou Vladimir Sesar) podem aprovar esta solicitação.'
+        });
+      }
     }
 
     // Se for reprovado, encerra imediatamente

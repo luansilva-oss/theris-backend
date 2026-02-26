@@ -101,6 +101,21 @@ function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 
     return { category: 'Infra', categoryColor: '#fbbf24', title, lines };
   }
 
+  // Indicar Deputy do /acessos: categoria Acessos, título e linhas específicos
+  if (r.type === 'DEPUTY_DESIGNATION' && d.tool) {
+    const toolName = (d.tool as string) || '—';
+    const title = `Indicar Deputy: ${toolName}`;
+    const lines: { label: string; value: string }[] = [];
+    const subName = (d.substituteName as string) || (d.substitute as string) || '';
+    const subEmail = (d.substituteEmail as string) || '';
+    const subDisplay = subName && subEmail ? `${subName} (${subEmail})` : subName || subEmail || '—';
+    lines.push({ label: 'Substituto', value: subDisplay });
+    lines.push({ label: 'Ferramenta', value: toolName });
+    const justification = (d.justification as string) || r.justification;
+    if (justification) lines.push({ label: 'Justificativa', value: justification });
+    return { category: 'Acessos', categoryColor: '#a78bfa', title, lines };
+  }
+
   // Pessoas: ação de RH, colaborador e mudança
   if (PEOPLE_REQUEST_TYPES.includes(r.type)) {
     const actionLabels: Record<string, string> = {
@@ -1413,7 +1428,8 @@ export default function App() {
                           if (d.target) parts.push(`Nível desejado: ${d.target}`);
                           if (d.beneficiary) parts.push(`Beneficiário: ${d.beneficiary}`);
                           if (d.duration != null && d.unit) parts.push(`Duração: ${d.duration} ${d.unit}`);
-                          if (d.substitute) parts.push(`Substituto: ${d.substitute}`);
+                          if (d.substituteName || d.substituteEmail) parts.push(`Substituto: ${[d.substituteName, d.substituteEmail].filter(Boolean).join(' · ')}`);
+                          else if (d.substitute) parts.push(`Substituto: ${d.substitute}`);
                           if (d.obs) parts.push(`Obs: ${d.obs}`);
                           if (d.requestTypeLabel || d.requestType) parts.push(`Tipo: ${d.requestTypeLabel || d.requestType}`);
                           if (d.description) parts.push(`Descrição: ${d.description}`);

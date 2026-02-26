@@ -767,6 +767,14 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
 // 3. PROCESSAMENTO E BANCO (HANDLERS DE VIEW)
 // ============================================================
 
+const PEOPLE_REQUEST_TYPES_SLACK = ['CHANGE_ROLE', 'HIRING', 'FIRING'];
+const RH_BYPASS_REQUESTER_NAME = 'Renata Czapiewski Silva';
+
+function isRhBypassRequester(name: string | null | undefined): boolean {
+  const n = (name || '').trim();
+  return n === RH_BYPASS_REQUESTER_NAME || n.toLowerCase().includes('renata czapiewski');
+}
+
 async function saveRequest(body: any, client: any, dbType: string, details: any, reason: string, msgSuccess: string, isExtraordinary = false) {
   try {
     const slackId = body.user.id;
@@ -792,23 +800,49 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
 
     if (!requesterId) throw new Error("Usuário não encontrado no sistema Theris.");
 
-    // Inclui Slack ID e e-mail do solicitante nos detalhes (auditoria e exibição no painel)
-    const detailsWithMeta = {
+    let status = 'PENDENTE_SI';
+    let currentApproverRole: string | null = 'SI_ANALYST';
+    let approverId: string | null = null;
+    let detailsWithMeta: Record<string, unknown> = {
       ...details,
       slackRequesterId: slackId,
       requesterEmail: requesterEmail ?? undefined,
       source: 'slack'
     };
 
-    // Salva no Banco (Status PENDENTE_SI para cair pra segurança)
+    // Regra de bypass /pessoas: Renata Czapiewski Silva pula gestor e vai direto para SI
+    if (PEOPLE_REQUEST_TYPES_SLACK.includes(dbType)) {
+      const requester = await prisma.user.findUnique({
+        where: { id: requesterId },
+        include: { manager: true }
+      });
+      if (isRhBypassRequester(requester?.name)) {
+        status = 'PENDENTE_SI';
+        currentApproverRole = 'SI_ANALYST';
+        approverId = null;
+        detailsWithMeta = { ...detailsWithMeta, bypassGestor: true };
+      } else if (requester?.managerId) {
+        status = 'PENDENTE_GESTOR';
+        currentApproverRole = 'MANAGER';
+        approverId = requester.managerId;
+      }
+      // se não tem gestor, mantém PENDENTE_SI
+    }
+
+    // Inclui Slack ID e e-mail do solicitante nos detalhes (auditoria e exibição no painel)
+    detailsWithMeta.slackRequesterId = slackId;
+    detailsWithMeta.requesterEmail = requesterEmail ?? undefined;
+    detailsWithMeta.source = 'slack';
+
     await prisma.request.create({
       data: {
         requesterId,
         type: dbType,
         details: JSON.stringify(detailsWithMeta),
         justification: reason || 'Via Slack',
-        status: 'PENDENTE_SI',
-        currentApproverRole: 'SI_ANALYST',
+        status,
+        currentApproverRole,
+        approverId,
         isExtraordinary
       }
     });
@@ -982,7 +1016,9 @@ slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
       tool: toolName,
       substituteName: deputyName,
       substituteEmail: deputyEmail,
-      substitute: deputyName || deputyEmail
+      substitute: deputyName || deputyEmail,
+      justification: reason || undefined,
+      source: 'acessos'
     };
     await saveRequest(body, client, 'DEPUTY_DESIGNATION', details, reason, `✅ Indicação de substituto (Deputy) para *${toolName}* enviada para aprovação do time de S.I.`);
   }
