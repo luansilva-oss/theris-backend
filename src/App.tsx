@@ -1172,18 +1172,12 @@ export default function App() {
                               <p className="action-tile-requester">Solicitante: {r.requester?.name}</p>
                             </div>
                             <div className="action-tile-buttons">
-                              {r.type === 'INFRA_SUPPORT' ? (
-                                <>
-                                  <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Concluído</button>
-                                  <button className="btn-mini btn-pendente" onClick={() => handleOpenApprove(r.id, 'PENDENTE')}>Pendente</button>
-                                  <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusado</button>
-                                </>
-                              ) : (
-                                <>
-                                  <button className="btn-mini approve" onClick={() => handleOpenApprove(r.id, 'APROVAR')}>Aprovar</button>
-                                  <button className="btn-mini reject" onClick={() => handleOpenApprove(r.id, 'REPROVAR')}>Recusar</button>
-                                </>
-                              )}
+                              <button
+                                className="btn-mini approve"
+                                onClick={() => { setActiveTab('TICKETS'); setSelectedChamadoId(r.id); }}
+                              >
+                                Acessar chamado
+                              </button>
                             </div>
                           </div>
                         );
@@ -2042,13 +2036,14 @@ export default function App() {
                               </select>
                               {chamadoCommentKind === 'SCHEDULED_TASK' && (
                                 <div style={{ marginBottom: 8 }}>
-                                  <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Data e hora da tarefa</label>
+                                  <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Data e horário planejado</label>
                                   <input
                                     type="datetime-local"
                                     className="input-base"
                                     style={{ width: '100%', background: '#18181b', fontSize: 12 }}
                                     value={chamadoScheduledAt}
                                     onChange={e => setChamadoScheduledAt(e.target.value)}
+                                    onClick={e => { const t = e.currentTarget; if (t.showPicker) t.showPicker(); }}
                                   />
                                 </div>
                               )}

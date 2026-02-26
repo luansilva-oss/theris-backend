@@ -160,6 +160,9 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       }
     });
 
+    const { notifyTicketEvent } = await import('../services/ticketEventService');
+    notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {}).catch(() => {});
+
     return res.status(201).json(newRequest);
   } catch (error) {
     console.error('Erro ao criar solicitação:', error);

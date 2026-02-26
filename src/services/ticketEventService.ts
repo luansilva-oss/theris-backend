@@ -16,6 +16,7 @@ function getApp() {
 }
 
 const EVENT_LABELS: Record<string, string> = {
+  TICKET_CREATED: 'Seu chamado foi criado',
   COMMENT_ADDED: 'Novo comentário no seu chamado',
   ATTACHMENT_ADDED: 'Novo documento anexado ao chamado',
   STATUS_CHANGED: 'Status do chamado atualizado',
@@ -24,11 +25,20 @@ const EVENT_LABELS: Record<string, string> = {
 
 export async function notifyTicketEvent(
   requestId: string,
-  eventType: 'COMMENT_ADDED' | 'ATTACHMENT_ADDED' | 'STATUS_CHANGED' | 'ASSIGNEE_CHANGED',
+  eventType: 'TICKET_CREATED' | 'COMMENT_ADDED' | 'ATTACHMENT_ADDED' | 'STATUS_CHANGED' | 'ASSIGNEE_CHANGED',
   payload?: Record<string, unknown>
 ): Promise<void> {
+  const hasToken = Boolean(process.env.SLACK_BOT_TOKEN);
+  if (!hasToken) {
+    console.error('[Slack] Notificação não enviada: SLACK_BOT_TOKEN não está definido no ambiente.');
+    return;
+  }
+
   const slackApp = getApp();
-  if (!slackApp) return;
+  if (!slackApp) {
+    console.error('[Slack] Notificação não enviada: getSlackApp() retornou null (verifique SLACK_BOT_TOKEN e inicialização do app).');
+    return;
+  }
 
   const request = await prisma.request.findUnique({
     where: { id: requestId },
@@ -72,7 +82,16 @@ export async function notifyTicketEvent(
         { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${requestId.slice(0, 8)} · Theris Service Desk` }] }
       ]
     });
-  } catch (err) {
-    console.error('ticketEventService:', err);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : undefined;
+    console.error(
+      '[Slack] Falha ao notificar no ticketEventService:',
+      msg,
+      code ? `(code: ${code})` : '',
+      '| Token definido:', hasToken,
+      '| Dica: verifique escopo users:read.email e se o e-mail do solicitante existe no workspace.'
+    );
+    if (err instanceof Error && err.stack) console.error(err.stack);
   }
 }
