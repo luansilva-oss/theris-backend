@@ -75,7 +75,10 @@ const TOOLS_AND_LEVELS: Record<string, { label: string; value: string }[]> = {
     { label: 'Admin (AS - 1)', value: 'AS-1' },
     { label: 'SysAdmin (AS - 2)', value: 'AS-2' }
   ],
-  'Convenia': [{ label: 'Pessoas e Cultura (CV - 2)', value: 'CV-2' }],
+  'Convenia': [
+    { label: 'Owner (ap_CV-1)', value: 'CV-1' },
+    { label: 'Pessoas e Cultura (CV - 2)', value: 'CV-2' }
+  ],
   'HubSpot': [
     { label: 'Administradores (HS - 1)', value: 'HS-1' },
     { label: 'Líder comercial (HS - 2)', value: 'HS-2' },
