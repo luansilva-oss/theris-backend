@@ -79,7 +79,10 @@ model User {
 
   // Solicitações
   requests      Request[] @relation("Requester") // Quem pediu
-  approvals     Request[] @relation("Approver")  // Quem aprovou (NOVO PARA AUDITORIA)
+  approvals     Request[] @relation("Approver")  // Quem aprovou
+  assignedTickets Request[] @relation("TicketAssignee") // Chamados atribuídos (Service Desk)
+  requestComments RequestComment[]
+  requestAttachments RequestAttachment[]
 
   // Perfil de Sistema (RBAC)
   systemProfile String    @default("VIEWER")
@@ -155,9 +158,12 @@ model Request {
   approver            User?    @relation("Approver", fields: [approverId], references: [id], onDelete: SetNull)
   adminNote           String?  // O motivo da aprovação/reprovação
   // ----------------------------------------
+  assigneeId          String?  // Responsável pelo atendimento (Service Desk)
+  assignee            User?    @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   type                String
   status              String   @default("PENDENTE_GESTOR")
+  scheduledAt         DateTime?  // Para status Agendado (Service Desk)
   
   currentApproverRole String? 
   
@@ -169,4 +175,30 @@ model Request {
   
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+
+  comments            RequestComment[]
+  attachments         RequestAttachment[]
+}
+
+model RequestComment {
+  id          String   @id @default(uuid())
+  requestId   String
+  request     Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorId    String?
+  author      User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  body        String
+  kind        String   @default("COMMENT")  // COMMENT | SOLUTION | SCHEDULED_TASK
+  createdAt   DateTime @default(now())
+}
+
+model RequestAttachment {
+  id           String   @id @default(uuid())
+  requestId    String
+  request      Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  uploadedById String?
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  filename     String
+  fileUrl      String   // URL ou path do arquivo
+  mimeType     String?
+  createdAt    DateTime @default(now())
 }

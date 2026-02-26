@@ -40,6 +40,35 @@ export const getAllUsers = async (req: Request, res: Response) => {
   }
 };
 
+/** Painel do Colaborador (Viewer): lista de RoleKitItem do cargo do usuário autenticado (Meu Kit Básico). */
+export const getMyTools = async (req: Request, res: Response) => {
+  const userId = (req.headers['x-user-id'] as string)?.trim();
+  if (!userId) return res.status(401).json({ error: 'Usuário não identificado. Envie o header x-user-id.' });
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { roleId: true }
+    });
+    if (!user?.roleId) return res.json([]);
+
+    const role = await prisma.role.findUnique({
+      where: { id: user.roleId },
+      include: { kitItems: true }
+    });
+    const items = role?.kitItems ?? [];
+    return res.json(items.map((k: { id: string; toolName: string; toolCode: string; accessLevelDesc: string | null }) => ({
+      id: k.id,
+      toolName: k.toolName,
+      toolCode: k.toolCode,
+      accessLevelDesc: k.accessLevelDesc ?? '—'
+    })));
+  } catch (error) {
+    console.error('Erro ao buscar Meu Kit (getMyTools):', error);
+    return res.status(500).json({ error: 'Erro ao buscar suas ferramentas.' });
+  }
+};
+
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { name, jobTitle, department, unit, systemProfile, managerId } = req.body;

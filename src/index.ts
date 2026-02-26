@@ -5,10 +5,19 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 // --- IMPORTAÇÕES DOS CONTROLADORES ---
-import { createSolicitacao, getSolicitacoes, updateSolicitacao } from './controllers/solicitacaoController';
+import {
+  createSolicitacao,
+  getSolicitacoes,
+  getMyTickets,
+  updateSolicitacao,
+  getSolicitacaoById,
+  updateSolicitacaoMetadata,
+  createComment,
+  createAttachment
+} from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
-import { getAllUsers, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
+import { getAllUsers, getMyTools, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
 // NOVO: Importar o controlador de reset
 import { resetCatalog } from './controllers/adminController';
 import * as structureController from './controllers/structureController';
@@ -35,8 +44,8 @@ app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }
 // ⚠️ ROTA DO SLACK
 app.use('/api/slack', slackReceiver.router);
 
-// --- JSON MIDDLEWARE ---
-app.use(express.json());
+// --- JSON MIDDLEWARE (limite maior para upload base64 de anexos) ---
+app.use(express.json({ limit: '15mb' }));
 
 // ============================================================
 // --- ROTAS DE AUTENTICAÇÃO ---
@@ -85,8 +94,9 @@ app.patch('/api/tools/:toolId/level/:oldLevelName', updateToolLevel);
 app.delete('/api/tools/:toolId/level/:levelName', deleteToolLevel);
 app.patch('/api/tools/:toolId/access/:userId', updateToolAccess); // Atualizar detalhes do acesso (ex: extra)
 
-// 3. Usuários
+// 3. Usuários (rota /me/tools antes de /:id para não capturar "me" como id)
 app.get('/api/users', getAllUsers);
+app.get('/api/users/me/tools', getMyTools);
 app.put('/api/users/:id', updateUser);
 app.patch('/api/users/:id/password-changed', markPasswordChanged);
 app.delete('/api/users/:id', deleteUser);
@@ -101,7 +111,12 @@ app.post('/api/webhooks/convenia', handleConveniaWebhook);
 // --- WORKFLOW (SOLICITAÇÕES) ---
 // ============================================================
 app.get('/api/solicitacoes', getSolicitacoes);
+app.get('/api/solicitacoes/my-tickets', getMyTickets);
+app.get('/api/solicitacoes/:id', getSolicitacaoById);
 app.post('/api/solicitacoes', createSolicitacao);
+app.patch('/api/solicitacoes/:id/metadata', updateSolicitacaoMetadata);
+app.post('/api/solicitacoes/:id/comments', createComment);
+app.post('/api/solicitacoes/:id/attachments', createAttachment);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);
 
 // ============================================================

@@ -131,6 +131,9 @@ const TOOL_KEYS = Object.keys(TOOLS_AND_LEVELS);
 /** Exposto para a API do painel (cascata Ferramenta → Níveis no modal de KBS) */
 export const getToolsAndLevelsMap = () => ({ ...TOOLS_AND_LEVELS });
 
+/** Exposto para ticketEventService (notificações DM no Slack) */
+export const getSlackApp = () => slackApp;
+
 // ============================================================
 // COMANDO /pessoas — Abre diretamente Gestão de Pessoas
 // ============================================================
@@ -718,26 +721,30 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
 
   if (actionType === 'acesso_extraordinario') {
     let currentLevelMessage: string;
+    const normalizeForMatch = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, '');
     try {
       const slackUserId = b.user?.id;
-      const selectedNorm = (selectedTool || '').toLowerCase().trim();
+      const selectedNorm = normalizeForMatch(selectedTool || '');
       let found = false;
       if (slackUserId) {
         const info = await client.users.info({ user: slackUserId });
         const email = info.user?.profile?.email;
         if (email) {
-          const userDb = await prisma.user.findUnique({ where: { email } });
+          const userDb = await prisma.user.findUnique({
+            where: { email },
+            select: { roleId: true }
+          });
           if (userDb?.roleId) {
             const role = await prisma.role.findUnique({
               where: { id: userDb.roleId },
               include: { kitItems: true }
             });
             const kitItem = role?.kitItems?.find(
-              (item) => (item.toolName || '').toLowerCase().trim() === selectedNorm
+              (item) => normalizeForMatch(item.toolName || '') === selectedNorm
             );
             if (kitItem) {
               const levelName = (kitItem.accessLevelDesc || kitItem.toolCode || 'KBS').trim();
-              currentLevelMessage = `ℹ️ Seu nível atual nesta ferramenta é: ${levelName}.`;
+              currentLevelMessage = `ℹ️ Seu nível atual nesta ferramenta por padrão é: *${levelName}*.`;
               found = true;
             }
           }

@@ -30,12 +30,12 @@ export const getTools = async (req: Request, res: Response) => {
     const toolNames = tools.map(t => t.name);
     if (toolNames.length === 0) return res.json(tools);
 
-    // KBS: RoleKitItem por nome da ferramenta (case-insensitive) → usuários do cargo agrupados por nível
+    // KBS: RoleKitItem por nome da ferramenta (case-insensitive) → cargos (Roles) e colaboradores (Users)
     const kbsItems = await prisma.roleKitItem.findMany({
       where: toolNames.length > 0 ? {
         OR: toolNames.map(name => ({ toolName: { equals: name, mode: 'insensitive' } }))
       } : undefined,
-      include: { role: true }
+      include: { role: { include: { department: true } } }
     });
     const roleIds = [...new Set(kbsItems.map(k => k.roleId))];
     const usersWithRole = roleIds.length > 0
@@ -56,13 +56,23 @@ export const getTools = async (req: Request, res: Response) => {
 
     const toolsWithSync = tools.map(tool => {
       const nameLower = tool.name.trim().toLowerCase();
-      const kbsForTool = kbsItems.filter(k => k.toolName.trim().toLowerCase() === nameLower);
+      const kbsForTool = kbsItems.filter(k => (k.toolName || '').trim().toLowerCase() === nameLower);
       const levelToUsers: Record<string, { id: string; name: string; email: string }[]> = {};
+      const kbsByRole: { roleId: string; roleName: string; departmentName: string; accessLevelDesc: string; userCount: number; users: { id: string; name: string; email: string }[] }[] = [];
       for (const k of kbsForTool) {
         const users = usersWithRole.filter(u => u.roleId === k.roleId).map(u => ({ id: u.id, name: u.name, email: u.email }));
         const level = k.accessLevelDesc || 'N/A';
         if (!levelToUsers[level]) levelToUsers[level] = [];
         levelToUsers[level].push(...users);
+        const role = k.role as { id: string; name: string; department?: { name: string } | null };
+        kbsByRole.push({
+          roleId: role.id,
+          roleName: role.name,
+          departmentName: role.department?.name ?? '—',
+          accessLevelDesc: level,
+          userCount: users.length,
+          users: users.filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i)
+        });
       }
       const kbsMembersByLevel = Object.entries(levelToUsers).map(([level, users]) => ({
         level,
@@ -98,6 +108,7 @@ export const getTools = async (req: Request, res: Response) => {
       return {
         ...tool,
         kbsMembersByLevel,
+        kbsByRole,
         extraordinaryApprovals
       };
     });

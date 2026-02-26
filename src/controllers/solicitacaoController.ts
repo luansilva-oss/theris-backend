@@ -1,9 +1,21 @@
 // @ts-nocheck
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { v2 as cloudinary } from 'cloudinary';
 import { sendSlackNotification } from '../services/slackService';
 
 const prisma = new PrismaClient();
+
+// Cloudinary: config via variáveis de ambiente ou CLOUDINARY_URL
+if (process.env.CLOUDINARY_URL) {
+  cloudinary.config({ url: process.env.CLOUDINARY_URL });
+} else if (process.env.CLOUDINARY_CLOUD_NAME) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+  });
+}
 
 // Bypass RH: solicitante Renata Czapiewski Silva pula gestor e vai direto para SI
 const RH_BYPASS_REQUESTER_NAME = 'Renata Czapiewski Silva';
@@ -156,20 +168,114 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 };
 
 // ============================================================
-// 2. LISTAR SOLICITAÇÕES (GET)
+// 2. LISTAR SOLICITAÇÕES (GET) — com filtros para Gestão de Chamados
 // ============================================================
 export const getSolicitacoes = async (req: Request, res: Response) => {
   try {
+    const {
+      status,
+      assigneeId,
+      requester: requesterSearch,
+      startDate,
+      endDate,
+      category
+    } = req.query as Record<string, string | undefined>;
+
+    const where: any = {};
+
+    if (status && status !== 'ALL') {
+      if (status === 'PENDENTE') {
+        where.status = { startsWith: 'PENDENTE' };
+      } else {
+        where.status = status;
+      }
+    }
+
+    if (assigneeId) {
+      where.assigneeId = assigneeId;
+    }
+
+    if (requesterSearch && requesterSearch.trim()) {
+      const term = requesterSearch.trim();
+      where.requester = {
+        OR: [
+          { name: { contains: term, mode: 'insensitive' } },
+          { email: { contains: term, mode: 'insensitive' } }
+        ]
+      };
+    }
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+
+    if (category && category !== 'ALL' && category !== 'Todos') {
+      const infraTypes = ['INFRA_SUPPORT'];
+      const accessTypes = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+      const peopleTypes = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
+      if (category === 'Infra') where.type = { in: infraTypes };
+      else if (category === 'Acessos') where.type = { in: accessTypes };
+      else if (category === 'Pessoas') where.type = { in: peopleTypes };
+    }
+
     const requests = await prisma.request.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         requester: { select: { id: true, name: true, email: true, department: true } },
-        approver: { select: { id: true, name: true, email: true } }
+        approver: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, name: true, email: true } }
       }
     });
     return res.json(requests);
   } catch (error) {
     return res.status(500).json({ error: 'Erro ao buscar solicitações' });
+  }
+};
+
+// ============================================================
+// 2b. MEUS CHAMADOS (Viewer) — apenas onde o usuário é solicitante
+// ============================================================
+export const getMyTickets = async (req: Request, res: Response) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (!userId?.trim()) return res.status(401).json({ error: 'Usuário não identificado. Envie o header x-user-id.' });
+
+  try {
+    const { status, startDate, endDate, category } = req.query as Record<string, string | undefined>;
+    const where: any = { requesterId: userId.trim() };
+
+    if (status && status !== 'ALL') {
+      if (status === 'PENDENTE') where.status = { startsWith: 'PENDENTE' };
+      else where.status = status;
+    }
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate);
+      if (endDate) where.createdAt.lte = new Date(endDate);
+    }
+    if (category && category !== 'ALL' && category !== 'Todos') {
+      const infraTypes = ['INFRA_SUPPORT'];
+      const accessTypes = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+      const peopleTypes = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
+      if (category === 'Infra') where.type = { in: infraTypes };
+      else if (category === 'Acessos') where.type = { in: accessTypes };
+      else if (category === 'Pessoas') where.type = { in: peopleTypes };
+    }
+
+    const requests = await prisma.request.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        requester: { select: { id: true, name: true, email: true, department: true } },
+        approver: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, name: true, email: true } }
+      }
+    });
+    return res.json(requests);
+  } catch (error) {
+    return res.status(500).json({ error: 'Erro ao buscar seus chamados' });
   }
 };
 
@@ -187,7 +293,23 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
-    const safeStatus = String(status);
+    const safeStatus = String(status || '').toUpperCase();
+
+    // Ação "Pendente": apenas atualiza status para PENDENTE_GESTOR (não aprova nem reprova)
+    if (safeStatus === 'PENDENTE_GESTOR' || (safeStatus.startsWith('PENDENTE') && safeStatus !== 'PENDENTE_SI' && safeStatus !== 'PENDENTE_OWNER')) {
+      const pendingStatus = safeStatus === 'PENDENTE_GESTOR' ? 'PENDENTE_GESTOR' : safeStatus;
+      const updated = await prisma.request.update({
+        where: { id },
+        data: {
+          status: pendingStatus,
+          adminNote: adminNote || null,
+          approverId: approverId || null,
+          updatedAt: new Date()
+        }
+      });
+      return res.json(updated);
+    }
+
     const action = safeStatus === 'APROVAR' ? 'APROVADO' : 'REPROVADO';
 
     // REGRA DE NEGÓCIO: BLOQUEAR AUTO-APROVAÇÃO
@@ -401,5 +523,150 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Erro ao atualizar solicitação' });
+  }
+};
+
+// ============================================================
+// 4. GET UMA SOLICITAÇÃO (detalhe + comentários + anexos)
+// ============================================================
+export const getSolicitacaoById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const viewerContext = req.headers['x-context'] === 'my-tickets';
+  const userId = (req.headers['x-user-id'] as string)?.trim();
+  try {
+    const request = await prisma.request.findUnique({
+      where: { id },
+      include: {
+        requester: { select: { id: true, name: true, email: true, department: true } },
+        approver: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, name: true, email: true } },
+        comments: { orderBy: { createdAt: 'asc' }, include: { author: { select: { id: true, name: true, email: true } } } },
+        attachments: { orderBy: { createdAt: 'asc' }, include: { uploadedBy: { select: { id: true, name: true } } } }
+      }
+    });
+    if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
+    if (viewerContext && userId && request.requesterId !== userId) return res.status(403).json({ error: 'Acesso negado a este chamado.' });
+    return res.json(request);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Erro ao buscar solicitação' });
+  }
+};
+
+// ============================================================
+// 5. PATCH METADADOS (Service Desk: status, assignee, scheduledAt)
+// ============================================================
+export const updateSolicitacaoMetadata = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { status, assigneeId, scheduledAt } = req.body;
+  try {
+    const existing = await prisma.request.findUnique({ where: { id }, include: { requester: true, assignee: true } });
+    if (!existing) return res.status(404).json({ error: 'Solicitação não encontrada' });
+
+    const data = {};
+    if (status !== undefined) (data as any).status = String(status);
+    if (assigneeId !== undefined) (data as any).assigneeId = assigneeId || null;
+    if (scheduledAt !== undefined) (data as any).scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+
+    const updated = await prisma.request.update({
+      where: { id },
+      data,
+      include: {
+        requester: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, name: true, email: true } }
+      }
+    });
+
+    const { notifyTicketEvent } = await import('../services/ticketEventService');
+    if (status !== undefined && status !== existing.status) notifyTicketEvent(id, 'STATUS_CHANGED', { from: existing.status, to: status }).catch(() => {});
+    if (assigneeId !== undefined && assigneeId !== existing.assigneeId) notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId }).catch(() => {});
+
+    return res.json(updated);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Erro ao atualizar metadados' });
+  }
+};
+
+// ============================================================
+// 6. COMENTÁRIO
+// ============================================================
+export const createComment = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { body, kind } = req.body;
+  if (!body || !String(body).trim()) return res.status(400).json({ error: 'Conteúdo do comentário é obrigatório' });
+  try {
+    const request = await prisma.request.findUnique({ where: { id } });
+    if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
+
+    const comment = await prisma.requestComment.create({
+      data: {
+        requestId: id,
+        authorId: req.body.authorId || null,
+        body: String(body).trim(),
+        kind: kind === 'SOLUTION' || kind === 'SCHEDULED_TASK' ? kind : 'COMMENT'
+      },
+      include: { author: { select: { id: true, name: true, email: true } } }
+    });
+
+    const { notifyTicketEvent } = await import('../services/ticketEventService');
+    notifyTicketEvent(id, 'COMMENT_ADDED', { commentId: comment.id, kind: comment.kind, body: comment.body.slice(0, 200) }).catch(() => {});
+
+    return res.status(201).json(comment);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Erro ao adicionar comentário' });
+  }
+};
+
+// ============================================================
+// 7. ANEXO (fileBase64 → Cloudinary; ou fileUrl direto)
+// ============================================================
+
+export const createAttachment = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { filename, fileUrl, fileBase64, mimeType, uploadedById } = req.body;
+  if (!filename) return res.status(400).json({ error: 'filename é obrigatório' });
+
+  let finalUrl = fileUrl;
+  if (fileBase64) {
+    const hasConfig = !!(process.env.CLOUDINARY_URL || process.env.CLOUDINARY_CLOUD_NAME);
+    if (!hasConfig) {
+      console.error('createAttachment: Cloudinary não configurado (CLOUDINARY_URL ou CLOUDINARY_*)');
+      return res.status(503).json({ error: 'Upload de anexos não configurado. Defina CLOUDINARY_* no .env.' });
+    }
+    try {
+      const dataUri = `data:${mimeType || 'application/octet-stream'};base64,${fileBase64}`;
+      const result = await cloudinary.uploader.upload(dataUri, { resource_type: 'auto' });
+      finalUrl = result.secure_url;
+    } catch (err) {
+      console.error('createAttachment Cloudinary upload:', err);
+      return res.status(500).json({ error: 'Erro ao enviar arquivo para o provedor de mídia' });
+    }
+  }
+  if (!finalUrl) return res.status(400).json({ error: 'Envie fileUrl ou fileBase64' });
+
+  try {
+    const request = await prisma.request.findUnique({ where: { id } });
+    if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
+
+    const attachment = await prisma.requestAttachment.create({
+      data: {
+        requestId: id,
+        filename: String(filename),
+        fileUrl: finalUrl,
+        mimeType: mimeType || null,
+        uploadedById: uploadedById || null
+      },
+      include: { uploadedBy: { select: { id: true, name: true } } }
+    });
+
+    const { notifyTicketEvent } = await import('../services/ticketEventService');
+    notifyTicketEvent(id, 'ATTACHMENT_ADDED', { filename: attachment.filename }).catch(() => {});
+
+    return res.status(201).json(attachment);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Erro ao adicionar anexo' });
   }
 };

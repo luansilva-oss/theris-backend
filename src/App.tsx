@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   LayoutDashboard, Server, FileText, LogOut, Bird,
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
   Search, Lock, Layers, ChevronDown, ChevronRight,
   Users, Building, Briefcase, // Ícone para Gestão de Pessoas
-  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus
+  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare, Filter
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
@@ -62,10 +62,27 @@ interface Tool {
   }[];
   /** Sincronização KBS: membros permanentes por nível (Gestão de Pessoas) */
   kbsMembersByLevel?: { level: string; users: { id: string; name: string; email: string }[] }[];
+  /** KBS por Cargo: cargos (roles) que têm a ferramenta como padrão, nível e colaboradores */
+  kbsByRole?: { roleId: string; roleName: string; departmentName: string; accessLevelDesc: string; userCount: number; users: { id: string; name: string; email: string }[] }[];
   /** Sincronização Aprovações: tickets de acesso extraordinário aprovados */
   extraordinaryApprovals?: { id: string; requesterName: string; requesterEmail?: string; level: string; approvedAt: string; justification: string | null }[];
 }
 
+interface RequestComment {
+  id: string;
+  body: string;
+  kind: string;
+  createdAt: string;
+  author?: User | null;
+}
+interface RequestAttachment {
+  id: string;
+  filename: string;
+  fileUrl: string;
+  mimeType?: string | null;
+  createdAt: string;
+  uploadedBy?: { id: string; name: string } | null;
+}
 interface Request {
   id: string;
   details: string;
@@ -76,8 +93,13 @@ interface Request {
   requester: User;
   approver?: User;
   approverId?: string | null;
+  assignee?: User;
+  assigneeId?: string | null;
   type: string;
   adminNote?: string;
+  scheduledAt?: string | null;
+  comments?: RequestComment[];
+  attachments?: RequestAttachment[];
 }
 
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER' | 'GESTOR';
@@ -88,6 +110,24 @@ const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 Horas
 const ACCESS_REQUEST_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
 const PEOPLE_REQUEST_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
 const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT'];
+
+// Labels de status padronizados em toda a UI
+const STATUS_LABELS: Record<string, string> = {
+  PENDENTE_GESTOR: 'Pendente (gestor)',
+  PENDENTE_SUB_OWNER: 'Pendente (sub-responsável)',
+  PENDENTE_SI: 'Pendente (SI)',
+  PENDENTE_OWNER: 'Pendente (responsável)',
+  EM_ATENDIMENTO: 'Em atendimento',
+  AGENDADO: 'Agendado',
+  APROVADO: 'Aprovado',
+  REPROVADO: 'Recusado',
+};
+function getStatusLabel(status: string): string {
+  if (!status) return '—';
+  if (STATUS_LABELS[status]) return STATUS_LABELS[status];
+  if (status.startsWith('PENDENTE_')) return 'Pendente';
+  return status;
+}
 
 function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 'Infra'; categoryColor: string; title: string; lines: { label: string; value: string }[] } {
   let detailsObj: Record<string, unknown> = {};
@@ -253,6 +293,26 @@ export default function App() {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [actionNeededFilter, setActionNeededFilter] = useState<'ALL' | 'Pessoas' | 'Acessos' | 'Infra'>('ALL');
 
+  // Gestão de Chamados
+  const [ticketList, setTicketList] = useState<Request[]>([]);
+  const [ticketCategoryTab, setTicketCategoryTab] = useState<'Todos' | 'Pessoas' | 'Acessos' | 'Infra'>('Todos');
+  const [showTicketFilterPanel, setShowTicketFilterPanel] = useState(false);
+  const [ticketFilters, setTicketFilters] = useState<{
+    status: string;
+    requesterSearch: string;
+    assigneeId: string;
+    period: string;
+    startDate: string;
+    endDate: string;
+  }>({ status: 'ALL', requesterSearch: '', assigneeId: '', period: 'ALL', startDate: '', endDate: '' });
+  const [selectedChamadoId, setSelectedChamadoId] = useState<string | null>(null);
+  const [chamadoDetail, setChamadoDetail] = useState<Request | null>(null);
+  const [chamadoDetailLoading, setChamadoDetailLoading] = useState(false);
+  const [chamadoCommentInput, setChamadoCommentInput] = useState('');
+  const [chamadoCommentKind, setChamadoCommentKind] = useState<'COMMENT' | 'SOLUTION' | 'SCHEDULED_TASK'>('COMMENT');
+  const [chamadoAttachmentUploading, setChamadoAttachmentUploading] = useState(false);
+  const chamadoFileInputRef = useRef<HTMLInputElement>(null);
+
   // MODAL
   const [modalOpen, setModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar' | 'pendente'>('aprovar');
@@ -277,6 +337,9 @@ export default function App() {
   const [selectedDepartmentForNewRole, setSelectedDepartmentForNewRole] = useState<any>(null);
   const [isDeleteRoleModalOpen, setIsDeleteRoleModalOpen] = useState(false);
   const [selectedRoleForDelete, setSelectedRoleForDelete] = useState<any>(null);
+
+  /** Painel Viewer: ferramentas do Meu Kit Básico (RoleKitItem do cargo do usuário) */
+  const [viewerKitTools, setViewerKitTools] = useState<{ id: string; toolName: string; toolCode: string; accessLevelDesc: string }[]>([]);
 
   // NOTIFICAÇÕES E CONFIRMAÇÕES
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -380,13 +443,13 @@ export default function App() {
       }
       if (resReqs.ok) setRequests(await resReqs.json());
 
-      // Carrega usuários se estiver na aba de gestão
-      if (activeTab === 'PEOPLE') {
-        const [resUsers, resDepts] = await Promise.all([
-          fetch(`${API_URL}/api/users`),
-          fetch(`${API_URL}/api/structure`)
-        ]);
+      // Carrega usuários se estiver na aba de gestão ou Gestão de Chamados (para select Responsável)
+      if (activeTab === 'PEOPLE' || activeTab === 'TICKETS') {
+        const resUsers = await fetch(`${API_URL}/api/users`);
         if (resUsers.ok) setAllUsers(await resUsers.json());
+      }
+      if (activeTab === 'PEOPLE') {
+        const resDepts = await fetch(`${API_URL}/api/structure`);
         if (resDepts.ok) {
           const structData = await resDepts.json();
           const unitList = structData.units || [];
@@ -399,6 +462,41 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
+  const loadTicketList = async () => {
+    const isMyTickets = activeTab === 'MY_TICKETS';
+    try {
+      const params = new URLSearchParams();
+      if (ticketFilters.status && ticketFilters.status !== 'ALL') params.set('status', ticketFilters.status);
+      if (!isMyTickets && ticketFilters.assigneeId) params.set('assigneeId', ticketFilters.assigneeId);
+      if (!isMyTickets && ticketFilters.requesterSearch.trim()) params.set('requester', ticketFilters.requesterSearch.trim());
+      if (ticketCategoryTab !== 'Todos') params.set('category', ticketCategoryTab);
+      if (ticketFilters.period === 'TODAY') {
+        const d = new Date(); d.setHours(0, 0, 0, 0);
+        params.set('startDate', d.toISOString());
+        params.set('endDate', new Date().toISOString());
+      } else if (ticketFilters.period === 'LAST_7') {
+        const end = new Date();
+        const start = new Date(); start.setDate(start.getDate() - 7);
+        params.set('startDate', start.toISOString());
+        params.set('endDate', end.toISOString());
+      } else if (ticketFilters.period === 'LAST_30') {
+        const end = new Date();
+        const start = new Date(); start.setDate(start.getDate() - 30);
+        params.set('startDate', start.toISOString());
+        params.set('endDate', end.toISOString());
+      } else if (ticketFilters.startDate) params.set('startDate', ticketFilters.startDate);
+      if (ticketFilters.endDate) params.set('endDate', ticketFilters.endDate);
+      const url = isMyTickets ? `${API_URL}/api/solicitacoes/my-tickets?${params.toString()}` : `${API_URL}/api/solicitacoes?${params.toString()}`;
+      const headers: HeadersInit = {};
+      if (isMyTickets && currentUser?.id) headers['x-user-id'] = currentUser.id;
+      const res = await fetch(url, { headers });
+      if (res.ok) setTicketList(await res.json());
+      else setTicketList([]);
+    } catch (e) {
+      setTicketList([]);
+    }
+  };
+
   useEffect(() => {
     if (isLoggedIn) {
       loadData();
@@ -406,6 +504,118 @@ export default function App() {
       return () => clearInterval(interval);
     }
   }, [isLoggedIn, activeTab]);
+
+  useEffect(() => {
+    if (isLoggedIn && (activeTab === 'TICKETS' || activeTab === 'MY_TICKETS')) loadTicketList();
+  }, [isLoggedIn, activeTab, ticketCategoryTab]);
+
+  /** Carrega Meu Kit Básico para perfil VIEWER no Dashboard */
+  useEffect(() => {
+    if (!isLoggedIn || systemProfile !== 'VIEWER' || activeTab !== 'DASHBOARD' || !currentUser?.id) {
+      if (systemProfile !== 'VIEWER') setViewerKitTools([]);
+      return;
+    }
+    const headers: HeadersInit = { 'x-user-id': currentUser.id };
+    fetch(`${API_URL}/api/users/me/tools`, { headers })
+      .then((res) => res.ok ? res.json() : [])
+      .then((data) => setViewerKitTools(Array.isArray(data) ? data : []))
+      .catch(() => setViewerKitTools([]));
+  }, [isLoggedIn, systemProfile, activeTab, currentUser?.id]);
+
+  const loadChamadoDetail = async () => {
+    if (!selectedChamadoId) return;
+    setChamadoDetailLoading(true);
+    try {
+      const isViewerContext = activeTab === 'MY_TICKETS';
+      const headers: HeadersInit = {};
+      if (isViewerContext && currentUser?.id) {
+        headers['x-context'] = 'my-tickets';
+        headers['x-user-id'] = currentUser.id;
+      }
+      const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}`, { headers });
+      if (res.ok) setChamadoDetail(await res.json());
+      else setChamadoDetail(null);
+    } catch {
+      setChamadoDetail(null);
+    }
+    setChamadoDetailLoading(false);
+  };
+
+  useEffect(() => {
+    if (selectedChamadoId) loadChamadoDetail();
+    else setChamadoDetail(null);
+  }, [selectedChamadoId, activeTab]);
+
+  const handleChamadoMetadataChange = async (field: 'status' | 'assigneeId' | 'scheduledAt', value: string | null) => {
+    if (!selectedChamadoId) return;
+    try {
+      const body: any = {};
+      if (field === 'status') body.status = value;
+      if (field === 'assigneeId') body.assigneeId = value || null;
+      if (field === 'scheduledAt') body.scheduledAt = value ? new Date(value).toISOString() : null;
+      const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/metadata`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setChamadoDetail(prev => prev ? { ...prev, ...updated } : updated);
+        loadTicketList();
+      }
+    } catch (e) {
+      showToast('Erro ao atualizar.', 'error');
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!selectedChamadoId || !chamadoCommentInput.trim()) return;
+    const kind = activeTab === 'MY_TICKETS' ? 'COMMENT' : chamadoCommentKind;
+    try {
+      const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: chamadoCommentInput.trim(), kind, authorId: currentUser?.id })
+      });
+      if (res.ok) {
+        const comment = await res.json();
+        setChamadoDetail(prev => prev ? { ...prev, comments: [...(prev.comments || []), comment] } : prev);
+        setChamadoCommentInput('');
+        showToast('Comentário adicionado.', 'success');
+      } else showToast('Erro ao adicionar comentário.', 'error');
+    } catch {
+      showToast('Erro de conexão.', 'error');
+    }
+  };
+
+  const handleChamadoAddAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedChamadoId) return;
+    e.target.value = '';
+    setChamadoAttachmentUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string)?.split(',')[1];
+        if (!base64) { setChamadoAttachmentUploading(false); showToast('Falha ao ler arquivo.', 'error'); return; }
+        const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/attachments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, fileBase64: base64, mimeType: file.type || null, uploadedById: currentUser?.id || null })
+        });
+        if (res.ok) {
+          const attachment = await res.json();
+          setChamadoDetail(prev => prev ? { ...prev, attachments: [...(prev.attachments || []), attachment] } : prev);
+          showToast('Documento anexado.', 'success');
+        } else showToast('Erro ao anexar.', 'error');
+        setChamadoAttachmentUploading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      showToast('Erro de conexão.', 'error');
+      setChamadoAttachmentUploading(false);
+    }
+  };
 
   // Actions
   const handleLogin = useGoogleLogin({
@@ -729,11 +939,13 @@ export default function App() {
                 </>
               )}
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
+              <div className={`nav-item ${activeTab === 'TICKETS' ? 'active' : ''}`} onClick={() => setActiveTab('TICKETS')}><MessageSquare size={18} /> Gestão de Chamados</div>
             </>
           ) : (
             <>
               <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Meu Painel</div>
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
+              <div className={`nav-item ${activeTab === 'MY_TICKETS' ? 'active' : ''}`} onClick={() => { setActiveTab('MY_TICKETS'); setSelectedChamadoId(null); setChamadoDetail(null); }}><MessageSquare size={18} /> Chamados relacionados</div>
             </>
           )}
         </div>
@@ -750,7 +962,7 @@ export default function App() {
       {/* MAIN CANVAS */}
       <main className="main-area">
         <header className="header-bar">
-          <div className="page-title">Pagina: <span>{activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab}</span></div>
+          <div className="page-title">Pagina: <span>{activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab === 'MY_TICKETS' ? 'CHAMADOS RELACIONADOS' : activeTab}</span></div>
         </header>
 
         <div className="content-scroll">
@@ -788,23 +1000,39 @@ export default function App() {
                       <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.department || '—'}</div>
                     </div>
                   </div>
-                  {(() => {
-                    const myRole = roles.find((r: any) => r.name === currentUser.jobTitle && r.department?.name === currentUser.department);
-                    const kitItems = myRole?.kitItems || [];
-                    if (kitItems.length === 0) return null;
-                    return (
-                      <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #27272a' }}>
-                        <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 10 }}>Kit Básico de sistemas (cargo)</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {kitItems.map((k: any) => (
-                            <span key={k.id || k.toolCode} style={{ background: '#18181b', border: '1px solid #3f3f46', padding: '6px 12px', borderRadius: 8, fontSize: 12, color: '#e4e4e7' }}>
-                              {k.toolName} {k.toolCode ? `(${k.toolCode})` : ''}
-                            </span>
+                  </div>
+              )}
+
+              {/* Viewer: Meu Kit Básico (fonte única: GET /api/users/me/tools) */}
+              {systemProfile === 'VIEWER' && currentUser && (
+                <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+                  <h3 style={{ color: '#22c55e', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Layers size={18} /> Meu Kit Básico
+                  </h3>
+                  {viewerKitTools.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px 24px', color: '#71717a', fontSize: 14, lineHeight: 1.5 }}>
+                      Seu gestor ainda está configurando os acessos do seu cargo. Quando o kit básico for definido na Gestão de Pessoas, as ferramentas e níveis aparecerão aqui.
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #27272a', textAlign: 'left' }}>
+                            <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Ferramenta</th>
+                            <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Nível de acesso</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {viewerKitTools.map((row) => (
+                            <tr key={row.id} style={{ borderBottom: '1px solid #1f1f22' }}>
+                              <td style={{ padding: '14px 16px', color: '#e4e4e7', fontWeight: 500 }}>{row.toolName}</td>
+                              <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{row.accessLevelDesc}</td>
+                            </tr>
                           ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1079,8 +1307,47 @@ export default function App() {
                 </div>
               </div>
 
+              {/* ACESSOS POR CARGO / KBS (Gestão de Pessoas → Catálogo) */}
+              <h3 style={{ color: '#22c55e', marginTop: 8, marginBottom: 15, fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Users size={20} /> Acessos por Cargo / KBS
+              </h3>
+              {(!selectedTool.kbsByRole || selectedTool.kbsByRole.length === 0) ? (
+                <div className="card-base" style={{ textAlign: 'center', color: '#52525b', padding: 32, borderStyle: 'dashed', borderColor: 'rgba(34, 197, 94, 0.2)' }}>
+                  Nenhum cargo na Gestão de Pessoas (KBS) possui esta ferramenta como padrão. Configure os Role Kits nos cargos para refletir aqui.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {selectedTool.kbsByRole.map((row) => (
+                    <div key={row.roleId} className="card-base" style={{ padding: 20, border: '1px solid #27272a', background: 'rgba(34, 197, 94, 0.03)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: '#e4e4e7', fontSize: 15 }}>{row.roleName}</div>
+                          <div style={{ fontSize: 12, color: '#71717a', marginTop: 4 }}>{row.departmentName}</div>
+                          <div style={{ fontSize: 12, color: '#22c55e', marginTop: 6 }}>Nível padrão: {row.accessLevelDesc}</div>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#a1a1aa', background: '#18181b', padding: '6px 12px', borderRadius: 8, fontWeight: 600 }}>
+                          {row.userCount} {row.userCount === 1 ? 'colaborador' : 'colaboradores'}
+                        </div>
+                      </div>
+                      {row.users.length > 0 && (
+                        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #27272a', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {row.users.slice(0, 12).map((u) => (
+                            <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#18181b', padding: '8px 12px', borderRadius: 8, fontSize: 12 }}>
+                              <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#27272a', color: '#a1a1aa', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>{u.name.charAt(0)}</div>
+                              <span style={{ color: '#e4e4e7' }}>{u.name}</span>
+                              <span style={{ color: '#52525b', fontSize: 11 }}>{u.email}</span>
+                            </div>
+                          ))}
+                          {row.users.length > 12 && <span style={{ color: '#71717a', fontSize: 12, alignSelf: 'center' }}>+{row.users.length - 12} mais</span>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* LISTA DE USUÁRIOS AGRUPADOS POR NÍVEL (PERMANENTE) */}
-              <h3 style={{ color: '#d4d4d8', marginBottom: 15, fontSize: 18 }}>Membros Permanentes</h3>
+              <h3 style={{ color: '#d4d4d8', marginBottom: 15, fontSize: 18, marginTop: 32 }}>Membros Permanentes</h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {Object.keys(getGroupedAccesses(selectedTool).permanent).length === 0 && (
@@ -1519,7 +1786,7 @@ export default function App() {
                                 }}>
                                   {r.status === 'APROVADO' ? <CheckCircle size={10} /> :
                                     r.status === 'REPROVADO' ? <XCircle size={10} /> : <Clock size={10} />}
-                                  {r.status.replace('PENDENTE_', 'Pendente ')}
+                                  {getStatusLabel(r.status)}
                                 </span>
                               </td>
                             )}
@@ -1591,6 +1858,288 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* GESTÃO DE CHAMADOS / CHAMADOS RELACIONADOS (Viewer) */}
+          {(activeTab === 'TICKETS' || activeTab === 'MY_TICKETS') && (
+            <div className="fade-in">
+              {selectedChamadoId ? (
+                /* Detalhe do chamado: chat + sidebar */
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <button type="button" className="btn-text" onClick={() => { setSelectedChamadoId(null); setChamadoDetail(null); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <ArrowLeft size={18} /> Voltar à lista
+                    </button>
+                  </div>
+                  {chamadoDetailLoading ? (
+                    <div style={{ padding: 48, textAlign: 'center', color: '#71717a' }}>Carregando...</div>
+                  ) : chamadoDetail ? (
+                    <div style={{ display: 'flex', gap: 24, flex: 1, minHeight: 0 }}>
+                      {/* Área principal: chat */}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, border: '1px solid #27272a', borderRadius: 12, overflow: 'hidden', background: '#09090b' }}>
+                        <div style={{ padding: 16, borderBottom: '1px solid #27272a', color: '#e4e4e7', fontWeight: 600 }}>
+                          Histórico do chamado
+                        </div>
+                        <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          <div style={{ padding: 12, background: '#18181b', borderRadius: 8, borderLeft: '3px solid #7c3aed' }}>
+                            <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Abertura · {new Date(chamadoDetail.createdAt).toLocaleString('pt-BR')}</div>
+                            <div style={{ fontSize: 13, color: '#e4e4e7' }}>Solicitação criada · {chamadoDetail.type}</div>
+                            {chamadoDetail.justification && <div style={{ marginTop: 8, fontSize: 12, color: '#a1a1aa' }}>{chamadoDetail.justification}</div>}
+                          </div>
+                          {(chamadoDetail.comments || []).map(c => (
+                            <div key={c.id} style={{ padding: 12, background: '#18181b', borderRadius: 8 }}>
+                              <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>
+                                {c.author?.name || 'Sistema'} · {new Date(c.createdAt).toLocaleString('pt-BR')}
+                                {c.kind !== 'COMMENT' && <span style={{ marginLeft: 8, color: '#a78bfa' }}>({c.kind === 'SOLUTION' ? 'Solução' : 'Tarefa agendada'})</span>}
+                              </div>
+                              <div style={{ fontSize: 13, color: '#e4e4e7', whiteSpace: 'pre-wrap' }}>{c.body}</div>
+                            </div>
+                          ))}
+                          {(chamadoDetail.attachments || []).map(a => (
+                            <div key={a.id} style={{ padding: 12, background: '#18181b', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <FileText size={18} color="#71717a" />
+                              <a href={a.fileUrl.startsWith('http') ? a.fileUrl : `${API_URL}${a.fileUrl}`} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', fontSize: 13 }}>{a.filename}</a>
+                              <span style={{ fontSize: 11, color: '#52525b' }}>{a.uploadedBy?.name} · {new Date(a.createdAt).toLocaleString('pt-BR')}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ padding: 16, borderTop: '1px solid #27272a' }}>
+                          {(activeTab === 'MY_TICKETS') ? null : (
+                            <select className="input-base" style={{ marginBottom: 8, background: '#18181b', fontSize: 12 }} value={chamadoCommentKind} onChange={e => setChamadoCommentKind(e.target.value as any)}>
+                              <option value="COMMENT">Comentário</option>
+                              <option value="SOLUTION">Adicionar uma solução</option>
+                              <option value="SCHEDULED_TASK">Criar uma tarefa agendada</option>
+                            </select>
+                          )}
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <input
+                              type="text"
+                              className="input-base"
+                              placeholder="Escreva sua mensagem..."
+                              style={{ flex: 1, background: '#18181b' }}
+                              value={chamadoCommentInput}
+                              onChange={e => setChamadoCommentInput(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleAddComment()}
+                            />
+                            <button type="button" className="btn-mini" style={{ background: '#7c3aed' }} onClick={handleAddComment}>Enviar</button>
+                          </div>
+                          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <input type="file" ref={chamadoFileInputRef} style={{ display: 'none' }} onChange={handleChamadoAddAttachment} />
+                            <button type="button" className="btn-mini" style={{ background: '#27272a', color: '#e4e4e7' }} onClick={() => chamadoFileInputRef.current?.click()} disabled={chamadoAttachmentUploading}>
+                              {chamadoAttachmentUploading ? 'Enviando...' : 'Adicionar documento'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Sidebar metadados */}
+                      <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <div className="card-base" style={{ padding: 20 }}>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Data e hora</div>
+                          <div style={{ color: '#e4e4e7' }}>{new Date(chamadoDetail.createdAt).toLocaleString('pt-BR')}</div>
+                        </div>
+                        <div className="card-base" style={{ padding: 20 }}>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Tipo / Categoria</div>
+                          <div style={{ color: '#e4e4e7' }}>{(getRequestCardContent(chamadoDetail).category)} · {chamadoDetail.type}</div>
+                        </div>
+                        {INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && (() => {
+                          let d: any = {}; try { d = JSON.parse(chamadoDetail.details || '{}'); } catch {} 
+                          return (d.urgencyLabel || d.urgency) ? (
+                            <div className="card-base" style={{ padding: 20 }}>
+                              <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Urgência</div>
+                              <div style={{ color: '#e4e4e7' }}>{d.urgencyLabel || d.urgency || '—'}</div>
+                            </div>
+                          ) : null;
+                        })()}
+                        <div className="card-base" style={{ padding: 20 }}>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Solicitante</div>
+                          <div style={{ color: '#e4e4e7' }}>{chamadoDetail.requester?.name}</div>
+                          <div style={{ fontSize: 12, color: '#a1a1aa' }}>{chamadoDetail.requester?.email}</div>
+                        </div>
+                        <div className="card-base" style={{ padding: 20 }}>
+                          <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Status</label>
+                          {(activeTab === 'MY_TICKETS') ? (
+                            <div style={{ color: '#e4e4e7', fontSize: 13 }}>{getStatusLabel(chamadoDetail.status)}</div>
+                          ) : (
+                            <select
+                              className="input-base"
+                              style={{ width: '100%', background: '#18181b', fontSize: 12 }}
+                              value={chamadoDetail.status}
+                              onChange={e => handleChamadoMetadataChange('status', e.target.value)}
+                            >
+                              {Object.entries(STATUS_LABELS).map(([val, label]) => (
+                                <option key={val} value={val}>{label}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        {chamadoDetail.status === 'AGENDADO' && (
+                          <div className="card-base" style={{ padding: 20 }}>
+                            <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 8 }}>Data agendada</label>
+                            {(activeTab === 'MY_TICKETS') ? (
+                              <div style={{ color: '#e4e4e7', fontSize: 13 }}>{chamadoDetail.scheduledAt ? new Date(chamadoDetail.scheduledAt).toLocaleString('pt-BR') : '—'}</div>
+                            ) : (
+                              <input type="datetime-local" className="input-base" style={{ width: '100%', background: '#18181b' }} value={chamadoDetail.scheduledAt ? new Date(chamadoDetail.scheduledAt).toISOString().slice(0, 16) : ''} onChange={e => handleChamadoMetadataChange('scheduledAt', e.target.value || null)} />
+                            )}
+                          </div>
+                        )}
+                        <div className="card-base" style={{ padding: 20 }}>
+                          <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Responsável</label>
+                          {(activeTab === 'MY_TICKETS') ? (
+                            <div style={{ color: '#e4e4e7', fontSize: 13 }}>{chamadoDetail.assignee?.name || '— Não atribuído'}</div>
+                          ) : (
+                            <select
+                              className="input-base"
+                              style={{ width: '100%', background: '#18181b', fontSize: 12 }}
+                              value={chamadoDetail.assigneeId || ''}
+                              onChange={e => handleChamadoMetadataChange('assigneeId', e.target.value || null)}
+                            >
+                              <option value="">— Não atribuído</option>
+                              {allUsers.filter((u: User) => ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(u.systemProfile)).map((u: User) => (
+                                <option key={u.id} value={u.id}>{u.name}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: 48, textAlign: 'center', color: '#71717a' }}>Chamado não encontrado.</div>
+                  )}
+                </div>
+              ) : (
+                <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>{activeTab === 'MY_TICKETS' ? 'Chamados relacionados' : 'Gestão de Chamados'}</h2>
+              </div>
+              {/* Abas de categoria */}
+              <div style={{ display: 'flex', gap: 4, background: '#18181b', borderRadius: 8, padding: 4, border: '1px solid #27272a', marginBottom: 16 }}>
+                {(['Todos', 'Pessoas', 'Acessos', 'Infra'] as const).map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setTicketCategoryTab(cat)}
+                    style={{
+                      padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s',
+                      background: ticketCategoryTab === cat ? (cat === 'Infra' ? 'rgba(251, 191, 36, 0.2)' : cat === 'Acessos' ? 'rgba(167, 139, 250, 0.2)' : cat === 'Pessoas' ? 'rgba(34, 197, 94, 0.2)' : '#27272a') : 'transparent',
+                      color: ticketCategoryTab === cat ? (cat === 'Infra' ? '#fbbf24' : cat === 'Acessos' ? '#a78bfa' : cat === 'Pessoas' ? '#22c55e' : 'white') : '#71717a'
+                    }}
+                  >
+                    {cat}
+                  </button>
+                ))}
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowTicketFilterPanel(prev => !prev)}
+                    className="input-base"
+                    style={{ background: showTicketFilterPanel ? '#27272a' : '#18181b', fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #27272a', cursor: 'pointer' }}
+                  >
+                    <Filter size={14} color="#a78bfa" /> Filtros
+                  </button>
+                </div>
+              </div>
+
+              {/* Painel de filtros */}
+              {showTicketFilterPanel && (
+                <div className="card-base" style={{ marginBottom: 16, padding: 20, background: '#18181b', border: '1px solid #27272a' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', marginBottom: 12 }}>Filtros combinados</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Status</label>
+                      <select
+                        className="input-base"
+                        style={{ width: '100%', background: '#09090b', fontSize: 12 }}
+                        value={ticketFilters.status}
+                        onChange={e => setTicketFilters(f => ({ ...f, status: e.target.value }))}
+                      >
+                        <option value="ALL">Todos</option>
+                        <option value="PENDENTE">Pendente</option>
+                        <option value="APROVADO">Aprovado</option>
+                        <option value="REPROVADO">Recusado</option>
+                      </select>
+                    </div>
+                    {activeTab !== 'MY_TICKETS' && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Solicitante (nome ou e-mail)</label>
+                      <input
+                        type="text"
+                        className="input-base"
+                        style={{ width: '100%', background: '#09090b', fontSize: 12 }}
+                        placeholder="Buscar..."
+                        value={ticketFilters.requesterSearch}
+                        onChange={e => setTicketFilters(f => ({ ...f, requesterSearch: e.target.value }))}
+                      />
+                    </div>
+                    )}
+                    {activeTab !== 'MY_TICKETS' && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Responsável</label>
+                      <select
+                        className="input-base"
+                        style={{ width: '100%', background: '#09090b', fontSize: 12 }}
+                        value={ticketFilters.assigneeId}
+                        onChange={e => setTicketFilters(f => ({ ...f, assigneeId: e.target.value }))}
+                      >
+                        <option value="">Todos</option>
+                        {allUsers.filter((u: User) => ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(u.systemProfile)).map((u: User) => (
+                          <option key={u.id} value={u.id}>{u.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    )}
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Período</label>
+                      <select
+                        className="input-base"
+                        style={{ width: '100%', background: '#09090b', fontSize: 12 }}
+                        value={ticketFilters.period}
+                        onChange={e => setTicketFilters(f => ({ ...f, period: e.target.value }))}
+                      >
+                        <option value="ALL">Todos</option>
+                        <option value="TODAY">Hoje</option>
+                        <option value="LAST_7">Últimos 7 dias</option>
+                        <option value="LAST_30">Últimos 30 dias</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                      <button type="button" className="btn-mini" onClick={loadTicketList} style={{ padding: '8px 14px' }}>Aplicar</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {ticketList.length === 0 ? (
+                  <div className="card-base" style={{ textAlign: 'center', color: '#52525b', padding: 48, borderStyle: 'dashed' }}>
+                    Nenhum chamado encontrado com os filtros aplicados.
+                  </div>
+                ) : (
+                  ticketList.map(r => {
+                    const card = getRequestCardContent(r);
+                    return (
+                      <div key={r.id} className="card-base" style={{ padding: 20, border: '1px solid #27272a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: card.categoryColor, textTransform: 'uppercase' }}>{card.category}</span>
+                            <span style={{ color: '#e4e4e7', fontWeight: 600 }}>{card.title}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 4 }}>{r.requester?.name} · {new Date(r.createdAt).toLocaleString('pt-BR')}</div>
+                          <div style={{ fontSize: 12, color: '#71717a' }}>Status: {getStatusLabel(r.status)}</div>
+                        </div>
+                        <button
+                          className="btn-mini"
+                          style={{ background: '#7c3aed', color: 'white', padding: '10px 20px' }}
+                          onClick={() => setSelectedChamadoId(r.id)}
+                        >
+                          Acessar chamado
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+                </>
+              )}
             </div>
           )}
         </div>
