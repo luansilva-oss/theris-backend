@@ -108,11 +108,38 @@ export const deleteDepartment = async (req: Request, res: Response) => {
 // --- ROLE (CARGO) CRUD ---
 
 export const createRole = async (req: Request, res: Response) => {
-    const { name, departmentId, code } = req.body;
+    const { name, departmentId, code, kitItems } = req.body as {
+        name: string;
+        departmentId: string;
+        code?: string | null;
+        kitItems?: { toolCode: string; toolName: string; accessLevelDesc?: string | null; criticality?: string | null; isCritical?: boolean }[];
+    };
+    if (!name || !departmentId) {
+        return res.status(400).json({ error: "Nome e departmentId são obrigatórios." });
+    }
     try {
-        const role = await prisma.role.create({ data: { name, departmentId, code: code || null } });
-        return res.json(role);
+        const role = await prisma.role.create({
+            data: { name, departmentId, code: code || null }
+        });
+        if (Array.isArray(kitItems) && kitItems.length > 0) {
+            await prisma.roleKitItem.createMany({
+                data: kitItems.map((it: any) => ({
+                    roleId: role.id,
+                    toolCode: it.toolCode || '',
+                    toolName: it.toolName || '',
+                    accessLevelDesc: it.accessLevelDesc ?? null,
+                    criticality: it.criticality ?? null,
+                    isCritical: it.isCritical !== false
+                }))
+            });
+        }
+        const created = await prisma.role.findUnique({
+            where: { id: role.id },
+            include: { kitItems: true, department: true }
+        });
+        return res.json(created);
     } catch (error) {
+        console.error("Erro ao criar cargo:", error);
         return res.status(500).json({ error: "Erro ao criar cargo." });
     }
 };

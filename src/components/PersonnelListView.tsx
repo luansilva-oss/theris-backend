@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { MouseEvent } from 'react';
-import { Building2, Briefcase, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
+import { Building2, Briefcase, ChevronDown, ChevronRight, Trash2, Pencil, Plus } from 'lucide-react';
 
 interface User {
     id: string;
@@ -48,12 +48,13 @@ interface PersonnelListViewProps {
     onDeleteDepartment: (dept: Department) => void;
     onEditRole?: (role: Role) => void;
     onDeleteRole?: (role: Role) => void;
+    onAddRole?: (department: Department) => void;
 }
 
 const UNIT_ORDER = ['3C+', 'Evolux', 'Dizify', 'Instituto 3C', 'FiqOn', 'Dizparos'];
 
 export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
-    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole
+    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole, onAddRole
 }) => {
     const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({});
     const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
@@ -144,6 +145,9 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                     {deptEntity && (
                                                         <>
+                                                            {onAddRole && (
+                                                                <button onClick={(e) => { e.stopPropagation(); onAddRole(deptEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.8 }} title="Adicionar cargo"><Plus size={14} color="#a78bfa" /></button>
+                                                            )}
                                                             <button onClick={(e) => { e.stopPropagation(); onEditDepartment(deptEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }} title="Editar departamento"><Pencil size={14} color="#71717a" /></button>
                                                             <button onClick={(e) => { e.stopPropagation(); onDeleteDepartment(deptEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }} title="Excluir departamento"><Trash2 size={14} color="#ef4444" /></button>
                                                         </>

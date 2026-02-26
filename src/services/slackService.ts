@@ -44,6 +44,11 @@ const TOOLS_AND_LEVELS: Record<string, { label: string; value: string }[]> = {
     { label: 'Administradores (NR - 1)', value: 'NR-1' },
     { label: 'Equipe Telecom (NR - 2)', value: 'NR-2' }
   ],
+  /** Alias para match no Catálogo (nome da ferramenta pode ser "NextRouter" ou "NextRouter (NR)") */
+  'NextRouter': [
+    { label: 'Administradores (NR - 1)', value: 'NR-1' },
+    { label: 'Equipe Telecom (NR - 2)', value: 'NR-2' }
+  ],
   'Click Sign': [
     { label: 'Administradores (CS - 1)', value: 'CS-1' },
     { label: 'Membro (CS - 2)', value: 'CS-2' }

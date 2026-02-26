@@ -31,14 +31,18 @@ interface Role {
 interface Props {
     isOpen: boolean;
     onClose: () => void;
+    /** Cargo a editar; null = modo criação. Em modo criação, departmentId é obrigatório. */
     role: Role | null;
+    /** Departamento ao qual o novo cargo será vinculado (apenas em modo criação). */
+    departmentId?: string | null;
     onUpdate: () => void;
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
-export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpdate, showToast }) => {
+export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, departmentId, onUpdate, showToast }) => {
     if (!isOpen) return null;
 
+    const isCreateMode = !role;
     const [roleName, setRoleName] = useState('');
     const [roleCode, setRoleCode] = useState('');
     const [kitItems, setKitItems] = useState<RoleKitItem[]>([]);
@@ -48,7 +52,19 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        if (role) {
+        if (isCreateMode) {
+            setRoleName('');
+            setRoleCode('');
+            setKitItems([]);
+            setLoading(true);
+            Promise.all([
+                fetch(`${API_URL}/api/tools`).then(r => r.ok ? r.json() : []),
+                fetch(`${API_URL}/api/tools-and-levels`).then(r => r.ok ? r.json() : {})
+            ]).then(([toolsList, levelsMap]) => {
+                setTools(toolsList || []);
+                setToolsAndLevelsMap(levelsMap || {});
+            }).catch(e => console.error(e)).finally(() => setLoading(false));
+        } else if (role) {
             setRoleName(role.name);
             setRoleCode(role.code || '');
             setLoading(true);
@@ -68,7 +84,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                 setToolsAndLevelsMap(levelsMap || {});
             }).catch(e => console.error(e)).finally(() => setLoading(false));
         }
-    }, [role?.id, role?.name, role?.code, isOpen]);
+    }, [role?.id, role?.name, role?.code, isOpen, isCreateMode]);
 
     useEffect(() => {
         if (role) {
@@ -133,7 +149,11 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
     };
 
     const handleSave = async () => {
-        if (!role) return;
+        const name = roleName.trim();
+        if (!name) {
+            showToast('Informe o nome do cargo.', 'warning');
+            return;
+        }
         setSaving(true);
         try {
             const validItems = kitItems
@@ -146,22 +166,48 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                     isCritical: it.isCritical !== false
                 }));
 
-            const res = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: roleName.trim() || role.name,
-                    code: roleCode.trim() || null,
-                    kitItems: validItems
-                })
-            });
-            if (res.ok) {
-                showToast('Cargo e kit atualizados!', 'success');
-                onUpdate();
-                onClose();
-            } else {
-                const err = await res.json();
-                showToast(err.error || 'Erro ao salvar cargo.', 'error');
+            if (isCreateMode) {
+                if (!departmentId) {
+                    showToast('Departamento não informado.', 'error');
+                    setSaving(false);
+                    return;
+                }
+                const res = await fetch(`${API_URL}/api/structure/roles`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        code: roleCode.trim() || null,
+                        departmentId,
+                        kitItems: validItems
+                    })
+                });
+                if (res.ok) {
+                    showToast('Cargo criado com sucesso!', 'success');
+                    onUpdate();
+                    onClose();
+                } else {
+                    const err = await res.json();
+                    showToast(err.error || 'Erro ao criar cargo.', 'error');
+                }
+            } else if (role) {
+                const res = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name || role.name,
+                        code: roleCode.trim() || null,
+                        kitItems: validItems
+                    })
+                });
+                if (res.ok) {
+                    showToast('Cargo e kit atualizados!', 'success');
+                    onUpdate();
+                    onClose();
+                } else {
+                    const err = await res.json();
+                    showToast(err.error || 'Erro ao salvar cargo.', 'error');
+                }
             }
         } catch (e) {
             showToast('Erro de conexão.', 'error');
@@ -173,7 +219,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
         <div className="modal-overlay">
             <div className="modal-content" style={{ maxWidth: '720px', width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
                 <div className="modal-header">
-                    <h2>Editar cargo e kit básico</h2>
+                    <h2>{isCreateMode ? 'Novo cargo e kit básico' : 'Editar cargo e kit básico'}</h2>
                     <button onClick={onClose} className="btn-icon"><X size={20} /></button>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}>

@@ -274,6 +274,7 @@ export default function App() {
   const [selectedDeptForAction, setSelectedDeptForAction] = useState<any>(null);
   const [isEditRoleKitModalOpen, setIsEditRoleKitModalOpen] = useState(false);
   const [selectedRoleForKit, setSelectedRoleForKit] = useState<any>(null);
+  const [selectedDepartmentForNewRole, setSelectedDepartmentForNewRole] = useState<any>(null);
   const [isDeleteRoleModalOpen, setIsDeleteRoleModalOpen] = useState(false);
   const [selectedRoleForDelete, setSelectedRoleForDelete] = useState<any>(null);
 
@@ -948,8 +949,14 @@ export default function App() {
                     setSelectedDeptForAction(dept);
                     setIsDeleteDeptModalOpen(true);
                   }}
+                  onAddRole={['ADMIN', 'SUPER_ADMIN', 'GESTOR'].includes(systemProfile) ? (dept) => {
+                    setSelectedDepartmentForNewRole(dept);
+                    setSelectedRoleForKit(null);
+                    setIsEditRoleKitModalOpen(true);
+                  } : undefined}
                   onEditRole={['ADMIN', 'SUPER_ADMIN', 'GESTOR'].includes(systemProfile) ? (role) => {
                     setSelectedRoleForKit(role);
+                    setSelectedDepartmentForNewRole(null);
                     setIsEditRoleKitModalOpen(true);
                   } : undefined}
                   onDeleteRole={['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? (role) => {
@@ -1692,8 +1699,9 @@ export default function App() {
 
       <EditRoleKitModal
         isOpen={isEditRoleKitModalOpen}
-        onClose={() => { setIsEditRoleKitModalOpen(false); setSelectedRoleForKit(null); }}
+        onClose={() => { setIsEditRoleKitModalOpen(false); setSelectedRoleForKit(null); setSelectedDepartmentForNewRole(null); }}
         role={selectedRoleForKit}
+        departmentId={selectedRoleForKit ? selectedRoleForKit.departmentId : (selectedDepartmentForNewRole?.id ?? null)}
         onUpdate={loadData}
         showToast={showToast}
       />
