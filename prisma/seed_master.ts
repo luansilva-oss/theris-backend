@@ -17,19 +17,22 @@ function roleKey(unit: string, dept: string, job: string) {
 }
 
 async function main() {
-  console.log('🌱 Seed Master — limpando estrutura e populando com lista oficial');
-
   if (!(prisma as any).unit) {
     throw new Error('Prisma client sem model Unit. Rode: npx prisma generate');
   }
 
-  // 1. Apagar na ordem das FKs (não apagar User)
-  await prisma.roleKitItem.deleteMany({});
-  await prisma.role.deleteMany({});
-  await prisma.department.deleteMany({});
-  await prisma.unit.deleteMany({});
+  // PROTEÇÃO: não sobrescrever dados existentes (evita reset em produção a cada deploy).
+  // Se já existir estrutura (units ou roles), o seed é ignorado para preservar edições do usuário.
+  const existingUnits = await prisma.unit.count();
+  const existingRoles = await prisma.role.count();
+  if (existingUnits > 0 || existingRoles > 0) {
+    console.log('🌱 Seed Master — estrutura já existente no banco. Seed ignorado para preservar dados.');
+    return;
+  }
 
-  // 2. Criar Unidades
+  console.log('🌱 Seed Master — banco vazio, populando com lista oficial');
+
+  // 1. Criar Unidades
   const unitMap = new Map<string, string>();
   for (const name of UNIT_NAMES) {
     const u = await prisma.unit.create({ data: { name } });

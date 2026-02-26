@@ -147,11 +147,13 @@ export const updateRole = async (req: Request, res: Response) => {
             await prisma.roleKitItem.deleteMany({ where: { roleId: id } });
             if (kitItems.length > 0) {
                 await prisma.roleKitItem.createMany({
-                    data: kitItems.map((it: { toolCode?: string; toolName?: string; accessLevelDesc?: string }) => ({
+                    data: kitItems.map((it: { toolCode?: string; toolName?: string; accessLevelDesc?: string; criticality?: string | null; isCritical?: boolean }) => ({
                         roleId: id,
                         toolCode: it.toolCode || '',
                         toolName: it.toolName || '',
-                        accessLevelDesc: it.accessLevelDesc ?? null
+                        accessLevelDesc: it.accessLevelDesc ?? null,
+                        criticality: it.criticality ?? null,
+                        isCritical: it.isCritical !== false
                     }))
                 });
             }
