@@ -68,7 +68,10 @@ const TOOLS_AND_LEVELS: Record<string, { label: string; value: string }[]> = {
     { label: 'Observador (VI - 3)', value: 'VI-3' }
   ],
   'N8N': [{ label: 'Membro (NA - 2)', value: 'NA-2' }],
-  'Chat GPT': [{ label: 'Membro (CG - 2)', value: 'CG-2' }],
+  'Chat GPT': [
+    { label: 'Proprietário (ap_CG-1)', value: 'CG-1' },
+    { label: 'Membro (CG - 2)', value: 'CG-2' }
+  ],
   'FiqOn': [{ label: 'Administrador (FO - 1)', value: 'FO-1' }],
   'Focus': [{ label: 'Administrador (FU - 1)', value: 'FU-1' }],
   'GCP': [

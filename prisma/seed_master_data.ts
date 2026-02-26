@@ -79,6 +79,7 @@ export const PEOPLE: PersonRow[] = [
   { unit: '3C+', department: 'Comercial Contact', jobTitle: 'Líder de Enterprise', name: 'Jehnnifer Xavier Padilha', email: 'jehnnifer.padilha@grupo-3c.com' },
   { unit: '3C+', department: 'Comercial Contact', jobTitle: 'Líder de Vendas PME', name: 'Alessandro Dorneles Schneider', email: 'alessandro.schneider@grupo-3c.com' },
   { unit: '3C+', department: 'Comercial Contact', jobTitle: 'Líder de Vendas PME', name: 'Caroline Fatima de Gois Fila', email: 'caroline.gois@grupo-3c.com' },
+  { unit: '3C+', department: 'Comercial', jobTitle: 'SalesOps', name: 'Deborah Peres', email: 'deborah.peres@grupo-3c.com' },
   { unit: '3C+', department: 'Expansão', jobTitle: 'Analista de Expansão', name: 'Daniel Felipe da Silva Souza', email: 'daniel.souza@grupo-3c.com' },
   { unit: '3C+', department: 'Expansão', jobTitle: 'Analista de Expansão', name: 'Kauane Lemos Bastos', email: 'kauane.bastos@grupo-3c.com' },
   { unit: '3C+', department: 'Expansão', jobTitle: 'Analista de Expansão', name: 'Maria Eduarda Merhet Padilha', email: 'maria.merhet@grupo-3c.com' },
