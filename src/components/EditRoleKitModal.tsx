@@ -77,13 +77,27 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
         }
     }, [role?.name, role?.code]);
 
+    /** Normaliza nome para match: remove sigla entre parênteses e espaços extras (ex: "Clicsign (CS)" → "Clicsign") */
+    const normalizeToolNameForMatch = (name: string): string =>
+        (name || '').replace(/\s*\([^)]*\)\s*/g, '').trim();
+
     const getLevelsForTool = (toolId: string): { label: string; value: string }[] => {
         const t = tools.find(x => x.id === toolId);
-        const toolName = t?.name;
-        const fromMap = toolName && toolsAndLevelsMap[toolName];
-        if (fromMap && fromMap.length > 0) return fromMap;
-        const fallback = (t?.availableAccessLevels?.length ? t.availableAccessLevels : ['Admin', 'User', 'Viewer']) as string[];
-        return fallback.map(l => ({ label: l, value: l }));
+        const toolName = (t?.name || '').trim();
+        if (!toolName) return [];
+
+        const map = toolsAndLevelsMap;
+        const exact = map[toolName];
+        if (exact && exact.length > 0) return exact;
+
+        const normalized = normalizeToolNameForMatch(toolName).toLowerCase();
+        if (!normalized) return [];
+
+        const matchedKey = Object.keys(map).find(
+            (key) => normalizeToolNameForMatch(key).toLowerCase() === normalized
+        );
+        const levels = matchedKey ? map[matchedKey] : [];
+        return Array.isArray(levels) && levels.length > 0 ? levels : [];
     };
 
     const addRow = () => {
@@ -106,7 +120,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                 ...next[index],
                 toolCode: value,
                 toolName: t ? t.name : next[index].toolName,
-                accessLevelDesc: firstLevel ? (typeof firstLevel === 'string' ? firstLevel : firstLevel.value) : (t?.availableAccessLevels?.[0] ?? 'User')
+                accessLevelDesc: firstLevel ? (typeof firstLevel === 'string' ? firstLevel : firstLevel.value) : null
             };
         } else {
             (next[index] as any)[field] = value;
@@ -231,11 +245,13 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                                                         <select
                                                             value={item.accessLevelDesc || ''}
                                                             onChange={e => updateRow(index, 'accessLevelDesc', e.target.value || null)}
+                                                            disabled={!item.toolCode || getLevelsForTool(item.toolCode).length === 0}
                                                             className="form-input"
                                                             style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
+                                                            title={item.toolCode && getLevelsForTool(item.toolCode).length === 0 ? 'Nenhum nível mapeado para esta ferramenta' : undefined}
                                                         >
                                                             <option value="">—</option>
-                                                            {(item.toolCode ? getLevelsForTool(item.toolCode) : [{ label: 'Admin', value: 'Admin' }, { label: 'User', value: 'User' }, { label: 'Viewer', value: 'Viewer' }]).map(l => {
+                                                            {(item.toolCode ? getLevelsForTool(item.toolCode) : []).map(l => {
                                                                 const lab = typeof l === 'string' ? l : l.label;
                                                                 const val = typeof l === 'string' ? l : l.value;
                                                                 return <option key={val} value={val}>{lab}</option>;

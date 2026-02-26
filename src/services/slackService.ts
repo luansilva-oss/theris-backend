@@ -92,7 +92,24 @@ const TOOLS_AND_LEVELS: Record<string, { label: string; value: string }[]> = {
   'Gitlab': [
     { label: 'Administradores (GL - 1)', value: 'GL-1' },
     { label: 'Regular (GL - 2)', value: 'GL-2' }
-  ]
+  ],
+  // Aliases para match com nomes do Catálogo (ex: "Clicsign (CS)" → Clicsign; "Next Suit (NS)" → Next Suit)
+  'Clicsign': [
+    { label: 'Administradores (CS - 1)', value: 'CS-1' },
+    { label: 'Membro (CS - 2)', value: 'CS-2' }
+  ],
+  '3C Plus': [
+    { label: 'Nível 3 (CP - 1)', value: 'CP-1' },
+    { label: 'Nível 2 (CP - 2)', value: 'CP-2' }
+  ],
+  'Next Suit': [
+    { label: 'Administradores (OR - 1)', value: 'OR-1' },
+    { label: 'Analista Fiscal / Comprador / Controller (OR - 2)', value: 'OR-2' },
+    { label: 'Comprador (OR - 3)', value: 'OR-3' },
+    { label: 'Executivo (OR - 4)', value: 'OR-4' },
+    { label: 'Suporte (OR - 5)', value: 'OR-5' }
+  ],
+  'Hik Connect': [{ label: 'Administradores (HC - 1)', value: 'HC-1' }]
 };
 
 const TOOL_KEYS = Object.keys(TOOLS_AND_LEVELS);
