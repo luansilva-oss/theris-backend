@@ -38,7 +38,7 @@ const TOOLS_AND_LEVELS: Record<string, { label: string; value: string }[]> = {
   ],
   'JumpCloud': [
     { label: 'Administradores (JC - 1)', value: 'JC-1' },
-    { label: 'Help Desk (JC - 2)', value: 'JC-2' }
+    { label: 'Manager (JC - 2)', value: 'JC-2' }
   ],
   'Next Router': [
     { label: 'Administradores (NR - 1)', value: 'NR-1' },
@@ -67,9 +67,12 @@ const TOOLS_AND_LEVELS: Record<string, { label: string; value: string }[]> = {
     { label: 'Gestor (VI - 2)', value: 'VI-2' },
     { label: 'Observador (VI - 3)', value: 'VI-3' }
   ],
-  'N8N': [{ label: 'Membro (NA - 2)', value: 'NA-2' }],
+  'N8N': [
+    { label: 'Owner (NA - 1)', value: 'NA-1' },
+    { label: 'Membro (NA - 2)', value: 'NA-2' }
+  ],
   'Chat GPT': [
-    { label: 'Proprietário (ap_CG-1)', value: 'CG-1' },
+    { label: 'Proprietário (CG - 1)', value: 'CG-1' },
     { label: 'Membro (CG - 2)', value: 'CG-2' }
   ],
   'FiqOn': [{ label: 'Administrador (FO - 1)', value: 'FO-1' }],
