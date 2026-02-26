@@ -30,8 +30,13 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
     const [isSaving, setIsSaving] = useState(false);
     const [showAllUsers, setShowAllUsers] = useState(false);
 
-    // Filter users already in this level
+    // Filter users already in this level (catálogo)
     const usersInLevel = tool.accesses.filter((acc: any) => acc.status === levelName).map((acc: any) => acc.user);
+    // Usuários que recebem este nível via KBS (Gestão de Pessoas)
+    const kbsMembersByLevel = (tool as any).kbsMembersByLevel as { level: string; users: { id: string; name: string; email: string }[] }[] | undefined;
+    const kbsUsersForLevel = (kbsMembersByLevel || []).find(
+        (k) => (k.level || '').trim().toLowerCase() === (levelName || '').trim().toLowerCase()
+    )?.users ?? [];
 
     useEffect(() => {
         if (levelName) {
@@ -313,6 +318,35 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                         </div>
                     </div>
 
+                    {/* HERDADOS VIA CARGO (KBS) - somente leitura */}
+                    {kbsUsersForLevel.length > 0 && (
+                        <div className="card-base" style={{ background: 'rgba(34, 197, 94, 0.06)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
+                            <h4 style={{ color: '#22c55e', marginBottom: 10, fontSize: 13 }}>Herdados via Cargo (KBS)</h4>
+                            <p style={{ color: '#71717a', fontSize: 12, marginBottom: 12 }}>Estes colaboradores recebem este nível por padrão através da Gestão de Pessoas. Somente leitura.</p>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {kbsUsersForLevel.map((u) => (
+                                    <div
+                                        key={u.id}
+                                        style={{
+                                            background: '#18181b',
+                                            border: '1px solid #27272a',
+                                            borderRadius: 20,
+                                            padding: '6px 12px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                            fontSize: 13,
+                                            color: '#e4e4e7'
+                                        }}
+                                    >
+                                        <span>{u.name}</span>
+                                        {u.email && <span style={{ fontSize: 11, color: '#71717a' }}>{u.email}</span>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* USERS SECTION */}
                     <div>
                         <h4 style={{ color: '#d4d4d8', marginBottom: 12 }}>Gerenciar Membros ({usersInLevel.length})</h4>
@@ -346,11 +380,11 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
 
                         {/* LIST USERS - CHIPS LAYOUT */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {usersInLevel.length === 0 ? (
+                            {usersInLevel.length === 0 && kbsUsersForLevel.length === 0 ? (
                                 <div style={{ padding: 20, textAlign: 'center', color: '#52525b', fontSize: 13, border: '1px solid #27272a', borderRadius: 8 }}>
                                     Nenhum usuário neste nível.
                                 </div>
-                            ) : (
+                            ) : usersInLevel.length === 0 ? null : (
                                 <>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                         {(showAllUsers ? usersInLevel : usersInLevel.slice(0, 5)).map((u: User) => (

@@ -64,8 +64,13 @@ app.get('/api/admin/reset-tools', resetCatalog);
 // --- ROTAS DE DADOS ---
 // ============================================================
 
-// 1. Estrutura
+// 1. Estrutura (rotas de units antes de departments para não capturar :id em "units")
 app.get('/api/structure', structureController.getStructure);
+app.post('/api/structure/units', structureController.createUnit);
+app.put('/api/structure/units/:id', structureController.updateUnit);
+app.delete('/api/structure/units/:id', structureController.deleteUnit);
+app.post('/api/structure/units/:id/migrate-and-delete', structureController.migrateAndDeleteUnit);
+
 app.post('/api/structure/departments', structureController.createDepartment);
 app.put('/api/structure/departments/:id', structureController.updateDepartment);
 app.delete('/api/structure/departments/:id', structureController.deleteDepartment);

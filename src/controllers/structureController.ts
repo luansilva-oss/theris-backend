@@ -3,6 +3,131 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// --- UNIT CRUD ---
+
+export const createUnit = async (req: Request, res: Response) => {
+    const { name } = req.body;
+    if (!name || !String(name).trim()) return res.status(400).json({ error: "Nome da unidade é obrigatório." });
+    try {
+        const unit = await prisma.unit.create({ data: { name: String(name).trim() } });
+        return res.status(201).json(unit);
+    } catch (error: any) {
+        if (error?.code === 'P2002') return res.status(409).json({ error: "Já existe uma unidade com esse nome." });
+        return res.status(500).json({ error: "Erro ao criar unidade." });
+    }
+};
+
+export const updateUnit = async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { name } = req.body;
+    if (!name || !String(name).trim()) return res.status(400).json({ error: "Nome da unidade é obrigatório." });
+    try {
+        const unit = await prisma.unit.update({ where: { id }, data: { name: String(name).trim() } });
+        return res.json(unit);
+    } catch (error: any) {
+        if (error?.code === 'P2025') return res.status(404).json({ error: "Unidade não encontrada." });
+        if (error?.code === 'P2002') return res.status(409).json({ error: "Já existe uma unidade com esse nome." });
+        return res.status(500).json({ error: "Erro ao atualizar unidade." });
+    }
+};
+
+/** DELETE Unit: só permite se não tiver departamentos. Caso contrário retorna 409 com lista de departamentos para migração. */
+export const deleteUnit = async (req: Request, res: Response) => {
+    const { id } = req.params;
+    try {
+        const unit = await prisma.unit.findUnique({
+            where: { id },
+            include: {
+                departments: {
+                    include: {
+                        _count: { select: { roles: true } }
+                    }
+                }
+            }
+        });
+        if (!unit) return res.status(404).json({ error: "Unidade não encontrada." });
+        if (unit.departments.length === 0) {
+            await prisma.unit.delete({ where: { id } });
+            return res.json({ success: true });
+        }
+        return res.status(409).json({
+            code: "UNIT_HAS_DEPENDENCIES",
+            message: "A unidade possui departamentos vinculados. Use o assistente de migração para movê-los ou excluí-los antes de excluir a unidade.",
+            unit: { id: unit.id, name: unit.name },
+            departments: unit.departments.map(d => ({
+                id: d.id,
+                name: d.name,
+                rolesCount: (d as any)._count?.roles ?? d.roles?.length ?? 0
+            }))
+        });
+    } catch (error) {
+        console.error("Erro ao excluir unidade:", error);
+        return res.status(500).json({ error: "Erro ao excluir unidade." });
+    }
+};
+
+/** Payload: { decisions: [{ departmentId, action: "migrate_department"|"delete_department", targetUnitId?, targetDepartmentId? }] }
+ *  - migrate_department: move o departamento para outra unidade (department.unitId = targetUnitId). Cargos e KBS permanecem.
+ *  - delete_department: move todos os cargos do departamento para targetDepartmentId, depois exclui o departamento. RoleKitItems permanecem nos cargos.
+ */
+export const migrateAndDeleteUnit = async (req: Request, res: Response) => {
+    const { id: unitId } = req.params;
+    const { decisions } = req.body as { decisions: { departmentId: string; action: string; targetUnitId?: string; targetDepartmentId?: string }[] };
+    if (!Array.isArray(decisions) || decisions.length === 0) return res.status(400).json({ error: "Payload deve conter 'decisions' (array) com as escolhas de migração." });
+
+    try {
+        const unit = await prisma.unit.findUnique({
+            where: { id: unitId },
+            include: { departments: { include: { roles: true } } }
+        });
+        if (!unit) return res.status(404).json({ error: "Unidade não encontrada." });
+
+        const deptIds = new Set(unit.departments.map(d => d.id));
+        const decisionDeptIds = new Set(decisions.map((d: any) => d.departmentId));
+        if (deptIds.size !== decisionDeptIds.size || [...deptIds].some(id => !decisionDeptIds.has(id))) {
+            return res.status(400).json({ error: "Cada departamento da unidade deve ter exatamente uma decisão (migrate_department ou delete_department)." });
+        }
+
+        for (const dec of decisions) {
+            if (dec.action === "migrate_department") {
+                if (!dec.targetUnitId) return res.status(400).json({ error: `Departamento ${dec.departmentId}: targetUnitId é obrigatório para migrate_department.` });
+                const targetUnit = await prisma.unit.findUnique({ where: { id: dec.targetUnitId } });
+                if (!targetUnit || targetUnit.id === unitId) return res.status(400).json({ error: "Unidade de destino inválida ou igual à unidade a ser excluída." });
+            } else if (dec.action === "delete_department") {
+                if (!dec.targetDepartmentId) return res.status(400).json({ error: `Departamento ${dec.departmentId}: targetDepartmentId é obrigatório para delete_department.` });
+                if (dec.targetDepartmentId === dec.departmentId) return res.status(400).json({ error: "Departamento de destino não pode ser o mesmo que está sendo excluído." });
+                const targetDept = await prisma.department.findUnique({ where: { id: dec.targetDepartmentId } });
+                if (!targetDept) return res.status(400).json({ error: "Departamento de destino não encontrado." });
+            } else {
+                return res.status(400).json({ error: `Ação inválida: ${dec.action}. Use migrate_department ou delete_department.` });
+            }
+        }
+
+        await prisma.$transaction(async (tx) => {
+            for (const dec of decisions) {
+                if (dec.action === "migrate_department" && dec.targetUnitId) {
+                    await tx.department.update({
+                        where: { id: dec.departmentId },
+                        data: { unitId: dec.targetUnitId }
+                    });
+                } else if (dec.action === "delete_department" && dec.targetDepartmentId) {
+                    await tx.role.updateMany({
+                        where: { departmentId: dec.departmentId },
+                        data: { departmentId: dec.targetDepartmentId }
+                    });
+                    await tx.department.delete({ where: { id: dec.departmentId } });
+                }
+            }
+            await tx.unit.delete({ where: { id: unitId } });
+        });
+
+        return res.json({ success: true });
+    } catch (error) {
+        console.error("Erro na migração/exclusão da unidade:", error);
+        return res.status(500).json({ error: "Erro ao executar migração e excluir unidade." });
+    }
+};
+
 // GET /api/structure — estrutura completa Unit -> Department -> Role -> kitItems
 // O frontend espera obrigatoriamente: { units: Unit[] }
 export const getStructure = async (req: Request, res: Response) => {

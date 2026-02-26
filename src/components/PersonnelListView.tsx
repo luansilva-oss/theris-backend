@@ -49,12 +49,16 @@ interface PersonnelListViewProps {
     onEditRole?: (role: Role) => void;
     onDeleteRole?: (role: Role) => void;
     onAddRole?: (department: Department) => void;
+    onAddDepartmentToUnit?: (unit: Unit) => void;
+    onEditUnit?: (unit: Unit) => void;
+    onDeleteUnit?: (unit: Unit) => void;
 }
 
 const UNIT_ORDER = ['3C+', 'Evolux', 'Dizify', 'Instituto 3C', 'FiqOn', 'Dizparos'];
 
 export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
-    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole, onAddRole
+    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole, onAddRole,
+    onAddDepartmentToUnit, onEditUnit, onDeleteUnit
 }) => {
     const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({});
     const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
@@ -72,7 +76,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
             .concat(list.filter((u: Unit) => !UNIT_ORDER.includes(u.name)).map((u: Unit) => u.name))
             .map(unitName => {
                 const apiUnit = list.find((u: Unit) => u.name === unitName);
-                return apiUnit ? { name: unitName, departments: apiUnit.departments || [] } : { name: unitName, departments: [] };
+                return apiUnit ? { id: apiUnit.id, name: unitName, departments: apiUnit.departments || [] } : { id: '', name: unitName, departments: [] };
             });
     }, [unitsFromApi]);
 
@@ -90,12 +94,13 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                 <div style={{ padding: 24, textAlign: 'center', background: '#18181b', borderRadius: 12, color: '#a1a1aa', fontSize: 14, lineHeight: 1.6 }}>
                     Estrutura não carregada. Execute o seed mestre (<strong>npm run seed:master</strong>); após isso, aqui aparecerão as 6 unidades (3C+, Evolux, Dizify, Instituto 3C, FiqOn, Dizparos) com departamentos, cargos, colaboradores e ferramentas KBS por cargo.
                 </div>
-            ) : unitList.map(({ name: unitName, departments: unitDepts }) => {
+            ) : unitList.map(({ id: unitId, name: unitName, departments: unitDepts }) => {
                 const usersInUnit = users.filter(u => matchUserToUnit(u, unitName));
                 const deptList = unitDepts.length > 0
                     ? unitDepts
                     : [...new Set(usersInUnit.map(u => u.department).filter(Boolean))].map((d: string) => ({ id: '', name: d, roles: roles.filter((r: Role) => r.department?.name === d) }));
                 const unitKey = `unit-${unitName}`;
+                const unitEntity: Unit = { id: unitId, name: unitName, departments: unitDepts };
                 return (
                     <div key={unitKey} style={{ border: '1px solid #1f1f22', borderRadius: '12px', overflow: 'hidden', background: '#09090b' }}>
                         <div
@@ -114,7 +119,18 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                 <Building2 size={22} color="#8b5cf6" />
                                 <span style={{ fontWeight: 700, color: '#f4f4f5', fontSize: '16px' }}>UNIDADE: {unitName}</span>
                             </div>
-                            {expandedUnits[unitKey] ? <ChevronDown size={20} color="#71717a" /> : <ChevronRight size={20} color="#71717a" />}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {onAddDepartmentToUnit && unitId && (
+                                    <button onClick={(e) => { e.stopPropagation(); onAddDepartmentToUnit(unitEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }} title="Adicionar departamento"><Plus size={18} color="#22c55e" /></button>
+                                )}
+                                {onEditUnit && unitId && (
+                                    <button onClick={(e) => { e.stopPropagation(); onEditUnit(unitEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }} title="Editar unidade"><Pencil size={18} color="#a78bfa" /></button>
+                                )}
+                                {onDeleteUnit && unitId && (
+                                    <button onClick={(e) => { e.stopPropagation(); onDeleteUnit(unitEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }} title="Excluir unidade"><Trash2 size={18} color="#ef4444" /></button>
+                                )}
+                                {expandedUnits[unitKey] ? <ChevronDown size={20} color="#71717a" /> : <ChevronRight size={20} color="#71717a" />}
+                            </div>
                         </div>
 
                         {expandedUnits[unitKey] && (

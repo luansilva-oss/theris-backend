@@ -18,6 +18,9 @@ import { ManageStructureModal } from './components/ManageStructureModal';
 import { ManageLevelModal } from './components/ManageLevelModal';
 import PersonnelListView from './components/PersonnelListView';
 import { EditDepartmentModal } from './components/EditDepartmentModal';
+import { CreateDepartmentModal } from './components/CreateDepartmentModal';
+import { EditUnitModal } from './components/EditUnitModal';
+import { UnitMigrationWizardModal } from './components/UnitMigrationWizardModal';
 import { DeleteDepartmentModal } from './components/DeleteDepartmentModal';
 import { EditRoleKitModal } from './components/EditRoleKitModal';
 import { DeleteRoleModal } from './components/DeleteRoleModal';
@@ -312,6 +315,10 @@ export default function App() {
   const [chamadoCommentKind, setChamadoCommentKind] = useState<'COMMENT' | 'SOLUTION' | 'SCHEDULED_TASK'>('COMMENT');
   const [chamadoAttachmentUploading, setChamadoAttachmentUploading] = useState(false);
   const chamadoFileInputRef = useRef<HTMLInputElement>(null);
+  const [chamadoScheduledAt, setChamadoScheduledAt] = useState('');
+  const [assigneeSearchOpen, setAssigneeSearchOpen] = useState(false);
+  const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
+  const [expandedKbsSection, setExpandedKbsSection] = useState(false);
 
   // MODAL
   const [modalOpen, setModalOpen] = useState(false);
@@ -337,6 +344,12 @@ export default function App() {
   const [selectedDepartmentForNewRole, setSelectedDepartmentForNewRole] = useState<any>(null);
   const [isDeleteRoleModalOpen, setIsDeleteRoleModalOpen] = useState(false);
   const [selectedRoleForDelete, setSelectedRoleForDelete] = useState<any>(null);
+
+  const [isEditUnitModalOpen, setIsEditUnitModalOpen] = useState(false);
+  const [selectedUnitForEdit, setSelectedUnitForEdit] = useState<{ id: string; name: string } | null>(null);
+  const [isCreateDepartmentModalOpen, setIsCreateDepartmentModalOpen] = useState(false);
+  const [selectedUnitForAddDept, setSelectedUnitForAddDept] = useState<{ id: string; name: string } | null>(null);
+  const [unitMigrationData, setUnitMigrationData] = useState<{ unit: { id: string; name: string }; departments: { id: string; name: string; rolesCount: number }[] } | null>(null);
 
   /** Painel Viewer: ferramentas do Meu Kit Básico (RoleKitItem do cargo do usuário) */
   const [viewerKitTools, setViewerKitTools] = useState<{ id: string; toolName: string; toolCode: string; accessLevelDesc: string }[]>([]);
@@ -454,7 +467,7 @@ export default function App() {
           const structData = await resDepts.json();
           const unitList = structData.units || [];
           setUnits(unitList);
-          setDepartments(unitList.flatMap((u: any) => u.departments || []));
+          setDepartments(unitList.flatMap((u: any) => (u.departments || []).map((d: any) => ({ ...d, unitId: u.id, unit: { name: u.name } }))));
           setRoles(unitList.flatMap((u: any) => (u.departments || []).flatMap((d: any) => d.roles || [])));
         }
       }
@@ -571,6 +584,11 @@ export default function App() {
   const handleAddComment = async () => {
     if (!selectedChamadoId || !chamadoCommentInput.trim()) return;
     const kind = activeTab === 'MY_TICKETS' ? 'COMMENT' : chamadoCommentKind;
+    const scheduledAt = kind === 'SCHEDULED_TASK' ? chamadoScheduledAt : null;
+    if (kind === 'SCHEDULED_TASK' && !scheduledAt) {
+      showToast('Informe a data e hora da tarefa agendada.', 'warning');
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/comments`, {
         method: 'POST',
@@ -581,7 +599,38 @@ export default function App() {
         const comment = await res.json();
         setChamadoDetail(prev => prev ? { ...prev, comments: [...(prev.comments || []), comment] } : prev);
         setChamadoCommentInput('');
-        showToast('Comentário adicionado.', 'success');
+        setChamadoScheduledAt('');
+        if (kind === 'SOLUTION') {
+          const patchRes = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/metadata`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'APROVADO' })
+          });
+          if (patchRes.ok) {
+            const updated = await patchRes.json();
+            setChamadoDetail(prev => prev ? { ...prev, ...updated } : updated);
+            loadTicketList();
+            showToast('Solução registrada e chamado concluído.', 'success');
+          } else {
+            showToast('Comentário adicionado. Atualize o status manualmente.', 'info');
+          }
+        } else if (kind === 'SCHEDULED_TASK' && scheduledAt) {
+          const patchRes = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/metadata`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'AGENDADO', scheduledAt: new Date(scheduledAt).toISOString() })
+          });
+          if (patchRes.ok) {
+            const updated = await patchRes.json();
+            setChamadoDetail(prev => prev ? { ...prev, ...updated } : updated);
+            loadTicketList();
+            showToast('Tarefa agendada e status atualizado.', 'success');
+          } else {
+            showToast('Comentário adicionado. Atualize a data manualmente.', 'info');
+          }
+        } else {
+          showToast('Comentário adicionado.', 'success');
+        }
       } else showToast('Erro ao adicionar comentário.', 'error');
     } catch {
       showToast('Erro de conexão.', 'error');
@@ -688,6 +737,25 @@ export default function App() {
         }
       }
     });
+  };
+
+  const handleDeleteUnit = async (unit: { id: string; name: string }) => {
+    try {
+      const res = await fetch(`${API_URL}/api/structure/units/${unit.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadData();
+        showToast('Unidade excluída.', 'success');
+        return;
+      }
+      const data = await res.json();
+      if (res.status === 409 && data.code === 'UNIT_HAS_DEPENDENCIES' && data.unit && Array.isArray(data.departments)) {
+        setUnitMigrationData({ unit: data.unit, departments: data.departments });
+        return;
+      }
+      showToast(data.error || 'Erro ao excluir unidade.', 'error');
+    } catch {
+      showToast('Erro de conexão.', 'error');
+    }
   };
 
   const handleOpenApprove = (id: string, action: 'APROVAR' | 'REPROVAR' | 'PENDENTE') => {
@@ -938,13 +1006,13 @@ export default function App() {
                   <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Layers size={18} /> Catálogo</div>
                 </>
               )}
-              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
+              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Relatório</div>
               <div className={`nav-item ${activeTab === 'TICKETS' ? 'active' : ''}`} onClick={() => setActiveTab('TICKETS')}><MessageSquare size={18} /> Gestão de Chamados</div>
             </>
           ) : (
             <>
               <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Meu Painel</div>
-              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Solicitações</div>
+              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Relatório</div>
               <div className={`nav-item ${activeTab === 'MY_TICKETS' ? 'active' : ''}`} onClick={() => { setActiveTab('MY_TICKETS'); setSelectedChamadoId(null); setChamadoDetail(null); }}><MessageSquare size={18} /> Chamados relacionados</div>
             </>
           )}
@@ -1194,6 +1262,15 @@ export default function App() {
                     });
                     setIsDeleteRoleModalOpen(true);
                   } : undefined}
+                  onAddDepartmentToUnit={['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? (unit) => {
+                    setSelectedUnitForAddDept(unit);
+                    setIsCreateDepartmentModalOpen(true);
+                  } : undefined}
+                  onEditUnit={['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? (unit) => {
+                    setSelectedUnitForEdit(unit);
+                    setIsEditUnitModalOpen(true);
+                  } : undefined}
+                  onDeleteUnit={['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? handleDeleteUnit : undefined}
                 />
               </div>
             </div>
@@ -1307,44 +1384,64 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ACESSOS POR CARGO / KBS (Gestão de Pessoas → Catálogo) */}
-              <h3 style={{ color: '#22c55e', marginTop: 8, marginBottom: 15, fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Users size={20} /> Acessos por Cargo / KBS
-              </h3>
-              {(!selectedTool.kbsByRole || selectedTool.kbsByRole.length === 0) ? (
-                <div className="card-base" style={{ textAlign: 'center', color: '#52525b', padding: 32, borderStyle: 'dashed', borderColor: 'rgba(34, 197, 94, 0.2)' }}>
-                  Nenhum cargo na Gestão de Pessoas (KBS) possui esta ferramenta como padrão. Configure os Role Kits nos cargos para refletir aqui.
+              {/* ACESSOS POR CARGO / KBS (Accordion) */}
+              <div className="card-base" style={{ padding: 0, overflow: 'hidden', border: '1px solid #27272a', marginTop: 8 }}>
+                <div
+                  onClick={() => setExpandedKbsSection(prev => !prev)}
+                  style={{
+                    padding: '16px 20px',
+                    background: expandedKbsSection ? 'rgba(34, 197, 94, 0.08)' : '#18181b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    borderBottom: expandedKbsSection ? '1px solid #27272a' : 'none'
+                  }}
+                >
+                  <h3 style={{ color: '#22c55e', margin: 0, fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Users size={20} /> Acessos por Cargo / KBS
+                  </h3>
+                  <ChevronRight size={20} color="#22c55e" style={{ transform: expandedKbsSection ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
                 </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {selectedTool.kbsByRole.map((row) => (
-                    <div key={row.roleId} className="card-base" style={{ padding: 20, border: '1px solid #27272a', background: 'rgba(34, 197, 94, 0.03)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-                        <div>
-                          <div style={{ fontWeight: 600, color: '#e4e4e7', fontSize: 15 }}>{row.roleName}</div>
-                          <div style={{ fontSize: 12, color: '#71717a', marginTop: 4 }}>{row.departmentName}</div>
-                          <div style={{ fontSize: 12, color: '#22c55e', marginTop: 6 }}>Nível padrão: {row.accessLevelDesc}</div>
-                        </div>
-                        <div style={{ fontSize: 11, color: '#a1a1aa', background: '#18181b', padding: '6px 12px', borderRadius: 8, fontWeight: 600 }}>
-                          {row.userCount} {row.userCount === 1 ? 'colaborador' : 'colaboradores'}
-                        </div>
+                {expandedKbsSection && (
+                  <div style={{ padding: 20 }}>
+                    {(!selectedTool.kbsByRole || selectedTool.kbsByRole.length === 0) ? (
+                      <div style={{ textAlign: 'center', color: '#52525b', padding: 32, borderStyle: 'dashed', borderColor: 'rgba(34, 197, 94, 0.2)', borderRadius: 8 }}>
+                        Nenhum cargo na Gestão de Pessoas (KBS) possui esta ferramenta como padrão. Configure os Role Kits nos cargos para refletir aqui.
                       </div>
-                      {row.users.length > 0 && (
-                        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #27272a', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {row.users.slice(0, 12).map((u) => (
-                            <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#18181b', padding: '8px 12px', borderRadius: 8, fontSize: 12 }}>
-                              <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#27272a', color: '#a1a1aa', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>{u.name.charAt(0)}</div>
-                              <span style={{ color: '#e4e4e7' }}>{u.name}</span>
-                              <span style={{ color: '#52525b', fontSize: 11 }}>{u.email}</span>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {selectedTool.kbsByRole.map((row) => (
+                          <div key={row.roleId} className="card-base" style={{ padding: 20, border: '1px solid #27272a', background: 'rgba(34, 197, 94, 0.03)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                              <div>
+                                <div style={{ fontWeight: 600, color: '#e4e4e7', fontSize: 15 }}>{row.roleName}</div>
+                                <div style={{ fontSize: 12, color: '#71717a', marginTop: 4 }}>{row.departmentName}</div>
+                                <div style={{ fontSize: 12, color: '#22c55e', marginTop: 6 }}>Nível padrão: {row.accessLevelDesc}</div>
+                              </div>
+                              <div style={{ fontSize: 11, color: '#a1a1aa', background: '#18181b', padding: '6px 12px', borderRadius: 8, fontWeight: 600 }}>
+                                {row.userCount} {row.userCount === 1 ? 'colaborador' : 'colaboradores'}
+                              </div>
                             </div>
-                          ))}
-                          {row.users.length > 12 && <span style={{ color: '#71717a', fontSize: 12, alignSelf: 'center' }}>+{row.users.length - 12} mais</span>}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+                            {row.users.length > 0 && (
+                              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #27272a', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                {row.users.slice(0, 12).map((u) => (
+                                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#18181b', padding: '8px 12px', borderRadius: 8, fontSize: 12 }}>
+                                    <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#27272a', color: '#a1a1aa', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>{u.name.charAt(0)}</div>
+                                    <span style={{ color: '#e4e4e7' }}>{u.name}</span>
+                                    <span style={{ color: '#52525b', fontSize: 11 }}>{u.email}</span>
+                                  </div>
+                                ))}
+                                {row.users.length > 12 && <span style={{ color: '#71717a', fontSize: 12, alignSelf: 'center' }}>+{row.users.length - 12} mais</span>}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* LISTA DE USUÁRIOS AGRUPADOS POR NÍVEL (PERMANENTE) */}
               <h3 style={{ color: '#d4d4d8', marginBottom: 15, fontSize: 18, marginTop: 32 }}>Membros Permanentes</h3>
@@ -1539,7 +1636,7 @@ export default function App() {
           {activeTab === 'HISTORY' && (
             <div className="fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Logs de Auditoria</h2>
+                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Relatório de Chamados</h2>
                 <div style={{ fontSize: 12, color: '#71717a' }}>
                   {systemProfile === 'VIEWER' ? 'Seus registros' : 'Total de Registros'}: {
                     requests.filter(r => {
@@ -1633,8 +1730,8 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="card-base" style={{ padding: 0, overflow: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <div className="card-base" style={{ padding: 0, overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, minWidth: 900 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #27272a', color: '#a1a1aa', textAlign: 'left' }}>
                       {visibleColumns.id !== false && <th style={{ padding: '16px', fontWeight: 600 }}>ID</th>}
@@ -1818,18 +1915,18 @@ export default function App() {
                               </td>
                             )}
                             {visibleColumns.observacao !== false && (
-                              <td style={{ padding: '16px', color: '#71717a', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.adminNote}>
+                              <td style={{ padding: '16px', color: '#71717a' }}>
                                 {r.adminNote || '-'}
                               </td>
                             )}
                             {visibleColumns.justificativa !== false && (
-                              <td style={{ padding: '16px', color: '#a1a1aa', maxWidth: '180px', fontSize: 12 }} title={r.justification || ''}>
-                                {(r.justification || '-').toString().slice(0, 60)}{(r.justification && r.justification.length > 60) ? '…' : ''}
+                              <td style={{ padding: '16px', color: '#a1a1aa', fontSize: 12 }}>
+                                {r.justification || '-'}
                               </td>
                             )}
                             {visibleColumns.detalhes !== false && (
-                              <td style={{ padding: '16px', color: '#a1a1aa', maxWidth: '280px', fontSize: 11 }} title={formatDetails()}>
-                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{formatDetails()}</span>
+                              <td style={{ padding: '16px', color: '#a1a1aa', fontSize: 11 }}>
+                                {formatDetails()}
                               </td>
                             )}
                           </tr>
@@ -1884,8 +1981,39 @@ export default function App() {
                         <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                           <div style={{ padding: 12, background: '#18181b', borderRadius: 8, borderLeft: '3px solid #7c3aed' }}>
                             <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Abertura · {new Date(chamadoDetail.createdAt).toLocaleString('pt-BR')}</div>
-                            <div style={{ fontSize: 13, color: '#e4e4e7' }}>Solicitação criada · {chamadoDetail.type}</div>
-                            {chamadoDetail.justification && <div style={{ marginTop: 8, fontSize: 12, color: '#a1a1aa' }}>{chamadoDetail.justification}</div>}
+                            <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 8 }}>Solicitação criada · {chamadoDetail.type}</div>
+                            {(() => {
+                              let d: Record<string, unknown> = {};
+                              try { d = typeof chamadoDetail.details === 'string' ? JSON.parse(chamadoDetail.details || '{}') : (chamadoDetail.details || {}); } catch {}
+                              const lines: { label: string; value: string }[] = [];
+                              if (chamadoDetail.justification) lines.push({ label: 'Justificativa', value: chamadoDetail.justification });
+                              if (d.tool) lines.push({ label: 'Ferramenta', value: String(d.tool) });
+                              if (d.target || d.targetValue) lines.push({ label: 'Nível solicitado', value: String(d.target || d.targetValue || '—') });
+                              if (d.urgencyLabel || d.urgency) lines.push({ label: 'Urgência', value: String(d.urgencyLabel || d.urgency) });
+                              if (d.requestTypeLabel || d.requestType) lines.push({ label: 'Tipo de solicitação', value: String(d.requestTypeLabel || d.requestType || '—') });
+                              if (d.description) lines.push({ label: 'Descrição / Problema', value: String(d.description) });
+                              if (d.collaboratorName) lines.push({ label: 'Colaborador', value: String(d.collaboratorName) });
+                              if (d.current && typeof d.current === 'object') {
+                                const c = d.current as Record<string, string>;
+                                if (c.role || c.dept) lines.push({ label: 'Cargo/Depto atual', value: [c.role, c.dept].filter(Boolean).join(' / ') });
+                              }
+                              if (d.future && typeof d.future === 'object') {
+                                const f = d.future as Record<string, string>;
+                                if (f.role || f.dept) lines.push({ label: 'Cargo/Depto futuro', value: [f.role, f.dept].filter(Boolean).join(' / ') });
+                              }
+                              if (d.substituteName || d.substituteEmail) lines.push({ label: 'Substituto', value: [d.substituteName, d.substituteEmail].filter(Boolean).map(String).join(' · ') });
+                              if (d.reason) lines.push({ label: 'Motivo', value: String(d.reason) });
+                              if (d.info) lines.push({ label: 'Info', value: String(d.info) });
+                              return (
+                                <>
+                                  {lines.map((l, i) => (
+                                    <div key={i} style={{ marginTop: 6, fontSize: 12, color: '#a1a1aa' }}>
+                                      <span style={{ color: '#71717a' }}>{l.label}:</span> {l.value}
+                                    </div>
+                                  ))}
+                                </>
+                              );
+                            })()}
                           </div>
                           {(chamadoDetail.comments || []).map(c => (
                             <div key={c.id} style={{ padding: 12, background: '#18181b', borderRadius: 8 }}>
@@ -1906,11 +2034,25 @@ export default function App() {
                         </div>
                         <div style={{ padding: 16, borderTop: '1px solid #27272a' }}>
                           {(activeTab === 'MY_TICKETS') ? null : (
-                            <select className="input-base" style={{ marginBottom: 8, background: '#18181b', fontSize: 12 }} value={chamadoCommentKind} onChange={e => setChamadoCommentKind(e.target.value as any)}>
-                              <option value="COMMENT">Comentário</option>
-                              <option value="SOLUTION">Adicionar uma solução</option>
-                              <option value="SCHEDULED_TASK">Criar uma tarefa agendada</option>
-                            </select>
+                            <>
+                              <select className="input-base" style={{ marginBottom: 8, background: '#18181b', fontSize: 12 }} value={chamadoCommentKind} onChange={e => { setChamadoCommentKind(e.target.value as any); if (e.target.value !== 'SCHEDULED_TASK') setChamadoScheduledAt(''); }}>
+                                <option value="COMMENT">Comentário</option>
+                                <option value="SOLUTION">Adicionar uma solução</option>
+                                <option value="SCHEDULED_TASK">Criar uma tarefa agendada</option>
+                              </select>
+                              {chamadoCommentKind === 'SCHEDULED_TASK' && (
+                                <div style={{ marginBottom: 8 }}>
+                                  <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Data e hora da tarefa</label>
+                                  <input
+                                    type="datetime-local"
+                                    className="input-base"
+                                    style={{ width: '100%', background: '#18181b', fontSize: 12 }}
+                                    value={chamadoScheduledAt}
+                                    onChange={e => setChamadoScheduledAt(e.target.value)}
+                                  />
+                                </div>
+                              )}
+                            </>
                           )}
                           <div style={{ display: 'flex', gap: 8 }}>
                             <input
@@ -1935,7 +2077,7 @@ export default function App() {
                       {/* Sidebar metadados */}
                       <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
                         <div className="card-base" style={{ padding: 20 }}>
-                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Data e hora</div>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Data e hora de abertura</div>
                           <div style={{ color: '#e4e4e7' }}>{new Date(chamadoDetail.createdAt).toLocaleString('pt-BR')}</div>
                         </div>
                         <div className="card-base" style={{ padding: 20 }}>
@@ -1983,22 +2125,47 @@ export default function App() {
                             )}
                           </div>
                         )}
-                        <div className="card-base" style={{ padding: 20 }}>
+                        <div className="card-base" style={{ padding: 20, position: 'relative' }}>
                           <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Responsável</label>
                           {(activeTab === 'MY_TICKETS') ? (
                             <div style={{ color: '#e4e4e7', fontSize: 13 }}>{chamadoDetail.assignee?.name || '— Não atribuído'}</div>
                           ) : (
-                            <select
-                              className="input-base"
-                              style={{ width: '100%', background: '#18181b', fontSize: 12 }}
-                              value={chamadoDetail.assigneeId || ''}
-                              onChange={e => handleChamadoMetadataChange('assigneeId', e.target.value || null)}
-                            >
-                              <option value="">— Não atribuído</option>
-                              {allUsers.filter((u: User) => ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(u.systemProfile)).map((u: User) => (
-                                <option key={u.id} value={u.id}>{u.name}</option>
-                              ))}
-                            </select>
+                            <>
+                              <input
+                                type="text"
+                                className="input-base"
+                                style={{ width: '100%', background: '#18181b', fontSize: 12 }}
+                                value={assigneeSearchOpen ? assigneeSearchQuery : (chamadoDetail.assignee?.name || '')}
+                                onChange={e => { setAssigneeSearchQuery(e.target.value); setAssigneeSearchOpen(true); }}
+                                onFocus={() => { setAssigneeSearchOpen(true); setAssigneeSearchQuery(''); }}
+                                onBlur={() => setTimeout(() => setAssigneeSearchOpen(false), 200)}
+                                placeholder="— Não atribuído ou busque por nome..."
+                              />
+                              {assigneeSearchOpen && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#18181b', border: '1px solid #27272a', borderRadius: 8, zIndex: 50, maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+                                  <div
+                                    style={{ padding: '10px 12px', cursor: 'pointer', color: '#e4e4e7', fontSize: 13, borderBottom: '1px solid #27272a' }}
+                                    onClick={() => { handleChamadoMetadataChange('assigneeId', null); setAssigneeSearchOpen(false); setAssigneeSearchQuery(''); }}
+                                  >
+                                    — Não atribuído
+                                  </div>
+                                  {allUsers
+                                    .filter((u: User) => ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(u.systemProfile))
+                                    .filter((u: User) => !assigneeSearchQuery.trim() || u.name.toLowerCase().includes(assigneeSearchQuery.toLowerCase()) || (u.email || '').toLowerCase().includes(assigneeSearchQuery.toLowerCase()))
+                                    .map((u: User) => (
+                                      <div
+                                        key={u.id}
+                                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#e4e4e7', fontSize: 13, borderBottom: '1px solid #27272a', display: 'flex', flexDirection: 'column', gap: 2 }}
+                                        className="hover:bg-zinc-800"
+                                        onMouseDown={(e) => { e.preventDefault(); handleChamadoMetadataChange('assigneeId', u.id); setAssigneeSearchOpen(false); setAssigneeSearchQuery(''); }}
+                                      >
+                                        <span>{u.name}</span>
+                                        {u.email && <span style={{ fontSize: 11, color: '#71717a' }}>{u.email}</span>}
+                                      </div>
+                                    ))}
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>
@@ -2223,7 +2390,31 @@ export default function App() {
         )
       }
 
-      {/* DEPARTMENT MANAGEMENT MODALS */}
+      {/* UNIT & DEPARTMENT MODALS */}
+      <EditUnitModal
+        isOpen={isEditUnitModalOpen}
+        onClose={() => { setIsEditUnitModalOpen(false); setSelectedUnitForEdit(null); }}
+        unit={selectedUnitForEdit}
+        onUpdated={loadData}
+        showToast={showToast}
+      />
+      <CreateDepartmentModal
+        isOpen={isCreateDepartmentModalOpen}
+        onClose={() => { setIsCreateDepartmentModalOpen(false); setSelectedUnitForAddDept(null); }}
+        unit={selectedUnitForAddDept}
+        onCreated={loadData}
+        showToast={showToast}
+      />
+      <UnitMigrationWizardModal
+        isOpen={!!unitMigrationData}
+        onClose={() => setUnitMigrationData(null)}
+        unit={unitMigrationData?.unit ?? null}
+        departments={unitMigrationData?.departments ?? []}
+        otherUnits={units.filter((u: any) => u.id !== unitMigrationData?.unit?.id)}
+        allDepartments={departments}
+        onSuccess={loadData}
+        showToast={showToast}
+      />
       <EditDepartmentModal
         isOpen={isEditDeptModalOpen}
         onClose={() => setIsEditDeptModalOpen(false)}
