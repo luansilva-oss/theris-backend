@@ -57,7 +57,7 @@ export const deleteUnit = async (req: Request, res: Response) => {
             departments: unit.departments.map(d => ({
                 id: d.id,
                 name: d.name,
-                rolesCount: (d as any)._count?.roles ?? d.roles?.length ?? 0
+                rolesCount: d._count?.roles ?? 0
             }))
         });
     } catch (error) {
