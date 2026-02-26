@@ -43,6 +43,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
     const [roleCode, setRoleCode] = useState('');
     const [kitItems, setKitItems] = useState<RoleKitItem[]>([]);
     const [tools, setTools] = useState<Tool[]>([]);
+    const [toolsAndLevelsMap, setToolsAndLevelsMap] = useState<Record<string, { label: string; value: string }[]>>({});
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -53,8 +54,9 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
             setLoading(true);
             Promise.all([
                 fetch(`${API_URL}/api/structure/roles/${role.id}/kit`).then(r => r.ok ? r.json() : null),
-                fetch(`${API_URL}/api/tools`).then(r => r.ok ? r.json() : [])
-            ]).then(([roleData, toolsList]) => {
+                fetch(`${API_URL}/api/tools`).then(r => r.ok ? r.json() : []),
+                fetch(`${API_URL}/api/tools-and-levels`).then(r => r.ok ? r.json() : {})
+            ]).then(([roleData, toolsList, levelsMap]) => {
                 setKitItems(roleData?.kitItems?.map((it: RoleKitItem) => ({
                     toolCode: it.toolCode,
                     toolName: it.toolName,
@@ -63,6 +65,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                     isCritical: it.isCritical !== false
                 })) || []);
                 setTools(toolsList || []);
+                setToolsAndLevelsMap(levelsMap || {});
             }).catch(e => console.error(e)).finally(() => setLoading(false));
         }
     }, [role?.id, role?.name, role?.code, isOpen]);
@@ -74,9 +77,13 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
         }
     }, [role?.name, role?.code]);
 
-    const getLevelsForTool = (toolId: string): string[] => {
+    const getLevelsForTool = (toolId: string): { label: string; value: string }[] => {
         const t = tools.find(x => x.id === toolId);
-        return (t?.availableAccessLevels?.length ? t.availableAccessLevels : ['Admin', 'User', 'Viewer']) as string[];
+        const toolName = t?.name;
+        const fromMap = toolName && toolsAndLevelsMap[toolName];
+        if (fromMap && fromMap.length > 0) return fromMap;
+        const fallback = (t?.availableAccessLevels?.length ? t.availableAccessLevels : ['Admin', 'User', 'Viewer']) as string[];
+        return fallback.map(l => ({ label: l, value: l }));
     };
 
     const addRow = () => {
@@ -93,11 +100,13 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
         const next = [...kitItems];
         if (field === 'toolCode' && value) {
             const t = tools.find(x => x.id === value);
+            const levels = getLevelsForTool(value);
+            const firstLevel = levels[0];
             next[index] = {
                 ...next[index],
                 toolCode: value,
                 toolName: t ? t.name : next[index].toolName,
-                accessLevelDesc: next[index].accessLevelDesc || (t?.availableAccessLevels?.[0] ?? 'User')
+                accessLevelDesc: firstLevel ? (typeof firstLevel === 'string' ? firstLevel : firstLevel.value) : (t?.availableAccessLevels?.[0] ?? 'User')
             };
         } else {
             (next[index] as any)[field] = value;
@@ -226,9 +235,11 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, onUpd
                                                             style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
                                                         >
                                                             <option value="">—</option>
-                                                            {(item.toolCode ? getLevelsForTool(item.toolCode) : ['Admin', 'User', 'Viewer']).map(l => (
-                                                                <option key={l} value={l}>{l}</option>
-                                                            ))}
+                                                            {(item.toolCode ? getLevelsForTool(item.toolCode) : [{ label: 'Admin', value: 'Admin' }, { label: 'User', value: 'User' }, { label: 'Viewer', value: 'Viewer' }]).map(l => {
+                                                                const lab = typeof l === 'string' ? l : l.label;
+                                                                const val = typeof l === 'string' ? l : l.value;
+                                                                return <option key={val} value={val}>{lab}</option>;
+                                                            })}
                                                         </select>
                                                     </td>
                                                     <td style={{ padding: '8px' }}>

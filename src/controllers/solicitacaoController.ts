@@ -242,7 +242,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
             }
           } catch (_) { }
         }
-        sendSlackNotification(request.requester.email, 'REPROVADO', adminNote || 'Reprovado pelo administrador.', request.type, ownerName);
+        sendSlackNotification(request.requester.email, 'REPROVADO', adminNote || 'Reprovado pelo administrador.', request.type, ownerName, request.details);
       }
       return res.json(updated);
     }
@@ -313,7 +313,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
 
     // Notificação Slack
     if (request.requester.email) {
-      sendSlackNotification(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada e executada.', request.type);
+      sendSlackNotification(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada e executada.', request.type, undefined, request.details);
     }
 
     // =========================================================

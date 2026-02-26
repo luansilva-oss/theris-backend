@@ -97,6 +97,9 @@ const TOOLS_AND_LEVELS: Record<string, { label: string; value: string }[]> = {
 
 const TOOL_KEYS = Object.keys(TOOLS_AND_LEVELS);
 
+/** Exposto para a API do painel (cascata Ferramenta → Níveis no modal de KBS) */
+export const getToolsAndLevelsMap = () => ({ ...TOOLS_AND_LEVELS });
+
 // ============================================================
 // COMANDO /pessoas — Abre diretamente Gestão de Pessoas
 // ============================================================
@@ -1030,13 +1033,87 @@ slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
 
 const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
 const PEOPLE_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
+const INFRA_TYPES = ['INFRA_SUPPORT'];
+
+const TYPE_LABELS: Record<string, string> = {
+  ACCESS_TOOL: 'Kit Padrão / Nova Ferramenta',
+  ACCESS_CHANGE: 'Alteração de Acesso',
+  ACCESS_TOOL_EXTRA: 'Acesso Extraordinário',
+  DEPUTY_DESIGNATION: 'Indicar Deputy',
+  CHANGE_ROLE: 'Mudança de Cargo',
+  HIRING: 'Contratação',
+  FIRING: 'Desligamento',
+  ADMISSAO: 'Admissão',
+  DEMISSAO: 'Desligamento',
+  PROMOCAO: 'Promoção',
+  INFRA_SUPPORT: 'Suporte Infra / TI'
+};
+
+function buildNotificationSummary(requestType: string, detailsJson?: string | null): { category: string; typeLabel: string; detailsText: string } {
+  let d: Record<string, unknown> = {};
+  try {
+    d = typeof detailsJson === 'string' ? JSON.parse(detailsJson || '{}') : (detailsJson || {});
+  } catch (_) {}
+
+  const category = ACCESS_TYPES.includes(requestType) || (requestType === 'DEPUTY_DESIGNATION' && d.tool)
+    ? 'ACESSOS'
+    : PEOPLE_TYPES.includes(requestType)
+      ? 'PESSOAS'
+      : INFRA_TYPES.includes(requestType)
+        ? 'INFRA'
+        : 'GERAL';
+
+  const typeLabel = TYPE_LABELS[requestType] || requestType;
+
+  const parts: string[] = [];
+  if (requestType === 'INFRA_SUPPORT') {
+    if (d.requestTypeLabel || d.requestType) parts.push(`Tipo: ${d.requestTypeLabel || d.requestType}`);
+    if (d.urgencyLabel || d.urgency) parts.push(`Urgência: ${d.urgencyLabel || d.urgency}`);
+    if (d.description) parts.push(`Descrição: ${(d.description as string).slice(0, 150)}${(d.description as string).length > 150 ? '…' : ''}`);
+  } else if (PEOPLE_TYPES.includes(requestType) && requestType !== 'DEPUTY_DESIGNATION') {
+    const collab = (d.collaboratorName as string) || (d.info as string)?.toString().replace(/^[^:]+:\s*/, '') || '—';
+    parts.push(`Colaborador: ${collab}`);
+    if (requestType === 'CHANGE_ROLE') {
+      const curr = d.current as Record<string, string> | undefined;
+      const fut = d.future as Record<string, string> | undefined;
+      if (curr?.role || curr?.dept) parts.push(`Atual: ${[curr?.role, curr?.dept].filter(Boolean).join(' / ')}`);
+      if (fut?.role || fut?.dept) parts.push(`Novo: ${[fut?.role, fut?.dept].filter(Boolean).join(' / ')}`);
+    }
+    if (requestType === 'HIRING' && (d.role || d.dept || d.startDate)) {
+      if (d.role) parts.push(`Cargo: ${d.role}`);
+      if (d.dept) parts.push(`Depto: ${d.dept}`);
+      if (d.startDate) parts.push(`Início: ${d.startDate}`);
+    }
+    if (requestType === 'FIRING' && (d.role || d.dept)) {
+      if (d.role) parts.push(`Cargo: ${d.role}`);
+      if (d.dept) parts.push(`Depto: ${d.dept}`);
+    }
+  } else if (requestType === 'DEPUTY_DESIGNATION' && d.tool) {
+    const sub = (d.substituteName as string) || (d.substituteEmail as string) || (d.substitute as string) || '—';
+    parts.push(`Substituto: ${sub}`);
+    parts.push(`Ferramenta: ${d.tool}`);
+  } else if (ACCESS_TYPES.includes(requestType) || (requestType === 'DEPUTY_DESIGNATION' && !d.tool)) {
+    const tool = (d.tool as string) || (d.toolName as string) || '—';
+    parts.push(`Ferramenta: ${tool}`);
+    if (d.target) parts.push(`Nível: ${d.target}`);
+    if (d.beneficiary) parts.push(`Beneficiário: ${d.beneficiary}`);
+    if (requestType === 'ACCESS_TOOL' && (d.owner || d.subOwner)) {
+      if (d.owner) parts.push(`Owner: ${d.owner}`);
+      if (d.subOwner) parts.push(`Sub-Owner: ${d.subOwner}`);
+    }
+  }
+  const detailsText = parts.length ? parts.join(' · ') : (d.info as string) || '—';
+
+  return { category, typeLabel, detailsText };
+}
 
 export const sendSlackNotification = async (
   email: string,
   status: 'APROVADO' | 'REPROVADO',
   adminNote: string,
   requestType?: string,
-  ownerName?: string
+  ownerName?: string,
+  requestDetails?: string | null
 ) => {
   if (!slackApp) return;
 
@@ -1055,22 +1132,32 @@ export const sendSlackNotification = async (
 
     const isAccessRequest = requestType && ACCESS_TYPES.includes(requestType);
 
-    // Bloco principal
     const blocks: any[] = [
       {
         type: 'header',
         text: { type: 'plain_text', text: `${icon} Solicitação ${actionText}`, emoji: true }
-      },
-      {
-        type: 'section',
-        fields: [
-          { type: 'mrkdwn', text: `*Status:*\n${status}` },
-          { type: 'mrkdwn', text: `*Nota do Time de SI:*\n_${adminNote || '—'}_` }
-        ]
       }
     ];
 
-    // Bloco de contato — apenas para recusa de Gestão de Acessos
+    if (requestType && requestDetails) {
+      const { category, typeLabel, detailsText } = buildNotificationSummary(requestType, requestDetails);
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Categoria:* ${category}\n*Tipo/Ação:* ${typeLabel}\n*Detalhes:* ${detailsText}`
+        }
+      });
+    }
+
+    blocks.push({
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Status:*\n${status}` },
+        { type: 'mrkdwn', text: `*Nota do Time de SI:*\n_${adminNote || '—'}_` }
+      ]
+    });
+
     if (!isApproved && isAccessRequest) {
       const contactText = ownerName
         ? `Para mais detalhes, contate o *Owner da ferramenta: ${ownerName}* ou o *time de Segurança da Informação*.`

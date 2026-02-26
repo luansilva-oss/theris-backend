@@ -16,7 +16,7 @@ import { syncStructureFromUsers } from './services/structureSync'; // Import syn
 import { startPasswordReminderCron } from './jobs/passwordReminderCron';
 
 // Slack
-import { slackReceiver } from './services/slackService';
+import { slackReceiver, getToolsAndLevelsMap } from './services/slackService';
 
 dotenv.config();
 
@@ -69,6 +69,7 @@ app.put('/api/structure/roles/:id/kit', structureController.updateRoleKit);
 
 // 2. Ferramentas
 app.get('/api/tools', getTools);
+app.get('/api/tools-and-levels', (_req: Request, res: Response) => res.json(getToolsAndLevelsMap()));
 app.post('/api/tools', createTool);
 app.put('/api/tools/:id', updateTool); // Atualizar ferramenta (Grupo, Owner, Níveis)
 app.delete('/api/tools/:id', deleteTool); // EXCLUIR FERRAMENTA
