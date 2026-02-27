@@ -2228,9 +2228,9 @@ export default function App() {
                         onChange={e => setTicketFilters(f => ({ ...f, status: e.target.value }))}
                       >
                         <option value="ALL">Todos</option>
-                        <option value="PENDENTE">Pendente</option>
-                        <option value="APROVADO">Aprovado</option>
-                        <option value="REPROVADO">Recusado</option>
+                        {Object.entries(STATUS_LABELS).map(([val, label]) => (
+                          <option key={val} value={val}>{label}</option>
+                        ))}
                       </select>
                     </div>
                     {activeTab !== 'MY_TICKETS' && (
