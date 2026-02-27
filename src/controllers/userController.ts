@@ -65,7 +65,7 @@ export const getMyTools = async (req: Request, res: Response) => {
       const code = k.accessLevelDesc ?? k.toolCode ?? '';
       const toolKey = (k.toolName || '').trim();
       const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
-      const levelLabel = levelsForTool?.find((l: { value: string }) => l.value === code)?.label ?? code || '—';
+      const levelLabel = (levelsForTool?.find((l: { value: string }) => l.value === code)?.label ?? code) || '—';
       return {
         id: k.id,
         toolName: k.toolName,
