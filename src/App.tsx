@@ -2133,21 +2133,23 @@ export default function App() {
                                 value={assigneeSearchOpen ? assigneeSearchQuery : (chamadoDetail.assignee?.name || '')}
                                 onChange={e => { setAssigneeSearchQuery(e.target.value); setAssigneeSearchOpen(true); }}
                                 onFocus={() => { setAssigneeSearchOpen(true); setAssigneeSearchQuery(''); }}
-                                onBlur={() => setTimeout(() => setAssigneeSearchOpen(false), 200)}
+                                onBlur={() => setTimeout(() => { setAssigneeSearchOpen(false); setAssigneeSearchQuery(''); }, 150)}
                                 placeholder="— Não atribuído ou busque por nome..."
                               />
-                              {assigneeSearchOpen && (
+                              {assigneeSearchOpen && (() => {
+                                const searchTerm = assigneeSearchQuery.trim();
+                                const filteredUsers = allUsers
+                                  .filter((u: User) => ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(u.systemProfile))
+                                  .filter((u: User) => !searchTerm || u.name.toLowerCase().includes(searchTerm.toLowerCase()) || (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()));
+                                return (
                                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#18181b', border: '1px solid #27272a', borderRadius: 8, zIndex: 50, maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
                                   <div
                                     style={{ padding: '10px 12px', cursor: 'pointer', color: '#e4e4e7', fontSize: 13, borderBottom: '1px solid #27272a' }}
-                                    onClick={() => { handleChamadoMetadataChange('assigneeId', null); setAssigneeSearchOpen(false); setAssigneeSearchQuery(''); }}
+                                    onMouseDown={e => { e.preventDefault(); handleChamadoMetadataChange('assigneeId', null); setAssigneeSearchOpen(false); setAssigneeSearchQuery(''); }}
                                   >
                                     — Não atribuído
                                   </div>
-                                  {allUsers
-                                    .filter((u: User) => ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(u.systemProfile))
-                                    .filter((u: User) => !assigneeSearchQuery.trim() || u.name.toLowerCase().includes(assigneeSearchQuery.toLowerCase()) || (u.email || '').toLowerCase().includes(assigneeSearchQuery.toLowerCase()))
-                                    .map((u: User) => (
+                                  {filteredUsers.map((u: User) => (
                                       <div
                                         key={u.id}
                                         style={{ padding: '10px 12px', cursor: 'pointer', color: '#e4e4e7', fontSize: 13, borderBottom: '1px solid #27272a', display: 'flex', flexDirection: 'column', gap: 2 }}
@@ -2159,7 +2161,8 @@ export default function App() {
                                       </div>
                                     ))}
                                 </div>
-                              )}
+                                );
+                              })()}
                             </>
                           )}
                         </div>
