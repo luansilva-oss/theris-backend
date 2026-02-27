@@ -433,9 +433,11 @@ export default function App() {
   // LOAD DATA
   const loadData = async () => {
     try {
+      const headers: Record<string, string> = {};
+      if (currentUser?.id) headers['x-user-id'] = currentUser.id;
       const [resTools, resReqs] = await Promise.all([
         fetch(`${API_URL}/api/tools`),
-        fetch(`${API_URL}/api/solicitacoes`)
+        fetch(`${API_URL}/api/solicitacoes`, { headers })
       ]);
 
       if (resTools.ok) {
@@ -1094,7 +1096,7 @@ export default function App() {
                           {viewerKitTools.map((row) => (
                             <tr key={row.id} style={{ borderBottom: '1px solid #1f1f22' }}>
                               <td style={{ padding: '14px 16px', color: '#e4e4e7', fontWeight: 500 }}>{row.toolName}</td>
-                              <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{row.accessLevelDesc}</td>
+                              <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{(row as any).levelLabel ?? row.accessLevelDesc}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1438,7 +1440,7 @@ export default function App() {
               </div>
 
               {/* LISTA DE USUÁRIOS AGRUPADOS POR NÍVEL (PERMANENTE) */}
-              <h3 style={{ color: '#d4d4d8', marginBottom: 15, fontSize: 18, marginTop: 32 }}>Membros Permanentes</h3>
+              <h3 style={{ color: '#d4d4d8', marginBottom: 15, fontSize: 18, marginTop: 32 }}>Níveis de Acesso da Ferramenta</h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {Object.keys(getGroupedAccesses(selectedTool).permanent).length === 0 && (
@@ -1481,12 +1483,11 @@ export default function App() {
                             if (level.toLowerCase().match(/admin|owner|proprietário|full/)) return <Crown size={20} color="#fbbf24" fill="rgba(251, 191, 36, 0.2)" />;
                             return <Shield size={20} color="#a1a1aa" />;
                           })()}
-                          <span style={{ fontWeight: 600, color: '#f4f4f5', fontSize: 15 }}>{level}</span>
-                          <span style={{ fontSize: 10, color: '#71717a', marginLeft: 8 }}>
+                          <span style={{ fontWeight: 600, color: '#f4f4f5', fontSize: 15 }}>
                             {(() => {
                               const descData = (selectedTool.accessLevelDescriptions as any)?.[level];
                               const description = typeof descData === 'object' ? descData.description : (typeof descData === 'string' ? descData : null);
-                              return description && ` - ${description.substring(0, 30)}${description.length > 30 ? '...' : ''}`;
+                              return description ? `${level} - ${description}` : level;
                             })()}
                           </span>
                         </div>
@@ -2027,46 +2028,55 @@ export default function App() {
                           ))}
                         </div>
                         <div style={{ padding: 16, borderTop: '1px solid #27272a' }}>
-                          {(activeTab === 'MY_TICKETS') ? null : (
+                          {(chamadoDetail.status === 'APROVADO' || chamadoDetail.status === 'REPROVADO') ? (
+                            <div style={{ background: 'rgba(39, 39, 42, 0.6)', borderRadius: 12, padding: 20, display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #3f3f46' }}>
+                              <Lock size={24} color="#71717a" />
+                              <span style={{ color: '#a1a1aa', fontSize: 14 }}>🔒 Este chamado foi encerrado e não aceita novas mensagens.</span>
+                            </div>
+                          ) : (
                             <>
-                              <select className="input-base" style={{ marginBottom: 8, background: '#18181b', fontSize: 12 }} value={chamadoCommentKind} onChange={e => { setChamadoCommentKind(e.target.value as any); if (e.target.value !== 'SCHEDULED_TASK') setChamadoScheduledAt(''); }}>
-                                <option value="COMMENT">Comentário</option>
-                                <option value="SOLUTION">Adicionar uma solução</option>
-                                <option value="SCHEDULED_TASK">Criar uma tarefa agendada</option>
-                              </select>
-                              {chamadoCommentKind === 'SCHEDULED_TASK' && (
-                                <div style={{ marginBottom: 8 }}>
-                                  <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Data e horário planejado</label>
-                                  <input
-                                    type="datetime-local"
-                                    className="input-base"
-                                    style={{ width: '100%', background: '#18181b', fontSize: 12 }}
-                                    value={chamadoScheduledAt}
-                                    onChange={e => setChamadoScheduledAt(e.target.value)}
-                                    onClick={e => { const t = e.currentTarget; if (t.showPicker) t.showPicker(); }}
-                                  />
-                                </div>
+                              {(activeTab === 'MY_TICKETS') ? null : (
+                                <>
+                                  <select className="input-base" style={{ marginBottom: 8, background: '#18181b', fontSize: 12 }} value={chamadoCommentKind} onChange={e => { setChamadoCommentKind(e.target.value as any); if (e.target.value !== 'SCHEDULED_TASK') setChamadoScheduledAt(''); }}>
+                                    <option value="COMMENT">Comentário</option>
+                                    <option value="SOLUTION">Adicionar uma solução</option>
+                                    <option value="SCHEDULED_TASK">Criar uma tarefa agendada</option>
+                                  </select>
+                                  {chamadoCommentKind === 'SCHEDULED_TASK' && (
+                                    <div style={{ marginBottom: 8 }}>
+                                      <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Data e horário planejado</label>
+                                      <input
+                                        type="datetime-local"
+                                        className="input-base"
+                                        style={{ width: '100%', background: '#18181b', fontSize: 12 }}
+                                        value={chamadoScheduledAt}
+                                        onChange={e => setChamadoScheduledAt(e.target.value)}
+                                        onClick={e => { const t = e.currentTarget; if (t.showPicker) t.showPicker(); }}
+                                      />
+                                    </div>
+                                  )}
+                                </>
                               )}
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <input
+                                  type="text"
+                                  className="input-base"
+                                  placeholder="Escreva sua mensagem..."
+                                  style={{ flex: 1, background: '#18181b' }}
+                                  value={chamadoCommentInput}
+                                  onChange={e => setChamadoCommentInput(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleAddComment()}
+                                />
+                                <button type="button" className="btn-mini" style={{ background: '#7c3aed' }} onClick={handleAddComment}>Enviar</button>
+                              </div>
+                              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <input type="file" ref={chamadoFileInputRef} style={{ display: 'none' }} onChange={handleChamadoAddAttachment} />
+                                <button type="button" className="btn-mini" style={{ background: '#27272a', color: '#e4e4e7' }} onClick={() => chamadoFileInputRef.current?.click()} disabled={chamadoAttachmentUploading}>
+                                  {chamadoAttachmentUploading ? 'Enviando...' : 'Adicionar documento'}
+                                </button>
+                              </div>
                             </>
                           )}
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <input
-                              type="text"
-                              className="input-base"
-                              placeholder="Escreva sua mensagem..."
-                              style={{ flex: 1, background: '#18181b' }}
-                              value={chamadoCommentInput}
-                              onChange={e => setChamadoCommentInput(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleAddComment()}
-                            />
-                            <button type="button" className="btn-mini" style={{ background: '#7c3aed' }} onClick={handleAddComment}>Enviar</button>
-                          </div>
-                          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <input type="file" ref={chamadoFileInputRef} style={{ display: 'none' }} onChange={handleChamadoAddAttachment} />
-                            <button type="button" className="btn-mini" style={{ background: '#27272a', color: '#e4e4e7' }} onClick={() => chamadoFileInputRef.current?.click()} disabled={chamadoAttachmentUploading}>
-                              {chamadoAttachmentUploading ? 'Enviando...' : 'Adicionar documento'}
-                            </button>
-                          </div>
                         </div>
                       </div>
                       {/* Sidebar metadados */}

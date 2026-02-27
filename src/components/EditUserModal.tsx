@@ -12,6 +12,7 @@ interface User {
     unit?: string;
     systemProfile: string;
     managerId?: string | null;
+    roleId?: string | null;
 }
 
 interface Department {
@@ -45,6 +46,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
     const [unit, setUnit] = useState(user.unit);
     const [systemProfile, setSystemProfile] = useState(user.systemProfile || 'VIEWER');
     const [managerId, setManagerId] = useState<string | null>(user.managerId || null);
+    const [roleId, setRoleId] = useState<string | null>(user.roleId || null);
     const [isSaving, setIsSaving] = useState(false);
 
     const [availableDepts, setAvailableDepts] = useState<Department[]>([]);
@@ -58,6 +60,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
         setUnit(user.unit);
         setSystemProfile(user.systemProfile || 'VIEWER');
         setManagerId(user.managerId || null);
+        setRoleId(user.roleId || null);
         loadStructure();
     }, [user]);
 
@@ -84,7 +87,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                     'Content-Type': 'application/json',
                     'x-requester-id': currentUser.id
                 },
-                body: JSON.stringify({ name, email, jobTitle, department, unit, systemProfile, managerId })
+                body: JSON.stringify({ name, email, jobTitle, department, unit, systemProfile, managerId, roleId })
             });
 
             if (res.ok) {
@@ -158,7 +161,11 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                         <select
                             className="form-input"
                             value={department}
-                            onChange={(e) => setDepartment(e.target.value)}
+                            onChange={(e) => {
+                                setDepartment(e.target.value);
+                                setRoleId(null);
+                                setJobTitle('');
+                            }}
                             style={{ width: '100%', fontSize: 13 }}
                         >
                             <option value="">Selecione...</option>
@@ -169,14 +176,19 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                         <label>Cargo</label>
                         <select
                             className="form-input"
-                            value={jobTitle}
-                            onChange={(e) => setJobTitle(e.target.value)}
+                            value={roleId || ''}
+                            onChange={(e) => {
+                                const id = e.target.value || null;
+                                setRoleId(id);
+                                const role = availableRoles.find(r => r.id === id);
+                                setJobTitle(role?.name ?? '');
+                            }}
                             style={{ width: '100%', fontSize: 13 }}
                         >
                             <option value="">Selecione...</option>
                             {availableRoles
                                 .filter(r => !department || r.departmentId === availableDepts.find(d => d.name === department)?.id)
-                                .map(r => <option key={r.id} value={r.name}>{r.name}</option>)
+                                .map(r => <option key={r.id} value={r.id}>{r.name}</option>)
                             }
                         </select>
                     </div>
@@ -204,6 +216,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                         style={{ width: '100%', fontSize: 13 }}
                     >
                         <option value="">Sem Gestor (Root)</option>
+                        {/* Lista todos os colaboradores da empresa (liderança cruzada: gestor pode ser de outro departamento) */}
                         {allUsers
                             .filter(u => u.id !== user.id) // Não pode ser gestor de si mesmo
                             .sort((a, b) => a.name.localeCompare(b.name))

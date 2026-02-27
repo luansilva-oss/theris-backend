@@ -186,6 +186,22 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
 
     const where: any = {};
 
+    // Privacidade VIEWER: retornar apenas chamados onde o usuário é solicitante, responsável ou aprovador
+    const userId = (req.headers['x-user-id'] as string)?.trim();
+    if (userId) {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { systemProfile: true }
+      });
+      if (currentUser?.systemProfile === 'VIEWER') {
+        where.OR = [
+          { requesterId: userId },
+          { assigneeId: userId },
+          { approverId: userId }
+        ];
+      }
+    }
+
     if (status && status !== 'ALL') {
       if (status === 'PENDENTE') {
         where.status = { startsWith: 'PENDENTE' };

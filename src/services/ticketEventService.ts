@@ -7,12 +7,68 @@ const prisma = new PrismaClient();
 
 import { getSlackApp } from './slackService';
 
+const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT'];
+const ACCESS_REQUEST_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+const PEOPLE_REQUEST_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
+
+const SUMMARY_MAX_LEN = 120;
+
 function getApp() {
   try {
     return getSlackApp();
   } catch {
     return null;
   }
+}
+
+/** Extrai título e resumo do chamado a partir de type, details e justification (para contexto nas notificações Slack). */
+function getRequestContext(request: { type: string; details: string | null; justification: string | null }): { title: string; summary: string } {
+  let detailsObj: Record<string, unknown> = {};
+  try {
+    detailsObj = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
+  } catch {
+    detailsObj = {};
+  }
+  const d = detailsObj as Record<string, string | undefined>;
+
+  let title: string;
+
+  if (INFRA_REQUEST_TYPES.includes(request.type)) {
+    title = (d.requestTypeLabel || d.requestType || 'Suporte Infra').trim() || 'Suporte Infra';
+  } else if (request.type === 'DEPUTY_DESIGNATION' && d.tool) {
+    title = `Indicar Deputy: ${(d.tool || '').trim() || '—'}`;
+  } else if (PEOPLE_REQUEST_TYPES.includes(request.type)) {
+    const actionLabels: Record<string, string> = {
+      CHANGE_ROLE: 'Mudança de Cargo',
+      HIRING: 'Contratação',
+      FIRING: 'Desligamento',
+      DEPUTY_DESIGNATION: 'Indicar Deputy',
+      ADMISSAO: 'Admissão',
+      DEMISSAO: 'Demissão',
+      PROMOCAO: 'Promoção'
+    };
+    const actionLabel = actionLabels[request.type] || request.type;
+    const collaborator = (d.collaboratorName || d.substitute || (d.info || '').replace(/^[^:]+:\s*/, '') || '—').trim();
+    title = `${actionLabel}: ${collaborator}`;
+  } else if (ACCESS_REQUEST_TYPES.includes(request.type) || (request.type === 'DEPUTY_DESIGNATION' && d.tool)) {
+    const isNewTool = request.type === 'ACCESS_TOOL' && (d.toolName || (d.info || '').toLowerCase().includes('nova ferramenta'));
+    title = (isNewTool ? (d.toolName || d.info || 'Nova ferramenta') : (d.tool || d.info || request.type)).trim() || request.type;
+  } else {
+    title = (d.info || request.type).trim() || request.type;
+  }
+
+  const rawSummary =
+    (d.description as string)?.trim() ||
+    (d.problem as string)?.trim() ||
+    (d.info as string)?.trim() ||
+    request.justification?.trim() ||
+    '';
+  const summary =
+    rawSummary.length > SUMMARY_MAX_LEN
+      ? rawSummary.slice(0, SUMMARY_MAX_LEN).trim() + '...'
+      : rawSummary || '—';
+
+  return { title, summary };
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -49,6 +105,8 @@ export async function notifyTicketEvent(
   });
   if (!request?.requester?.email) return;
 
+  const { title, summary } = getRequestContext(request);
+
   try {
     const userLookup = await slackApp.client.users.lookupByEmail({ email: request.requester.email });
     const slackUserId = userLookup.user?.id;
@@ -73,6 +131,8 @@ export async function notifyTicketEvent(
     if (eventType === 'ATTACHMENT_ADDED' && payload?.filename) {
       text += `\nArquivo: ${payload.filename}`;
     }
+
+    text += `\n\nChamado: ${title}\nResumo: ${summary}`;
 
     await slackApp.client.chat.postMessage({
       channel: slackUserId,

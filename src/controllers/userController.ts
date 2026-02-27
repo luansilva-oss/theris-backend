@@ -25,6 +25,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
         unit: true,
         systemProfile: true,
         managerId: true,
+        roleId: true,
         manager: {
           select: {
             name: true
@@ -46,6 +47,9 @@ export const getMyTools = async (req: Request, res: Response) => {
   if (!userId) return res.status(401).json({ error: 'Usuário não identificado. Envie o header x-user-id.' });
 
   try {
+    const { getToolsAndLevelsMap } = await import('../services/slackService');
+    const toolsAndLevels = getToolsAndLevelsMap();
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { roleId: true }
@@ -57,12 +61,19 @@ export const getMyTools = async (req: Request, res: Response) => {
       include: { kitItems: true }
     });
     const items = role?.kitItems ?? [];
-    return res.json(items.map((k: { id: string; toolName: string; toolCode: string; accessLevelDesc: string | null }) => ({
-      id: k.id,
-      toolName: k.toolName,
-      toolCode: k.toolCode,
-      accessLevelDesc: k.accessLevelDesc ?? '—'
-    })));
+    return res.json(items.map((k: { id: string; toolName: string; toolCode: string; accessLevelDesc: string | null }) => {
+      const code = k.accessLevelDesc ?? k.toolCode ?? '';
+      const toolKey = (k.toolName || '').trim();
+      const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
+      const levelLabel = levelsForTool?.find((l: { value: string }) => l.value === code)?.label ?? code || '—';
+      return {
+        id: k.id,
+        toolName: k.toolName,
+        toolCode: k.toolCode,
+        accessLevelDesc: code || '—',
+        levelLabel
+      };
+    }));
   } catch (error) {
     console.error('Erro ao buscar Meu Kit (getMyTools):', error);
     return res.status(500).json({ error: 'Erro ao buscar suas ferramentas.' });
@@ -71,7 +82,7 @@ export const getMyTools = async (req: Request, res: Response) => {
 
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, jobTitle, department, unit, systemProfile, managerId } = req.body;
+  const { name, jobTitle, department, unit, systemProfile, managerId, roleId } = req.body;
   const rawEmail = req.body.email;
   const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
   const requesterId = req.headers['x-requester-id'] as string;
@@ -95,17 +106,20 @@ export const updateUser = async (req: Request, res: Response) => {
       }
     }
 
+    const data: any = {
+      name,
+      email,
+      jobTitle,
+      department,
+      unit: unit !== undefined ? unit : undefined,
+      managerId,
+      systemProfile: (isSuperAdmin || isGestor) ? systemProfile : undefined
+    };
+    if (roleId !== undefined) data.roleId = roleId || null;
+
     const updatedUser = await prisma.user.update({
       where: { id },
-      data: {
-        name,
-        email,
-        jobTitle,
-        department,
-        unit: unit !== undefined ? unit : undefined,
-        managerId,
-        systemProfile: (isSuperAdmin || isGestor) ? systemProfile : undefined
-      }
+      data
     });
 
     return res.json(updatedUser);
