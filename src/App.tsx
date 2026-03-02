@@ -1147,9 +1147,11 @@ export default function App() {
                   </div>
                   <div className="action-tiles-wrap">
                     {(() => {
+                      const isPendingStatus = (s: string) => (s && (s.startsWith('PENDENTE') || s === 'EM_ATENDIMENTO' || s === 'AGENDADO'));
                       const pendingForMe = requests.filter(r => {
-                        if (!r.status.includes('PENDENTE')) return false;
-                        return r.approverId === currentUser?.id || r.approverId == null;
+                        if (!isPendingStatus(r.status)) return false;
+                        if (systemProfile === 'SUPER_ADMIN' || systemProfile === 'ADMIN') return true;
+                        return r.approverId === currentUser?.id || r.assigneeId === currentUser?.id || r.approverId == null;
                       });
                       const byCategory = actionNeededFilter === 'ALL' ? pendingForMe : pendingForMe.filter(r => getRequestCardContent(r).category === actionNeededFilter);
                       if (byCategory.length === 0) {
