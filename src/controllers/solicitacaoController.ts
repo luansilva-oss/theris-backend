@@ -31,6 +31,62 @@ const SI_BYPASS_APPROVER_EMAILS = (process.env.SI_BYPASS_APPROVER_EMAILS || '')
   .map((s: string) => s.trim().toLowerCase())
   .filter(Boolean);
 
+/** Tipos de solicitação que representam desligamento/offboarding (ao aprovar, desvincular o colaborador alvo). */
+const OFFBOARDING_REQUEST_TYPES = ['FIRING', 'DEMISSAO', 'OFFBOARDING'];
+
+/**
+ * Automação: ao aprovar um chamado de desligamento, desvincula o colaborador alvo da estrutura (soft-delete).
+ * O alvo é identificado por: details.targetUserId | details.collaboratorId | details.collaboratorEmail | details.collaboratorName (busca por nome).
+ */
+async function runOffboardingAutomation(requestId: string, requestType: string, detailsJson: string | null): Promise<void> {
+  if (!OFFBOARDING_REQUEST_TYPES.includes(requestType)) return;
+  let details: Record<string, unknown> = {};
+  try {
+    details = typeof detailsJson === 'string' ? JSON.parse(detailsJson || '{}') : (detailsJson || {});
+  } catch {
+    return;
+  }
+  const d = details as Record<string, string | undefined>;
+  let targetUser: { id: string; name: string } | null = null;
+
+  const targetUserId = d.targetUserId || d.collaboratorId;
+  if (targetUserId) {
+    const u = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true, name: true } });
+    if (u) targetUser = u;
+  }
+  if (!targetUser && d.collaboratorEmail) {
+    const u = await prisma.user.findUnique({ where: { email: d.collaboratorEmail.trim() }, select: { id: true, name: true } });
+    if (u) targetUser = u;
+  }
+  if (!targetUser && (d.collaboratorName || d.substitute)) {
+    const name = (d.collaboratorName || d.substitute || '').trim();
+    if (name) {
+      const u = await prisma.user.findFirst({
+        where: { name: { equals: name, mode: 'insensitive' } },
+        select: { id: true, name: true }
+      });
+      if (u) targetUser = u;
+    }
+  }
+
+  if (!targetUser) {
+    console.warn(`[Automação] Desligamento: chamado ${requestId} aprovado, mas não foi possível identificar o colaborador alvo (targetUserId/collaboratorEmail/collaboratorName).`);
+    return;
+  }
+
+  await prisma.user.update({
+    where: { id: targetUser.id },
+    data: {
+      roleId: null,
+      department: null,
+      unit: null,
+      jobTitle: null,
+      managerId: null
+    }
+  });
+  console.log(`[Automação] Usuário ${targetUser.name} (${targetUser.id}) desligado com sucesso após aprovação do chamado ${requestId}.`);
+}
+
 // ============================================================
 // AUXILIAR: Encontrar Aprovador da Ferramenta (Lógica Avançada)
 // ============================================================
@@ -462,10 +518,10 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     // =========================================================
     if (action === 'APROVADO') {
 
-      // CENÁRIO 1: RH (Admissão, Promoção, Demissão)
-      // AQUI NÃO FAZEMOS NADA NO BANCO.
+      // CENÁRIO 1: RH (Admissão, Promoção, Mudança de Área) — Convenia
       // O SI aprovou -> O RH recebe o ok -> Faz no Convenia -> Webhook do Convenia atualiza o Theris.
-      if (['ADMISSAO', 'DEMISSAO', 'PROMOCAO', 'MUDANCA_AREA'].includes(request.type)) {
+      // (Desligamento FIRING/DEMISSAO/OFFBOARDING é tratado no CENÁRIO 4.)
+      if (['ADMISSAO', 'PROMOCAO', 'MUDANCA_AREA'].includes(request.type)) {
         console.log(`✅ RH: Solicitação ${request.type} aprovada. Aguardando sincronização do Convenia.`);
       }
 
@@ -536,6 +592,15 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           console.error("❌ Erro ao designar deputy:", deputyError);
         }
       }
+
+      // CENÁRIO 4: DESLIGAMENTO (FIRING / DEMISSAO / OFFBOARDING) — desvincula o colaborador alvo da estrutura
+      else if (OFFBOARDING_REQUEST_TYPES.includes(request.type)) {
+        try {
+          await runOffboardingAutomation(id, request.type, request.details);
+        } catch (offboardError) {
+          console.error('[Automação] Erro ao desvincular usuário após aprovação de desligamento:', offboardError);
+        }
+      }
     }
 
     return res.json(updatedRequest);
@@ -599,6 +664,16 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     const { notifyTicketEvent } = await import('../services/ticketEventService');
     if (status !== undefined && status !== existing.status) notifyTicketEvent(id, 'STATUS_CHANGED', { from: existing.status, to: status }).catch(() => {});
     if (assigneeId !== undefined && assigneeId !== existing.assigneeId) notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId }).catch(() => {});
+
+    // Automação: se o status foi alterado para APROVADO e o chamado é de desligamento, desvincular o colaborador alvo
+    const newStatus = (status !== undefined ? String(status) : existing.status) || '';
+    if (newStatus === 'APROVADO' && OFFBOARDING_REQUEST_TYPES.includes(existing.type)) {
+      try {
+        await runOffboardingAutomation(id, existing.type, existing.details);
+      } catch (offboardError) {
+        console.error('[Automação] Erro ao desvincular usuário após aprovação de desligamento (metadata):', offboardError);
+      }
+    }
 
     return res.json(updated);
   } catch (error) {
