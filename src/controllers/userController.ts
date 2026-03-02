@@ -15,6 +15,7 @@ const normalizeEmail = (email: string): string => {
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
+      where: { isActive: true },
       orderBy: { name: 'asc' },
       select: {
         id: true,

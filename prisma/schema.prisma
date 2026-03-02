@@ -87,6 +87,9 @@ model User {
   // Perfil de Sistema (RBAC)
   systemProfile String    @default("VIEWER")
 
+  // Soft-delete: desligados ficam isActive = false e somem das listagens de ativos
+  isActive      Boolean   @default(true)
+
   // MFA
   mfaCode       String?   
   mfaExpiresAt  DateTime?

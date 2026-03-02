@@ -81,7 +81,8 @@ async function runOffboardingAutomation(requestId: string, requestType: string, 
       department: null,
       unit: null,
       jobTitle: null,
-      managerId: null
+      managerId: null,
+      isActive: false
     }
   });
   console.log(`[Automação] Usuário ${targetUser.name} (${targetUser.id}) desligado com sucesso após aprovação do chamado ${requestId}.`);
@@ -399,7 +400,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     } catch (_) {}
     if (detailsParsed.bypassGestor === true && request.status === 'PENDENTE_SI' && SI_BYPASS_APPROVER_EMAILS.length > 0) {
       const allowedApprovers = await prisma.user.findMany({
-        where: { email: { in: SI_BYPASS_APPROVER_EMAILS } },
+        where: { email: { in: SI_BYPASS_APPROVER_EMAILS }, isActive: true },
         select: { id: true }
       });
       const allowedIds = new Set(allowedApprovers.map((u) => u.id));

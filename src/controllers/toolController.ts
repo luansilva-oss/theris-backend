@@ -40,7 +40,7 @@ export const getTools = async (req: Request, res: Response) => {
     const roleIds = [...new Set(kbsItems.map(k => k.roleId))];
     const usersWithRole = roleIds.length > 0
       ? await prisma.user.findMany({
-          where: { roleId: { in: roleIds } },
+          where: { roleId: { in: roleIds }, isActive: true },
           select: { id: true, name: true, email: true, roleId: true }
         })
       : [];

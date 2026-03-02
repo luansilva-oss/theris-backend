@@ -22,6 +22,7 @@ export function startPasswordReminderCron() {
 
       const users = await prisma.user.findMany({
         where: {
+          isActive: true,
           OR: [
             { lastPasswordChangeAt: { lte: thresholdDate } },
             { lastPasswordChangeAt: null },
