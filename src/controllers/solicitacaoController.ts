@@ -88,6 +88,74 @@ async function runOffboardingAutomation(requestId: string, requestType: string, 
   console.log(`[Automação] Usuário ${targetUser.name} (${targetUser.id}) desligado com sucesso após aprovação do chamado ${requestId}.`);
 }
 
+/** Tipos de solicitação que ao serem aprovados concedem acesso extraordinário (vinculam usuário à ferramenta na tabela Access). */
+const EXTRAORDINARY_ACCESS_REQUEST_TYPES = ['ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'];
+
+/**
+ * Automação: ao aprovar um chamado de acesso extraordinário, vincula o colaborador (requester) à ferramenta na tabela Access com isExtraordinary = true.
+ * Usado tanto no fluxo de aprovação (updateSolicitacao) quanto quando o status é alterado para APROVADO via updateSolicitacaoMetadata.
+ */
+async function runExtraordinaryAccessAutomation(requestId: string, request: { type: string; requesterId: string | null; details: string | null; isExtraordinary?: boolean; extraordinaryDuration?: number | null; extraordinaryUnit?: string | null }): Promise<void> {
+  if (!request.requesterId) return;
+  if (!EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && !request.isExtraordinary) return;
+  let d: Record<string, unknown> = {};
+  try {
+    d = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
+  } catch {
+    return;
+  }
+  const toolName = (d.tool || d.toolName || (d.info && typeof d.info === 'string' ? (d.info as string).split(': ')[1] : null) || '').trim();
+  const targetUserId = request.requesterId;
+  const levelRequested = (d.target || d.targetValue) as string | null;
+
+  if (!toolName) return;
+
+  const tool = await prisma.tool.findFirst({
+    where: {
+      OR: [
+        { name: { contains: toolName, mode: 'insensitive' } },
+        { acronym: { equals: toolName, mode: 'insensitive' } }
+      ]
+    }
+  });
+  if (!tool) {
+    console.warn(`[Automação] Acesso extraordinário: ferramenta "${toolName}" não encontrada no catálogo (chamado ${requestId}).`);
+    return;
+  }
+
+  const existing = await prisma.access.findFirst({
+    where: { userId: targetUserId, toolId: tool.id }
+  });
+  const isExtra = request.isExtraordinary ?? EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type);
+  const duration = request.extraordinaryDuration ?? (d.duration != null ? parseInt(String(d.duration), 10) : null);
+  const unit = (request.extraordinaryUnit ?? d.unit) as string | null;
+  const statusValue = (levelRequested && String(levelRequested).trim()) || 'ACTIVE';
+
+  if (existing) {
+    await prisma.access.update({
+      where: { id: existing.id },
+      data: {
+        status: statusValue,
+        isExtraordinary: isExtra,
+        ...(duration != null && { duration }),
+        ...(unit != null && { unit })
+      }
+    });
+  } else {
+    await prisma.access.create({
+      data: {
+        toolId: tool.id,
+        userId: targetUserId,
+        status: statusValue,
+        isExtraordinary: isExtra,
+        ...(duration != null && { duration }),
+        ...(unit != null && { unit })
+      }
+    });
+  }
+  console.log(`[Automação] Acesso extraordinário concedido: usuário ${targetUserId} vinculado à ferramenta ${tool.name} (chamado ${requestId}).`);
+}
+
 // ============================================================
 // AUXILIAR: Encontrar Aprovador da Ferramenta (Lógica Avançada)
 // ============================================================
@@ -526,50 +594,12 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         console.log(`✅ RH: Solicitação ${request.type} aprovada. Aguardando sincronização do Convenia.`);
       }
 
-      // CENÁRIO 2: ACESSO EXTRAORDINÁRIO / FERRAMENTA PONTUAL
-      else if (['ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'].includes(request.type) || request.isExtraordinary) {
+      // CENÁRIO 2: ACESSO EXTRAORDINÁRIO / FERRAMENTA PONTUAL — vincula o colaborador à ferramenta na tabela Access
+      else if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
         try {
-          const toolName = currentDetails.tool || currentDetails.toolName;
-          const targetUserId = request.requesterId;
-          const accessStatus = 'ACTIVE';
-
-          if (toolName) {
-            const tool = await prisma.tool.findFirst({
-              where: { name: { contains: toolName, mode: 'insensitive' } }
-            });
-
-            if (tool) {
-              const existing = await prisma.access.findFirst({
-                where: { userId: targetUserId, toolId: tool.id }
-              });
-
-              if (existing) {
-                await prisma.access.update({
-                  where: { id: existing.id },
-                  data: {
-                    status: 'ACTIVE',
-                    isExtraordinary: request.isExtraordinary,
-                    duration: request.extraordinaryDuration,
-                    unit: request.extraordinaryUnit
-                  }
-                });
-              } else {
-                await prisma.access.create({
-                  data: {
-                    toolId: tool.id,
-                    userId: targetUserId,
-                    status: 'ACTIVE',
-                    isExtraordinary: request.isExtraordinary,
-                    duration: request.extraordinaryDuration,
-                    unit: request.extraordinaryUnit
-                  }
-                });
-              }
-              console.log(`✅ Acesso Extraordinário Concedido: ${tool.name}`);
-            }
-          }
+          await runExtraordinaryAccessAutomation(id, request);
         } catch (triggerError) {
-          console.error("❌ Erro gatilho automático:", triggerError);
+          console.error("❌ Erro gatilho automático (acesso extraordinário):", triggerError);
         }
       }
 
@@ -666,13 +696,22 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     if (status !== undefined && status !== existing.status) notifyTicketEvent(id, 'STATUS_CHANGED', { from: existing.status, to: status }).catch(() => {});
     if (assigneeId !== undefined && assigneeId !== existing.assigneeId) notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId }).catch(() => {});
 
-    // Automação: se o status foi alterado para APROVADO e o chamado é de desligamento, desvincular o colaborador alvo
+    // Automação: se o status foi alterado para APROVADO, executar regras (desligamento e acesso extraordinário)
     const newStatus = (status !== undefined ? String(status) : existing.status) || '';
-    if (newStatus === 'APROVADO' && OFFBOARDING_REQUEST_TYPES.includes(existing.type)) {
-      try {
-        await runOffboardingAutomation(id, existing.type, existing.details);
-      } catch (offboardError) {
-        console.error('[Automação] Erro ao desvincular usuário após aprovação de desligamento (metadata):', offboardError);
+    if (newStatus === 'APROVADO') {
+      if (OFFBOARDING_REQUEST_TYPES.includes(existing.type)) {
+        try {
+          await runOffboardingAutomation(id, existing.type, existing.details);
+        } catch (offboardError) {
+          console.error('[Automação] Erro ao desvincular usuário após aprovação de desligamento (metadata):', offboardError);
+        }
+      }
+      if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) || existing.isExtraordinary) {
+        try {
+          await runExtraordinaryAccessAutomation(id, existing);
+        } catch (extraError) {
+          console.error('[Automação] Erro ao vincular acesso extraordinário (metadata):', extraError);
+        }
       }
     }
 

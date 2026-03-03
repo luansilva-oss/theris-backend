@@ -353,6 +353,8 @@ export default function App() {
 
   /** Painel Viewer: ferramentas do Meu Kit Básico (RoleKitItem do cargo do usuário) */
   const [viewerKitTools, setViewerKitTools] = useState<{ id: string; toolName: string; toolCode: string; accessLevelDesc: string }[]>([]);
+  /** Painel Viewer: acessos extraordinários (tabela Access com isExtraordinary) */
+  const [viewerExtraordinaryTools, setViewerExtraordinaryTools] = useState<{ id: string; toolName: string; levelLabel: string }[]>([]);
 
   // NOTIFICAÇÕES E CONFIRMAÇÕES
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -524,17 +526,31 @@ export default function App() {
     if (isLoggedIn && (activeTab === 'TICKETS' || activeTab === 'MY_TICKETS')) loadTicketList();
   }, [isLoggedIn, activeTab, ticketCategoryTab]);
 
-  /** Carrega Meu Kit Básico para perfil VIEWER no Dashboard */
+  /** Carrega Meu Kit Básico e Acessos Extraordinários para perfil VIEWER no Dashboard */
   useEffect(() => {
     if (!isLoggedIn || systemProfile !== 'VIEWER' || activeTab !== 'DASHBOARD' || !currentUser?.id) {
-      if (systemProfile !== 'VIEWER') setViewerKitTools([]);
+      if (systemProfile !== 'VIEWER') {
+        setViewerKitTools([]);
+        setViewerExtraordinaryTools([]);
+      }
       return;
     }
     const headers: HeadersInit = { 'x-user-id': currentUser.id };
     fetch(`${API_URL}/api/users/me/tools`, { headers })
-      .then((res) => res.ok ? res.json() : [])
-      .then((data) => setViewerKitTools(Array.isArray(data) ? data : []))
-      .catch(() => setViewerKitTools([]));
+      .then((res) => res.ok ? res.json() : { kitTools: [], extraordinaryTools: [] })
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setViewerKitTools(data);
+          setViewerExtraordinaryTools([]);
+        } else {
+          setViewerKitTools(data.kitTools ?? []);
+          setViewerExtraordinaryTools(data.extraordinaryTools ?? []);
+        }
+      })
+      .catch(() => {
+        setViewerKitTools([]);
+        setViewerExtraordinaryTools([]);
+      });
   }, [isLoggedIn, systemProfile, activeTab, currentUser?.id]);
 
   const loadChamadoDetail = async () => {
@@ -1075,6 +1091,7 @@ export default function App() {
 
               {/* Viewer: Meu Kit Básico (fonte única: GET /api/users/me/tools) */}
               {systemProfile === 'VIEWER' && currentUser && (
+                <>
                 <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
                   <h3 style={{ color: '#22c55e', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Layers size={18} /> Meu Kit Básico
@@ -1104,6 +1121,37 @@ export default function App() {
                     </div>
                   )}
                 </div>
+                {/* Viewer: Acessos Extraordinários (tabela Access isExtraordinary) */}
+                <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+                  <h3 style={{ color: '#a78bfa', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Timer size={18} /> Acessos Extraordinários
+                  </h3>
+                  {viewerExtraordinaryTools.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px 24px', color: '#71717a', fontSize: 14, lineHeight: 1.5 }}>
+                      Você não possui acessos extraordinários ativos no momento.
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #27272a', textAlign: 'left' }}>
+                            <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Ferramenta</th>
+                            <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Nível de acesso</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {viewerExtraordinaryTools.map((row) => (
+                            <tr key={row.id} style={{ borderBottom: '1px solid #1f1f22' }}>
+                              <td style={{ padding: '14px 16px', color: '#e4e4e7', fontWeight: 500 }}>{row.toolName}</td>
+                              <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{row.levelLabel}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+                </>
               )}
 
               {(systemProfile === 'SUPER_ADMIN' || systemProfile === 'GESTOR' || systemProfile === 'ADMIN' || systemProfile === 'APPROVER') && (

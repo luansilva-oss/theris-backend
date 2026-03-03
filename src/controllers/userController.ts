@@ -42,7 +42,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
   }
 };
 
-/** Painel do Colaborador (Viewer): lista de RoleKitItem do cargo do usuário autenticado (Meu Kit Básico). */
+/** Painel do Colaborador (Viewer): Meu Kit Básico (role) + Acessos Extraordinários (tabela Access com isExtraordinary). */
 export const getMyTools = async (req: Request, res: Response) => {
   const userId = (req.headers['x-user-id'] as string)?.trim();
   if (!userId) return res.status(401).json({ error: 'Usuário não identificado. Envie o header x-user-id.' });
@@ -55,26 +55,47 @@ export const getMyTools = async (req: Request, res: Response) => {
       where: { id: userId },
       select: { roleId: true }
     });
-    if (!user?.roleId) return res.json([]);
 
-    const role = await prisma.role.findUnique({
-      where: { id: user.roleId },
-      include: { kitItems: true }
+    let kitTools: { id: string; toolName: string; toolCode: string; accessLevelDesc: string; levelLabel: string }[] = [];
+    if (user?.roleId) {
+      const role = await prisma.role.findUnique({
+        where: { id: user.roleId },
+        include: { kitItems: true }
+      });
+      const items = role?.kitItems ?? [];
+      kitTools = items.map((k: { id: string; toolName: string; toolCode: string; accessLevelDesc: string | null }) => {
+        const code = k.accessLevelDesc ?? k.toolCode ?? '';
+        const toolKey = (k.toolName || '').trim();
+        const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
+        const levelLabel = (levelsForTool?.find((l: { value: string }) => l.value === code)?.label ?? code) || '—';
+        return {
+          id: k.id,
+          toolName: k.toolName,
+          toolCode: k.toolCode,
+          accessLevelDesc: code || '—',
+          levelLabel
+        };
+      });
+    }
+
+    const extraordinaryAccesses = await prisma.access.findMany({
+      where: { userId, isExtraordinary: true },
+      include: { tool: true }
     });
-    const items = role?.kitItems ?? [];
-    return res.json(items.map((k: { id: string; toolName: string; toolCode: string; accessLevelDesc: string | null }) => {
-      const code = k.accessLevelDesc ?? k.toolCode ?? '';
-      const toolKey = (k.toolName || '').trim();
+    const extraordinaryTools = extraordinaryAccesses.map((a) => {
+      const toolName = a.tool?.name ?? '—';
+      const toolKey = toolName.trim();
       const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
+      const code = a.status?.trim() || '—';
       const levelLabel = (levelsForTool?.find((l: { value: string }) => l.value === code)?.label ?? code) || '—';
       return {
-        id: k.id,
-        toolName: k.toolName,
-        toolCode: k.toolCode,
-        accessLevelDesc: code || '—',
+        id: a.id,
+        toolName,
         levelLabel
       };
-    }));
+    });
+
+    return res.json({ kitTools, extraordinaryTools });
   } catch (error) {
     console.error('Erro ao buscar Meu Kit (getMyTools):', error);
     return res.status(500).json({ error: 'Erro ao buscar suas ferramentas.' });
