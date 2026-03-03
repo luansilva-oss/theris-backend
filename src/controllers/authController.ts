@@ -45,8 +45,7 @@ export const googleLogin = async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      // Criação automática no primeiro login
-      user = await prisma.user.create({
+      const created = await prisma.user.create({
         data: {
           email,
           name: googleData.name || 'Usuário Google',
@@ -54,6 +53,10 @@ export const googleLogin = async (req: Request, res: Response) => {
           department: 'Geral'      // Default
         }
       });
+      user = await prisma.user.findUnique({
+        where: { id: created.id },
+        include: { manager: { select: { id: true, name: true } } }
+      })!;
     }
 
     // 4. Definir Perfil de Sistema Persistente
