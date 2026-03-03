@@ -436,10 +436,22 @@ slackApp.action('btn_move', async ({ ack, body, client }) => {
   } catch (e) { console.error(e); }
 });
 
+// Unidades padrão quando o banco não retornar nenhuma (Contratação)
+const DEFAULT_UNIT_NAMES = ['3C+', 'Evolux', 'Dizify', 'Instituto 3C', 'FiqOn', 'Dizparos'];
+
 // CONTRATAÇÃO
 slackApp.action('btn_hire', async ({ ack, body, client }) => {
   await ack();
   try {
+    let unitOptions: { text: { type: 'plain_text'; text: string }; value: string }[];
+    try {
+      const units = await prisma.unit.findMany({ orderBy: { name: 'asc' } });
+      unitOptions = units.length > 0
+        ? units.map((u) => ({ text: { type: 'plain_text' as const, text: u.name }, value: u.name }))
+        : DEFAULT_UNIT_NAMES.map((name) => ({ text: { type: 'plain_text' as const, text: name }, value: name }));
+    } catch {
+      unitOptions = DEFAULT_UNIT_NAMES.map((name) => ({ text: { type: 'plain_text' as const, text: name }, value: name }));
+    }
     await client.views.push({
       trigger_id: (body as any).trigger_id,
       view: {
@@ -447,8 +459,19 @@ slackApp.action('btn_hire', async ({ ack, body, client }) => {
         blocks: [
           { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome Completo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_date', label: { type: 'plain_text', text: 'Data de Início' }, element: { type: 'datepicker', action_id: 'picker' } },
-          { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          {
+            type: 'input',
+            block_id: 'blk_unit',
+            label: { type: 'plain_text', text: 'Unidade' },
+            element: {
+              type: 'static_select',
+              action_id: 'unit_select',
+              placeholder: { type: 'plain_text', text: 'Selecione a unidade...' },
+              options: unitOptions
+            }
+          },
           { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_obs', optional: true, label: { type: 'plain_text', text: 'Obs (Equipamentos, etc)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
         ]
       }
@@ -954,13 +977,16 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   const v = view.state.values;
   const name = v.blk_name.inp.value;
   const startDate = v.blk_date.picker?.selected_date || 'A definir';
+  const unitName = v.blk_unit?.unit_select?.selected_option?.value ?? '';
   const details = {
     info: `Contratação: ${name}`,
     collaboratorName: name,
     startDate,
+    unit: unitName,
     role: v.blk_role.inp.value,
     dept: v.blk_dept.inp.value,
-    obs: v.blk_obs.inp.value ?? ''
+    department: v.blk_dept.inp.value,
+    obs: v.blk_obs?.inp?.value ?? ''
   };
   await saveRequest(body, client, 'HIRING', details, `Início: ${startDate}`, `✅ Contratação de *${name}* registrada.`);
 });

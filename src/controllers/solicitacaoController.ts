@@ -34,6 +34,9 @@ const SI_BYPASS_APPROVER_EMAILS = (process.env.SI_BYPASS_APPROVER_EMAILS || '')
 /** Tipos de solicitação que representam desligamento/offboarding (ao aprovar, desvincular o colaborador alvo). */
 const OFFBOARDING_REQUEST_TYPES = ['FIRING', 'DEMISSAO', 'OFFBOARDING'];
 
+/** Tipos de solicitação que representam admissão/onboarding (ao aprovar, vincular colaborador a departamento e cargo). */
+const ONBOARDING_REQUEST_TYPES = ['HIRING', 'ADMISSAO', 'ONBOARDING'];
+
 /**
  * Automação: ao aprovar um chamado de desligamento, desvincula o colaborador alvo da estrutura (soft-delete).
  * O alvo é identificado por: details.targetUserId | details.collaboratorId | details.collaboratorEmail | details.collaboratorName (busca por nome).
@@ -86,6 +89,122 @@ async function runOffboardingAutomation(requestId: string, requestType: string, 
     }
   });
   console.log(`[Automação] Usuário ${targetUser.name} (${targetUser.id}) desligado com sucesso após aprovação do chamado ${requestId}.`);
+}
+
+/**
+ * Automação de Onboarding: ao aprovar um chamado de contratação (HIRING, ADMISSAO, ONBOARDING),
+ * respeita a hierarquia Unidade → Departamento → Cargo: busca/cria cada nível e vincula o colaborador.
+ * Dados extraídos de request.details: unit/Unidade, department/Depto/dept, role/Cargo, collaboratorName/Colaborador, collaboratorEmail/email.
+ */
+async function runOnboardingAutomation(requestId: string, request: { type: string; details: string | null }): Promise<void> {
+  if (!ONBOARDING_REQUEST_TYPES.includes(request.type)) return;
+  let d: Record<string, unknown> = {};
+  try {
+    d = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
+  } catch {
+    return;
+  }
+  const details = d as Record<string, string | undefined>;
+  const collaboratorName = (details.collaboratorName || details.Colaborador || details.target || details.name || '').trim();
+  const roleName = (details.role || details.Cargo || details.cargo || details.jobTitle || '').trim();
+  const departmentName = (details.department || details.Depto || details.dept || '').trim();
+  const unitName = (details.unit || details.unitName || details.Unidade || details.unidade || '').trim();
+  const collaboratorEmail = (details.collaboratorEmail || details.email || details.targetEmail || '').trim();
+
+  if (!departmentName) {
+    console.warn(`[Automação Onboarding] Chamado ${requestId}: departamento não informado nos detalhes. Ignorando.`);
+    return;
+  }
+  if (!roleName) {
+    console.warn(`[Automação Onboarding] Chamado ${requestId}: cargo não informado nos detalhes. Ignorando.`);
+    return;
+  }
+  if (!collaboratorName && !collaboratorEmail) {
+    console.warn(`[Automação Onboarding] Chamado ${requestId}: colaborador (nome ou e-mail) não informado. Ignorando.`);
+    return;
+  }
+
+  // a) Unidade: buscar por nome (case-insensitive). Se não vier no payload, department será buscado/criado sem unitId (compatibilidade).
+  let unit: { id: string; name: string } | null = null;
+  if (unitName) {
+    unit = await prisma.unit.findFirst({
+      where: { name: { equals: unitName, mode: 'insensitive' } },
+      select: { id: true, name: true }
+    });
+    if (!unit) {
+      console.warn(`[Automação Onboarding] Chamado ${requestId}: unidade "${unitName}" não encontrada no catálogo. Departamento será criado sem vínculo à unidade.`);
+    }
+  }
+
+  // b) Departamento: buscar pelo nome E pelo unitId (quando houver unidade); se não existir, criar vinculando ao unitId
+  let department = await prisma.department.findFirst({
+    where: {
+      name: { equals: departmentName, mode: 'insensitive' },
+      ...(unit ? { unitId: unit.id } : { unitId: null })
+    }
+  });
+  if (!department) {
+    department = await prisma.department.create({
+      data: { name: departmentName, unitId: unit?.id ?? null }
+    });
+  }
+
+  // c) Cargo: buscar pelo nome e departmentId; se não existir, criar
+  let role = await prisma.role.findFirst({
+    where: {
+      departmentId: department.id,
+      name: { equals: roleName, mode: 'insensitive' }
+    }
+  });
+  if (!role) {
+    role = await prisma.role.create({
+      data: { name: roleName, departmentId: department.id }
+    });
+  }
+
+  // d) Colaborador (User): upsert — roleId, department (string), unit (string), jobTitle, isActive
+  const unitDisplayName = unit?.name ?? null;
+  let user = collaboratorEmail
+    ? await prisma.user.findUnique({ where: { email: collaboratorEmail } })
+    : null;
+  if (!user && collaboratorName) {
+    user = await prisma.user.findFirst({
+      where: { name: { equals: collaboratorName, mode: 'insensitive' } }
+    });
+  }
+
+  if (user) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        roleId: role.id,
+        department: department.name,
+        jobTitle: role.name,
+        ...(unitDisplayName != null && { unit: unitDisplayName }),
+        isActive: true
+      }
+    });
+    console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${user.name} vinculado com sucesso (Chamado ${requestId}).`);
+    return;
+  }
+
+  if (!collaboratorEmail) {
+    console.warn(`[Automação Onboarding] Chamado ${requestId}: colaborador "${collaboratorName}" não encontrado na base e e-mail não informado. Não foi possível criar usuário.`);
+    return;
+  }
+
+  await prisma.user.create({
+    data: {
+      name: collaboratorName || collaboratorEmail.split('@')[0],
+      email: collaboratorEmail,
+      department: department.name,
+      jobTitle: role.name,
+      roleId: role.id,
+      ...(unitDisplayName != null && { unit: unitDisplayName }),
+      isActive: true
+    }
+  });
+  console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${collaboratorName || collaboratorEmail} criado e vinculado com sucesso (Chamado ${requestId}).`);
 }
 
 /** Tipos de solicitação que ao serem aprovados concedem acesso extraordinário (vinculam usuário à ferramenta na tabela Access). */
@@ -590,11 +709,18 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     // =========================================================
     if (action === 'APROVADO') {
 
-      // CENÁRIO 1: RH (Admissão, Promoção, Mudança de Área) — Convenia
-      // O SI aprovou -> O RH recebe o ok -> Faz no Convenia -> Webhook do Convenia atualiza o Theris.
-      // (Desligamento FIRING/DEMISSAO/OFFBOARDING é tratado no CENÁRIO 4.)
-      if (['ADMISSAO', 'PROMOCAO', 'MUDANCA_AREA'].includes(request.type)) {
+      // CENÁRIO 1: RH (Promoção, Mudança de Área) — Convenia (apenas log; admissão tem CENÁRIO 1b)
+      if (['PROMOCAO', 'MUDANCA_AREA'].includes(request.type)) {
         console.log(`✅ RH: Solicitação ${request.type} aprovada. Aguardando sincronização do Convenia.`);
+      }
+
+      // CENÁRIO 1b: ONBOARDING (HIRING, ADMISSAO, ONBOARDING) — vincula colaborador a departamento e cargo
+      else if (ONBOARDING_REQUEST_TYPES.includes(request.type)) {
+        try {
+          await runOnboardingAutomation(id, request);
+        } catch (onboardError) {
+          console.error('[Automação] Erro ao vincular colaborador na admissão (onboarding):', onboardError);
+        }
       }
 
       // CENÁRIO 2: ACESSO EXTRAORDINÁRIO / FERRAMENTA PONTUAL — vincula o colaborador à ferramenta na tabela Access
@@ -699,7 +825,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     if (status !== undefined && status !== existing.status) notifyTicketEvent(id, 'STATUS_CHANGED', { from: existing.status, to: status }).catch(() => {});
     if (assigneeId !== undefined && assigneeId !== existing.assigneeId) notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId }).catch(() => {});
 
-    // Automação: se o status foi alterado para APROVADO, executar regras (desligamento e acesso extraordinário)
+    // Automação: se o status foi alterado para APROVADO, executar regras (desligamento, onboarding, acesso extraordinário)
     const newStatus = (status !== undefined ? String(status) : existing.status) || '';
     if (newStatus === 'APROVADO') {
       if (OFFBOARDING_REQUEST_TYPES.includes(existing.type)) {
@@ -707,6 +833,13 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           await runOffboardingAutomation(id, existing.type, existing.details);
         } catch (offboardError) {
           console.error('[Automação] Erro ao desvincular usuário após aprovação de desligamento (metadata):', offboardError);
+        }
+      }
+      if (ONBOARDING_REQUEST_TYPES.includes(existing.type)) {
+        try {
+          await runOnboardingAutomation(id, existing);
+        } catch (onboardError) {
+          console.error('[Automação] Erro ao vincular colaborador na admissão (metadata):', onboardError);
         }
       }
       if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) || existing.isExtraordinary) {
