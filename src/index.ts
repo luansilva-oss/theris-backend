@@ -17,7 +17,7 @@ import {
 } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
-import { getAllUsers, getMe, getMyTools, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
+import { getAllUsers, getMe, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
 // NOVO: Importar o controlador de reset
 import { resetCatalog } from './controllers/adminController';
 import * as structureController from './controllers/structureController';
@@ -99,10 +99,11 @@ app.patch('/api/tools/:toolId/level/:oldLevelName', updateToolLevel);
 app.delete('/api/tools/:toolId/level/:levelName', deleteToolLevel);
 app.patch('/api/tools/:toolId/access/:userId', updateToolAccess); // Atualizar detalhes do acesso (ex: extra)
 
-// 3. Usuários (rotas /me e /me/tools antes de /:id para não capturar "me" como id)
+// 3. Usuários (rotas /me, /me/tools e /manual-add antes de /:id)
 app.get('/api/users', getAllUsers);
 app.get('/api/users/me', getMe);
 app.get('/api/users/me/tools', getMyTools);
+app.post('/api/users/manual-add', manualAddUser);
 app.put('/api/users/:id', updateUser);
 app.patch('/api/users/:id/password-changed', markPasswordChanged);
 app.delete('/api/users/:id', deleteUser);

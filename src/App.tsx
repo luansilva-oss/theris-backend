@@ -4,7 +4,7 @@ import {
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
   Search, Lock, Layers, ChevronDown, ChevronRight,
   Users, Building, Briefcase, // Ícone para Gestão de Pessoas
-  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare, Filter
+  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare, Filter, X
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
@@ -351,6 +351,11 @@ export default function App() {
   const [isCreateDepartmentModalOpen, setIsCreateDepartmentModalOpen] = useState(false);
   const [selectedUnitForAddDept, setSelectedUnitForAddDept] = useState<{ id: string; name: string } | null>(null);
   const [unitMigrationData, setUnitMigrationData] = useState<{ unit: { id: string; name: string }; departments: { id: string; name: string; rolesCount: number }[] } | null>(null);
+  const [isAddCollaboratorModalOpen, setIsAddCollaboratorModalOpen] = useState(false);
+  const [addCollaboratorContext, setAddCollaboratorContext] = useState<{ role: { id: string; name: string }; department: { id: string; name: string } } | null>(null);
+  const [addCollaboratorName, setAddCollaboratorName] = useState('');
+  const [addCollaboratorEmail, setAddCollaboratorEmail] = useState('');
+  const [addCollaboratorSubmitting, setAddCollaboratorSubmitting] = useState(false);
 
   /** Painel Viewer: ferramentas do Meu Kit Básico (RoleKitItem do cargo do usuário) */
   const [viewerKitTools, setViewerKitTools] = useState<{ id: string; toolName: string; toolCode: string; accessLevelDesc: string }[]>([]);
@@ -1306,6 +1311,12 @@ export default function App() {
                     setSelectedDepartmentForNewRole(dept);
                     setSelectedRoleForKit(null);
                     setIsEditRoleKitModalOpen(true);
+                  } : undefined}
+                  onAddCollaborator={systemProfile === 'SUPER_ADMIN' ? (role, dept) => {
+                    setAddCollaboratorContext({ role: { id: role.id, name: role.name }, department: { id: dept.id, name: dept.name } });
+                    setAddCollaboratorName('');
+                    setAddCollaboratorEmail('');
+                    setIsAddCollaboratorModalOpen(true);
                   } : undefined}
                   onEditRole={['ADMIN', 'SUPER_ADMIN', 'GESTOR'].includes(systemProfile) ? (role) => {
                     setSelectedRoleForKit(role);
@@ -2491,6 +2502,83 @@ export default function App() {
         onCreated={loadData}
         showToast={showToast}
       />
+
+      {/* Modal Adicionar Colaborador (Super Admin) — por Cargo */}
+      {isAddCollaboratorModalOpen && addCollaboratorContext && (
+        <div className="modal-overlay" onClick={() => setIsAddCollaboratorModalOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 style={{ margin: 0, color: '#f4f4f5' }}>Adicionar Colaborador</h2>
+              <button type="button" onClick={() => setIsAddCollaboratorModalOpen(false)} className="btn-icon" aria-label="Fechar"><X size={20} /></button>
+            </div>
+            <div style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <p style={{ color: '#a1a1aa', fontSize: 13, margin: 0 }}>
+                Cargo: <strong style={{ color: '#e4e4e7' }}>{addCollaboratorContext.role.name}</strong> · Departamento: <strong style={{ color: '#e4e4e7' }}>{addCollaboratorContext.department.name}</strong>
+              </p>
+              <div className="form-group">
+                <label style={{ fontSize: 12 }}>Nome</label>
+                <input
+                  value={addCollaboratorName}
+                  onChange={e => setAddCollaboratorName(e.target.value)}
+                  className="form-input"
+                  style={{ width: '100%' }}
+                  placeholder="Nome completo"
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label style={{ fontSize: 12 }}>E-mail <span style={{ color: '#ef4444' }}>*</span></label>
+                <input
+                  type="email"
+                  value={addCollaboratorEmail}
+                  onChange={e => setAddCollaboratorEmail(e.target.value)}
+                  className="form-input"
+                  style={{ width: '100%' }}
+                  placeholder="email@empresa.com"
+                />
+              </div>
+              <button
+                type="button"
+                disabled={!addCollaboratorEmail.trim() || addCollaboratorSubmitting}
+                onClick={async () => {
+                  const email = addCollaboratorEmail.trim().toLowerCase();
+                  if (!email) return showToast('E-mail é obrigatório.', 'warning');
+                  setAddCollaboratorSubmitting(true);
+                  try {
+                    const res = await fetch(`${API_URL}/api/users/manual-add`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        name: addCollaboratorName.trim() || undefined,
+                        email,
+                        roleId: addCollaboratorContext.role.id,
+                        departmentId: addCollaboratorContext.department.id
+                      })
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                      showToast('Colaborador adicionado/vinculado com sucesso!', 'success');
+                      setIsAddCollaboratorModalOpen(false);
+                      setAddCollaboratorContext(null);
+                      loadData();
+                    } else {
+                      showToast(data.error || 'Erro ao adicionar colaborador.', 'error');
+                    }
+                  } catch {
+                    showToast('Erro de conexão.', 'error');
+                  }
+                  setAddCollaboratorSubmitting(false);
+                }}
+                className="btn-verify"
+                style={{ marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              >
+                {addCollaboratorSubmitting ? 'Salvando...' : 'Adicionar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <UnitMigrationWizardModal
         isOpen={!!unitMigrationData}
         onClose={() => setUnitMigrationData(null)}

@@ -70,6 +70,60 @@ export const getMe = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Inserção manual de colaborador na Gestão de Pessoas (Super Admin).
+ * Body: { name, email, roleId, departmentId }.
+ * Upsert por e-mail: se existir, atualiza roleId/department/jobTitle/isActive; senão, cria usuário.
+ */
+export const manualAddUser = async (req: Request, res: Response) => {
+  const { name, email, roleId, departmentId } = req.body as { name?: string; email?: string; roleId?: string; departmentId?: string };
+  const nameStr = typeof name === 'string' ? name.trim() : '';
+  const emailStr = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  if (!emailStr) return res.status(400).json({ error: 'E-mail é obrigatório.' });
+  if (!roleId) return res.status(400).json({ error: 'roleId é obrigatório.' });
+  if (!departmentId) return res.status(400).json({ error: 'departmentId é obrigatório.' });
+
+  try {
+    const [role, department] = await Promise.all([
+      prisma.role.findUnique({ where: { id: roleId }, select: { id: true, name: true, departmentId: true } }),
+      prisma.department.findUnique({ where: { id: departmentId }, select: { id: true, name: true } })
+    ]);
+    if (!role) return res.status(404).json({ error: 'Cargo não encontrado.' });
+    if (!department) return res.status(404).json({ error: 'Departamento não encontrado.' });
+    if (role.departmentId !== department.id) return res.status(400).json({ error: 'O cargo não pertence ao departamento informado.' });
+
+    const existing = await prisma.user.findUnique({ where: { email: emailStr } });
+    if (existing) {
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          ...(nameStr && { name: nameStr }),
+          roleId: role.id,
+          department: department.name,
+          jobTitle: role.name,
+          isActive: true
+        }
+      });
+      return res.status(200).json({ ...existing, roleId: role.id, department: department.name, jobTitle: role.name, isActive: true });
+    }
+
+    const created = await prisma.user.create({
+      data: {
+        name: nameStr || emailStr.split('@')[0],
+        email: emailStr,
+        roleId: role.id,
+        department: department.name,
+        jobTitle: role.name,
+        isActive: true
+      }
+    });
+    return res.status(201).json(created);
+  } catch (error) {
+    console.error('Erro ao adicionar/vinculando colaborador (manual-add):', error);
+    return res.status(500).json({ error: 'Erro ao adicionar colaborador.' });
+  }
+};
+
 /** Painel do Colaborador (Viewer): Meu Kit Básico (role) + Acessos Extraordinários (tabela Access com isExtraordinary). */
 export const getMyTools = async (req: Request, res: Response) => {
   const userId = (req.headers['x-user-id'] as string)?.trim();

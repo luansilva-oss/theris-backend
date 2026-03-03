@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { MouseEvent } from 'react';
-import { Building2, Briefcase, ChevronDown, ChevronRight, Trash2, Pencil, Plus } from 'lucide-react';
+import { Building2, Briefcase, ChevronDown, ChevronRight, Trash2, Pencil, Plus, UserPlus } from 'lucide-react';
 
 interface User {
     id: string;
@@ -48,6 +48,7 @@ interface PersonnelListViewProps {
     onDeleteDepartment: (dept: Department) => void;
     onEditRole?: (role: Role) => void;
     onDeleteRole?: (role: Role) => void;
+    onAddCollaborator?: (role: Role, department: Department) => void;
     onAddRole?: (department: Department) => void;
     onAddDepartmentToUnit?: (unit: Unit) => void;
     onEditUnit?: (unit: Unit) => void;
@@ -57,7 +58,7 @@ interface PersonnelListViewProps {
 const UNIT_ORDER = ['3C+', 'Evolux', 'Dizify', 'Instituto 3C', 'FiqOn', 'Dizparos'];
 
 export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
-    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole, onAddRole,
+    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole, onAddCollaborator, onAddRole,
     onAddDepartmentToUnit, onEditUnit, onDeleteUnit
 }) => {
     const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({});
@@ -202,6 +203,9 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                         )}
                                                                     </div>
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+                                                                        {onAddCollaborator && roleEntity && dept.id && (
+                                                                            <button onClick={(e) => { e.stopPropagation(); onAddCollaborator(roleEntity as Role, { id: dept.id, name: deptName, unitId: dept.unitId, unit: dept.unit }); }} title="Adicionar colaborador" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.8 }}><UserPlus size={14} color="#22c55e" /></button>
+                                                                        )}
                                                                         {onEditRole && roleEntity && (
                                                                             <button onClick={(e) => { e.stopPropagation(); onEditRole(roleEntity); }} title="Editar cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.8 }}><Pencil size={14} color="#a78bfa" /></button>
                                                                         )}
