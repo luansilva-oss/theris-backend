@@ -319,6 +319,7 @@ export default function App() {
   const [assigneeSearchOpen, setAssigneeSearchOpen] = useState(false);
   const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
   const [expandedKbsSection, setExpandedKbsSection] = useState(false);
+  const [isExtraordinaryOpen, setIsExtraordinaryOpen] = useState(false);
 
   // MODAL
   const [modalOpen, setModalOpen] = useState(false);
@@ -1596,93 +1597,110 @@ export default function App() {
                   ))}
               </div>
 
-              {/* LISTA DE ACESSOS EXTRAORDINÁRIOS (sincronizada com Aprovações) */}
-              <h3 style={{ color: '#c084fc', marginTop: 40, marginBottom: 15, fontSize: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Timer size={20} /> Acessos Extraordinários (Temporários)
-              </h3>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {(() => {
-                  const { extraordinary, extraordinaryApprovals } = getGroupedAccesses(selectedTool);
-                  const hasExtra = extraordinary.length > 0 || extraordinaryApprovals.length > 0;
-                  if (!hasExtra) {
-                    return (
-                      <div className="card-base" style={{ textAlign: 'center', color: '#52525b', padding: 40, borderStyle: 'dashed', borderColor: 'rgba(167, 139, 250, 0.2)' }}>
-                        Nenhum acesso extraordinário vigente.
-                      </div>
-                    );
-                  }
-                  return (
-                    <>
-                      {extraordinary.map((acc) => (
-                        <div key={acc.user.id} className="card-base" style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 16,
-                          padding: '16px 24px',
-                          background: 'rgba(167, 139, 250, 0.05)',
-                          border: '1px solid rgba(167, 139, 250, 0.1)'
-                        }}>
-                          <div style={{ width: 42, height: 42, borderRadius: '12px', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>
-                            {acc.user.name.charAt(0)}
+              {/* ACESSOS EXTRAORDINÁRIOS (Temporários) — Accordion */}
+              <div className="card-base" style={{ padding: 0, overflow: 'hidden', border: '1px solid #27272a', marginTop: 40 }}>
+                <div
+                  onClick={() => setIsExtraordinaryOpen(prev => !prev)}
+                  style={{
+                    padding: '16px 20px',
+                    background: isExtraordinaryOpen ? 'rgba(167, 139, 250, 0.08)' : '#18181b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    borderBottom: isExtraordinaryOpen ? '1px solid #27272a' : 'none'
+                  }}
+                >
+                  <h3 style={{ color: '#c084fc', margin: 0, fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Timer size={20} /> Acessos Extraordinários (Temporários)
+                  </h3>
+                  <ChevronRight size={20} color="#c084fc" style={{ transform: isExtraordinaryOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
+                </div>
+                {isExtraordinaryOpen && (
+                  <div style={{ padding: 20 }}>
+                    {(() => {
+                      const { extraordinary, extraordinaryApprovals } = getGroupedAccesses(selectedTool);
+                      const hasExtra = extraordinary.length > 0 || extraordinaryApprovals.length > 0;
+                      if (!hasExtra) {
+                        return (
+                          <div style={{ textAlign: 'center', color: '#52525b', padding: 40, borderStyle: 'dashed', borderColor: 'rgba(167, 139, 250, 0.2)', borderRadius: 8 }}>
+                            Nenhum acesso extraordinário vigente.
                           </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ color: 'white', fontWeight: 600 }}>{acc.user.name}</span>
-                              <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>
-                                {acc.status}
-                              </span>
+                        );
+                      }
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {extraordinary.map((acc) => (
+                            <div key={acc.user.id} className="card-base" style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 16,
+                              padding: '16px 24px',
+                              background: 'rgba(167, 139, 250, 0.05)',
+                              border: '1px solid rgba(167, 139, 250, 0.1)'
+                            }}>
+                              <div style={{ width: 42, height: 42, borderRadius: '12px', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>
+                                {acc.user.name.charAt(0)}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ color: 'white', fontWeight: 600 }}>{acc.user.name}</span>
+                                  <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>
+                                    {acc.status}
+                                  </span>
+                                </div>
+                                <div style={{ color: '#a1a1aa', fontSize: 12 }}>{acc.user.email}</div>
+                              </div>
+                              <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 20 }}>
+                                <div>
+                                  <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700 }}>Duração Pedida</div>
+                                  <div style={{ color: '#f4f4f5', fontWeight: 600 }}>{acc.duration} {acc.unit}</div>
+                                </div>
+                                {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                                  <button
+                                    className="btn-mini"
+                                    style={{ padding: '8px 12px', display: 'flex', gap: 6, alignItems: 'center', background: '#27272a' }}
+                                    onClick={() => { setSelectedAccess(acc); setIsEditAccessModalOpen(true); }}
+                                  >
+                                    <Pen size={12} /> Editar
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <div style={{ color: '#a1a1aa', fontSize: 12 }}>{acc.user.email}</div>
-                          </div>
-                          <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 20 }}>
-                            <div>
-                              <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700 }}>Duração Pedida</div>
-                              <div style={{ color: '#f4f4f5', fontWeight: 600 }}>{acc.duration} {acc.unit}</div>
+                          ))}
+                          {extraordinaryApprovals.map((req) => (
+                            <div key={req.id} className="card-base" style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 16,
+                              padding: '16px 24px',
+                              background: 'rgba(167, 139, 250, 0.05)',
+                              border: '1px solid rgba(167, 139, 250, 0.1)'
+                            }}>
+                              <div style={{ width: 42, height: 42, borderRadius: '12px', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>
+                                {req.requesterName.charAt(0)}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ color: 'white', fontWeight: 600 }}>{req.requesterName}</span>
+                                  <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>
+                                    {req.level}
+                                  </span>
+                                </div>
+                                {req.requesterEmail && <div style={{ color: '#a1a1aa', fontSize: 12 }}>{req.requesterEmail}</div>}
+                                {req.justification && <div style={{ color: '#71717a', fontSize: 12, marginTop: 6 }}>{req.justification}</div>}
+                              </div>
+                              <div style={{ textAlign: 'right', fontSize: 11, color: '#71717a' }}>
+                                <div style={{ textTransform: 'uppercase', fontWeight: 700 }}>Aprovado em</div>
+                                <div style={{ color: '#f4f4f5' }}>{new Date(req.approvedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                              </div>
                             </div>
-                            {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
-                              <button
-                                className="btn-mini"
-                                style={{ padding: '8px 12px', display: 'flex', gap: 6, alignItems: 'center', background: '#27272a' }}
-                                onClick={() => { setSelectedAccess(acc); setIsEditAccessModalOpen(true); }}
-                              >
-                                <Pen size={12} /> Editar
-                              </button>
-                            )}
-                          </div>
+                          ))}
                         </div>
-                      ))}
-                      {extraordinaryApprovals.map((req) => (
-                        <div key={req.id} className="card-base" style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 16,
-                          padding: '16px 24px',
-                          background: 'rgba(167, 139, 250, 0.05)',
-                          border: '1px solid rgba(167, 139, 250, 0.1)'
-                        }}>
-                          <div style={{ width: 42, height: 42, borderRadius: '12px', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>
-                            {req.requesterName.charAt(0)}
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ color: 'white', fontWeight: 600 }}>{req.requesterName}</span>
-                              <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>
-                                {req.level}
-                              </span>
-                            </div>
-                            {req.requesterEmail && <div style={{ color: '#a1a1aa', fontSize: 12 }}>{req.requesterEmail}</div>}
-                            {req.justification && <div style={{ color: '#71717a', fontSize: 12, marginTop: 6 }}>{req.justification}</div>}
-                          </div>
-                          <div style={{ textAlign: 'right', fontSize: 11, color: '#71717a' }}>
-                            <div style={{ textTransform: 'uppercase', fontWeight: 700 }}>Aprovado em</div>
-                            <div style={{ color: '#f4f4f5' }}>{new Date(req.approvedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  );
-                })()}
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           )}
