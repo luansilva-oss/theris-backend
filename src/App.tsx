@@ -2555,19 +2555,27 @@ export default function App() {
                         departmentId: addCollaboratorContext.department.id
                       })
                     });
-                    const data = await res.json();
-                    if (res.ok) {
+                    let data: { error?: string } = {};
+                    try {
+                      data = await res.json();
+                    } catch {
+                      // Resposta não é JSON (ex.: 500 com HTML)
+                      data = { error: `Erro do servidor (${res.status}). Tente novamente.` };
+                    }
+                    if (res.status === 200 || res.status === 201) {
                       showToast('Colaborador adicionado/vinculado com sucesso!', 'success');
                       setIsAddCollaboratorModalOpen(false);
                       setAddCollaboratorContext(null);
                       loadData();
                     } else {
-                      showToast(data.error || 'Erro ao adicionar colaborador.', 'error');
+                      showToast(data.error || `Erro ao adicionar colaborador (${res.status}).`, 'error');
                     }
-                  } catch {
-                    showToast('Erro de conexão.', 'error');
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : 'Erro de conexão. Tente novamente.';
+                    showToast(msg, 'error');
+                  } finally {
+                    setAddCollaboratorSubmitting(false);
                   }
-                  setAddCollaboratorSubmitting(false);
                 }}
                 className="btn-verify"
                 style={{ marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}

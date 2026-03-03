@@ -86,11 +86,16 @@ export const manualAddUser = async (req: Request, res: Response) => {
   try {
     const [role, department] = await Promise.all([
       prisma.role.findUnique({ where: { id: roleId }, select: { id: true, name: true, departmentId: true } }),
-      prisma.department.findUnique({ where: { id: departmentId }, select: { id: true, name: true } })
+      prisma.department.findUnique({
+        where: { id: departmentId },
+        select: { id: true, name: true, unitId: true, unit: { select: { name: true } } }
+      })
     ]);
     if (!role) return res.status(404).json({ error: 'Cargo não encontrado.' });
     if (!department) return res.status(404).json({ error: 'Departamento não encontrado.' });
     if (role.departmentId !== department.id) return res.status(400).json({ error: 'O cargo não pertence ao departamento informado.' });
+
+    const unitName = department.unit?.name ?? null;
 
     const existing = await prisma.user.findUnique({ where: { email: emailStr } });
     if (existing) {
@@ -101,10 +106,11 @@ export const manualAddUser = async (req: Request, res: Response) => {
           roleId: role.id,
           department: department.name,
           jobTitle: role.name,
+          ...(unitName && { unit: unitName }),
           isActive: true
         }
       });
-      return res.status(200).json({ ...existing, roleId: role.id, department: department.name, jobTitle: role.name, isActive: true });
+      return res.status(200).json({ ...existing, roleId: role.id, department: department.name, jobTitle: role.name, unit: unitName, isActive: true });
     }
 
     const created = await prisma.user.create({
@@ -114,6 +120,7 @@ export const manualAddUser = async (req: Request, res: Response) => {
         roleId: role.id,
         department: department.name,
         jobTitle: role.name,
+        ...(unitName && { unit: unitName }),
         isActive: true
       }
     });
