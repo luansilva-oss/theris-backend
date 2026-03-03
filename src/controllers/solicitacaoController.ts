@@ -104,22 +104,25 @@ async function runExtraordinaryAccessAutomation(requestId: string, request: { ty
   } catch {
     return;
   }
+  const toolId = typeof d.toolId === 'string' ? d.toolId.trim() : null;
   const toolName = (d.tool || d.toolName || (d.info && typeof d.info === 'string' ? (d.info as string).split(': ')[1] : null) || '').trim();
   const targetUserId = request.requesterId;
   const levelRequested = (d.target || d.targetValue) as string | null;
 
-  if (!toolName) return;
+  if (!toolId && !toolName) return;
 
-  const tool = await prisma.tool.findFirst({
-    where: {
-      OR: [
-        { name: { contains: toolName, mode: 'insensitive' } },
-        { acronym: { equals: toolName, mode: 'insensitive' } }
-      ]
-    }
-  });
+  const tool = toolId
+    ? await prisma.tool.findUnique({ where: { id: toolId } })
+    : await prisma.tool.findFirst({
+        where: {
+          OR: [
+            { name: { contains: toolName, mode: 'insensitive' } },
+            { acronym: { equals: toolName, mode: 'insensitive' } }
+          ]
+        }
+      });
   if (!tool) {
-    console.warn(`[Automação] Acesso extraordinário: ferramenta "${toolName}" não encontrada no catálogo (chamado ${requestId}).`);
+    console.warn(`[Automação] Acesso extraordinário: ferramenta "${toolId || toolName}" não encontrada no catálogo (chamado ${requestId}).`);
     return;
   }
 

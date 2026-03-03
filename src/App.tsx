@@ -432,6 +432,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // Refrescar perfil do usuário (manager, etc.) para exibir no Dashboard 'Meu perfil'
+  useEffect(() => {
+    if (!isLoggedIn || !currentUser?.id) return;
+    const headers: HeadersInit = { 'x-user-id': currentUser.id };
+    fetch(`${API_URL}/api/users/me`, { headers })
+      .then((res) => res.ok ? res.json() : null)
+      .then((profile) => { if (profile) setCurrentUser(profile); })
+      .catch(() => {});
+  }, [isLoggedIn, currentUser?.id]);
+
   // LOAD DATA
   const loadData = async () => {
     try {
@@ -1075,7 +1085,7 @@ export default function App() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
                     <div>
                       <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Gestor direto</div>
-                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{allUsers.find(u => u.id === currentUser.id)?.manager?.name || currentUser.manager?.name || '—'}</div>
+                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.manager?.name || '—'}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Cargo</div>

@@ -42,6 +42,34 @@ export const getAllUsers = async (req: Request, res: Response) => {
   }
 };
 
+/** Perfil do usuário logado (Dashboard 'Meu perfil'): retorna usuário com manager para exibir Gestor Direto. */
+export const getMe = async (req: Request, res: Response) => {
+  const userId = (req.headers['x-user-id'] as string)?.trim();
+  if (!userId) return res.status(401).json({ error: 'Usuário não identificado. Envie o header x-user-id.' });
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        jobTitle: true,
+        department: true,
+        unit: true,
+        systemProfile: true,
+        managerId: true,
+        roleId: true,
+        manager: { select: { id: true, name: true } }
+      }
+    });
+    if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    return res.json(user);
+  } catch (error) {
+    console.error('Erro ao buscar perfil (getMe):', error);
+    return res.status(500).json({ error: 'Erro ao buscar perfil.' });
+  }
+};
+
 /** Painel do Colaborador (Viewer): Meu Kit Básico (role) + Acessos Extraordinários (tabela Access com isExtraordinary). */
 export const getMyTools = async (req: Request, res: Response) => {
   const userId = (req.headers['x-user-id'] as string)?.trim();

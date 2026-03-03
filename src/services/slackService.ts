@@ -128,6 +128,25 @@ const TOOLS_AND_LEVELS: Record<string, { label: string; value: string }[]> = {
 
 const TOOL_KEYS = Object.keys(TOOLS_AND_LEVELS);
 
+/** Lista de ferramentas do Catálogo Theris (fonte única para Acesso Extraordinário no Slack — sem duplicatas). */
+async function getCatalogToolsForSlack(): Promise<{ id: string; name: string; availableAccessLevels: string[]; accessLevelDescriptions: Record<string, unknown> | null }[]> {
+  const tools = await prisma.tool.findMany({
+    orderBy: { name: 'asc' },
+    select: { id: true, name: true, availableAccessLevels: true, accessLevelDescriptions: true }
+  });
+  return tools as { id: string; name: string; availableAccessLevels: string[]; accessLevelDescriptions: Record<string, unknown> | null }[];
+}
+
+/** Label do nível para exibição (Catálogo: accessLevelDescriptions pode ser string ou { description, icon }). */
+function getLevelLabel(level: string, accessLevelDescriptions: Record<string, unknown> | null | undefined): string {
+  if (!accessLevelDescriptions) return level;
+  const descData = accessLevelDescriptions[level];
+  if (typeof descData === 'object' && descData !== null && 'description' in descData)
+    return String((descData as { description?: string }).description || level);
+  if (typeof descData === 'string') return descData;
+  return level;
+}
+
 /** Exposto para a API do painel (cascata Ferramenta → Níveis no modal de KBS) */
 export const getToolsAndLevelsMap = () => ({ ...TOOLS_AND_LEVELS });
 
@@ -577,7 +596,8 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
     }
     toolOptions = ownedTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.name }));
   } else {
-    toolOptions = TOOL_KEYS.map((k) => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
+    const catalogTools = await getCatalogToolsForSlack();
+    toolOptions = catalogTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.id }));
   }
 
   const blocks: any[] = [
@@ -650,8 +670,8 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
   const b = body as any;
   const view = b.view;
   const selectedToolRaw = b.actions?.[0]?.selected_option?.value;
-  const selectedTool = typeof selectedToolRaw === 'string' ? selectedToolRaw.trim() : '';
-  if (!view?.id || !selectedTool) return;
+  const selectedToolId = typeof selectedToolRaw === 'string' ? selectedToolRaw.trim() : '';
+  if (!view?.id || !selectedToolId) return;
 
   let actionType = 'acesso_extraordinario';
   try {
@@ -660,6 +680,7 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
   } catch (_) {}
 
   let toolOptions: { text: { type: 'plain_text'; text: string }; value: string }[];
+  let selectedToolName = '';
   if (actionType === 'indicar_deputy') {
     let ownedTools: { name: string }[] = [];
     try {
@@ -680,9 +701,13 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
     }
     toolOptions = ownedTools.length > 0
       ? ownedTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.name }))
-      : [{ text: { type: 'plain_text' as const, text: selectedTool }, value: selectedTool }];
+      : [{ text: { type: 'plain_text' as const, text: selectedToolId }, value: selectedToolId }];
+    selectedToolName = selectedToolId;
   } else {
-    toolOptions = TOOL_KEYS.map((k) => ({ text: { type: 'plain_text' as const, text: k }, value: k }));
+    const catalogTools = await getCatalogToolsForSlack();
+    toolOptions = catalogTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.id }));
+    const selectedTool = catalogTools.find((t) => t.id === selectedToolId);
+    selectedToolName = selectedTool?.name ?? selectedToolId;
   }
 
   const actionLabels: Record<string, string> = { acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
@@ -713,7 +738,10 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
         type: 'static_select',
         action_id: 'acessos_tool_select',
         placeholder: { type: 'plain_text', text: 'Selecione a ferramenta...' },
-        initial_option: { text: { type: 'plain_text', text: selectedTool }, value: selectedTool },
+        initial_option: {
+          text: { type: 'plain_text' as const, text: actionType === 'acesso_extraordinario' ? selectedToolName : selectedToolName },
+          value: selectedToolId
+        },
         options: toolOptions
       }
     }
@@ -724,7 +752,7 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
     const normalizeForMatch = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, '');
     try {
       const slackUserId = b.user?.id;
-      const selectedNorm = normalizeForMatch(selectedTool || '');
+      const selectedNorm = normalizeForMatch(selectedToolName || '');
       let found = false;
       if (slackUserId) {
         const info = await client.users.info({ user: slackUserId });
@@ -761,8 +789,16 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
       text: { type: 'mrkdwn', text: currentLevelMessage }
     });
 
-    const levels = TOOLS_AND_LEVELS[selectedTool] || [];
-    const levelOptions = levels.map(l => ({ text: { type: 'plain_text' as const, text: l.label }, value: l.value }));
+    const catalogTool = await prisma.tool.findUnique({
+      where: { id: selectedToolId },
+      select: { availableAccessLevels: true, accessLevelDescriptions: true }
+    });
+    const levelsArray = catalogTool?.availableAccessLevels ?? [];
+    const descMap = (catalogTool?.accessLevelDescriptions as Record<string, unknown>) ?? null;
+    const levelOptions = levelsArray.map((code) => ({
+      text: { type: 'plain_text' as const, text: getLevelLabel(code, descMap) },
+      value: code
+    }));
     if (levelOptions.length >= 1) {
       blocks.push({
         type: 'input',
@@ -1037,7 +1073,9 @@ slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
   const toolBlock = v.blk_tool;
   const levelBlock = v.blk_level;
   const reasonBlock = v.blk_reason;
-  const toolName = toolBlock?.acessos_tool_select?.selected_option?.text?.text ?? toolBlock?.acessos_tool_select?.selected_option?.value ?? '';
+  const toolOption = toolBlock?.acessos_tool_select?.selected_option;
+  const toolId = toolOption?.value ?? '';
+  const toolName = toolOption?.text?.text ?? toolId;
   const levelValue = levelBlock?.acessos_level_select?.selected_option?.value ?? '';
   const levelLabel = levelBlock?.acessos_level_select?.selected_option?.text?.text ?? levelValue;
   const reason = reasonBlock?.inp?.value ?? '';
@@ -1045,7 +1083,7 @@ slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
   const deputyEmail = v.blk_deputy_email?.inp?.value ?? '';
 
   if (actionType === 'acesso_extraordinario') {
-    const details = { info: `Acesso extraordinário: ${toolName}`, tool: toolName, target: levelLabel, targetValue: levelValue };
+    const details = { info: `Acesso extraordinário: ${toolName}`, tool: toolName, toolId: toolId || undefined, target: levelLabel, targetValue: levelValue };
     await saveRequest(body, client, 'ACCESS_TOOL_EXTRA', details, reason, `🔥 Acesso extraordinário para *${toolName}* enviado ao time de Segurança.`, true);
   } else if (actionType === 'indicar_deputy') {
     if (!toolName) {
