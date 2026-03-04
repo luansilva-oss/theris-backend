@@ -14,7 +14,7 @@ const getTools = async (req, res) => {
                     }
                 },
                 subOwner: true,
-                toolGroup: true, // Inclui o grupo
+                toolGroup: true,
                 accesses: {
                     include: {
                         user: true
@@ -25,7 +25,92 @@ const getTools = async (req, res) => {
                 name: 'asc'
             }
         });
-        return res.json(tools);
+        const toolNames = tools.map(t => t.name);
+        if (toolNames.length === 0)
+            return res.json(tools);
+        // KBS: RoleKitItem por nome da ferramenta (case-insensitive) → cargos (Roles) e colaboradores (Users)
+        const kbsItems = await prisma.roleKitItem.findMany({
+            where: toolNames.length > 0 ? {
+                OR: toolNames.map(name => ({ toolName: { equals: name, mode: 'insensitive' } }))
+            } : undefined,
+            include: { role: { include: { department: true } } }
+        });
+        const roleIds = [...new Set(kbsItems.map(k => k.roleId))];
+        const usersWithRole = roleIds.length > 0
+            ? await prisma.user.findMany({
+                where: { roleId: { in: roleIds }, isActive: true },
+                select: { id: true, name: true, email: true, roleId: true }
+            })
+            : [];
+        // Aprovações extraordinárias: Request ACCESS_TOOL_EXTRA, APROVADO, details.tool = nome da ferramenta
+        const extraRequests = await prisma.request.findMany({
+            where: {
+                type: 'ACCESS_TOOL_EXTRA',
+                status: 'APROVADO'
+            },
+            include: { requester: true },
+            orderBy: { updatedAt: 'desc' }
+        });
+        const toolsWithSync = tools.map(tool => {
+            const nameLower = tool.name.trim().toLowerCase();
+            const kbsForTool = kbsItems.filter(k => (k.toolName || '').trim().toLowerCase() === nameLower);
+            const levelToUsers = {};
+            const kbsByRole = [];
+            for (const k of kbsForTool) {
+                const users = usersWithRole.filter(u => u.roleId === k.roleId).map(u => ({ id: u.id, name: u.name, email: u.email }));
+                const level = k.accessLevelDesc || 'N/A';
+                if (!levelToUsers[level])
+                    levelToUsers[level] = [];
+                levelToUsers[level].push(...users);
+                const role = k.role;
+                kbsByRole.push({
+                    roleId: role.id,
+                    roleName: role.name,
+                    departmentName: role.department?.name ?? '—',
+                    accessLevelDesc: level,
+                    userCount: users.length,
+                    users: users.filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i)
+                });
+            }
+            const kbsMembersByLevel = Object.entries(levelToUsers).map(([level, users]) => ({
+                level,
+                users: users.filter((u, i, arr) => arr.findIndex(x => x.id === u.id) === i)
+            }));
+            let detailsParsed = {};
+            const extraordinaryApprovals = extraRequests
+                .filter(r => {
+                try {
+                    detailsParsed = typeof r.details === 'string' ? JSON.parse(r.details) : r.details || {};
+                }
+                catch {
+                    detailsParsed = {};
+                }
+                const reqTool = (detailsParsed.tool ?? '').trim().toLowerCase();
+                return reqTool === nameLower;
+            })
+                .map(r => {
+                let d = {};
+                try {
+                    d = typeof r.details === 'string' ? JSON.parse(r.details) : r.details || {};
+                }
+                catch { }
+                return {
+                    id: r.id,
+                    requesterName: r.requester?.name ?? '—',
+                    requesterEmail: r.requester?.email,
+                    level: d.target ?? d.targetValue ?? '—',
+                    approvedAt: r.updatedAt,
+                    justification: r.justification ?? r.adminNote ?? null
+                };
+            });
+            return {
+                ...tool,
+                kbsMembersByLevel,
+                kbsByRole,
+                extraordinaryApprovals
+            };
+        });
+        return res.json(toolsWithSync);
     }
     catch (error) {
         console.error("❌ Erro no getTools:", error);

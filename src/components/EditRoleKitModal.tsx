@@ -24,8 +24,20 @@ interface Role {
     name: string;
     code?: string | null;
     departmentId: string;
-    department?: { name: string };
+    department?: { name: string; unitId?: string; unit?: { name: string } };
     kitItems?: RoleKitItem[];
+}
+
+interface Department {
+    id: string;
+    name: string;
+    unitId?: string;
+    unit?: { name: string };
+}
+
+interface Unit {
+    id: string;
+    name: string;
 }
 
 interface Props {
@@ -35,26 +47,37 @@ interface Props {
     role: Role | null;
     /** Departamento ao qual o novo cargo será vinculado (apenas em modo criação). */
     departmentId?: string | null;
+    /** Unidades e departamentos para os selects (da estrutura /api/structure). */
+    units?: Unit[];
+    departments?: Department[];
     onUpdate: () => void;
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
-export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, departmentId, onUpdate, showToast }) => {
+export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, departmentId, units = [], departments = [], onUpdate, showToast }) => {
     if (!isOpen) return null;
 
     const isCreateMode = !role;
     const [roleName, setRoleName] = useState('');
     const [roleCode, setRoleCode] = useState('');
+    const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
+    const [selectedUnitId, setSelectedUnitId] = useState<string>('');
     const [kitItems, setKitItems] = useState<RoleKitItem[]>([]);
     const [tools, setTools] = useState<Tool[]>([]);
     const [toolsAndLevelsMap, setToolsAndLevelsMap] = useState<Record<string, { label: string; value: string }[]>>({});
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
+    const selectedDept = departments.find(d => d.id === selectedDepartmentId);
+    const unitOfSelectedDept = selectedDept?.unitId ? units.find(u => u.id === selectedDept.unitId) : null;
+
     useEffect(() => {
         if (isCreateMode) {
             setRoleName('');
             setRoleCode('');
+            setSelectedDepartmentId(departmentId || '');
+            const dept = departments.find(d => d.id === departmentId);
+            setSelectedUnitId(dept?.unitId || '');
             setKitItems([]);
             setLoading(true);
             Promise.all([
@@ -67,6 +90,9 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
         } else if (role) {
             setRoleName(role.name);
             setRoleCode(role.code || '');
+            setSelectedDepartmentId(role.departmentId || '');
+            const dept = departments.find(d => d.id === role.departmentId) ?? (role.department as Department & { unitId?: string });
+            setSelectedUnitId(dept?.unitId || (role.department as any)?.unit?.id || '');
             setLoading(true);
             Promise.all([
                 fetch(`${API_URL}/api/structure/roles/${role.id}/kit`).then(r => r.ok ? r.json() : null),
@@ -84,7 +110,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                 setToolsAndLevelsMap(levelsMap || {});
             }).catch(e => console.error(e)).finally(() => setLoading(false));
         }
-    }, [role?.id, role?.name, role?.code, isOpen, isCreateMode]);
+    }, [role?.id, role?.name, role?.code, role?.departmentId, departmentId, isOpen, isCreateMode, departments]);
 
     useEffect(() => {
         if (role) {
@@ -92,6 +118,13 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
             setRoleCode(role.code || '');
         }
     }, [role?.name, role?.code]);
+
+    // Ao trocar departamento, atualiza Unidade para a unidade do novo departamento
+    useEffect(() => {
+        if (selectedDepartmentId && selectedDept?.unitId && selectedUnitId !== selectedDept.unitId) {
+            setSelectedUnitId(selectedDept.unitId);
+        }
+    }, [selectedDepartmentId, selectedDept?.unitId]);
 
     /** Normaliza nome para match: remove sigla entre parênteses e espaços extras (ex: "Clicsign (CS)" → "Clicsign") */
     const normalizeToolNameForMatch = (name: string): string =>
@@ -167,7 +200,8 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                 }));
 
             if (isCreateMode) {
-                if (!departmentId) {
+                const deptId = selectedDepartmentId || departmentId;
+                if (!deptId) {
                     showToast('Departamento não informado.', 'error');
                     setSaving(false);
                     return;
@@ -178,7 +212,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                     body: JSON.stringify({
                         name,
                         code: roleCode.trim() || null,
-                        departmentId,
+                        departmentId: deptId,
                         kitItems: validItems
                     })
                 });
@@ -191,14 +225,18 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                     showToast(err.error || 'Erro ao criar cargo.', 'error');
                 }
             } else if (role) {
+                const payload: { name: string; code?: string | null; departmentId?: string; kitItems: typeof validItems } = {
+                    name: name || role.name,
+                    code: roleCode.trim() || null,
+                    kitItems: validItems
+                };
+                if (selectedDepartmentId && selectedDepartmentId !== role.departmentId) {
+                    payload.departmentId = selectedDepartmentId;
+                }
                 const res = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: name || role.name,
-                        code: roleCode.trim() || null,
-                        kitItems: validItems
-                    })
+                    body: JSON.stringify(payload)
                 });
                 if (res.ok) {
                     showToast('Cargo e kit atualizados!', 'success');
@@ -251,6 +289,41 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                                         />
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', marginBottom: 16 }}>
+                                <h4 style={{ color: '#f4f4f5', margin: '0 0 12px 0', fontSize: 14 }}>Departamento e Unidade</h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                    <div>
+                                        <label style={{ fontSize: 12, color: '#a1a1aa' }}>Departamento</label>
+                                        <select
+                                            value={selectedDepartmentId}
+                                            onChange={e => setSelectedDepartmentId(e.target.value)}
+                                            className="form-input"
+                                            style={{ width: '100%', marginTop: 4 }}
+                                        >
+                                            <option value="">Selecione...</option>
+                                            {departments.map(d => (
+                                                <option key={d.id} value={d.id}>{d.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style={{ fontSize: 12, color: '#a1a1aa' }}>Unidade</label>
+                                        <select
+                                            value={selectedUnitId}
+                                            onChange={e => setSelectedUnitId(e.target.value)}
+                                            className="form-input"
+                                            style={{ width: '100%', marginTop: 4 }}
+                                        >
+                                            <option value="">Selecione...</option>
+                                            {units.filter(u => !selectedDepartmentId || selectedDept?.unitId === u.id).map(u => (
+                                                <option key={u.id} value={u.id}>{u.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <p style={{ color: '#71717a', fontSize: 12, margin: '12px 0 0 0' }}>Ao alterar o departamento, todos os colaboradores deste cargo serão movidos junto.</p>
                             </div>
 
                             <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', marginBottom: 16 }}>

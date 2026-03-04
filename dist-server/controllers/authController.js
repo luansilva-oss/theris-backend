@@ -31,20 +31,23 @@ const googleLogin = async (req, res) => {
         if (!email.endsWith('@grupo-3c.com')) {
             return res.status(403).json({ error: 'Acesso restrito ao domínio corporativo.' });
         }
-        // 3. Buscar ou Criar Usuário
-        // (Removemos o 'include: { role: true }' pois não existe mais)
+        // 3. Buscar ou Criar Usuário (com manager para exibir Gestor Direto no Dashboard)
         let user = await prisma.user.findUnique({
             where: { email },
+            include: { manager: { select: { id: true, name: true } } }
         });
         if (!user) {
-            // Criação automática no primeiro login
-            user = await prisma.user.create({
+            const created = await prisma.user.create({
                 data: {
                     email,
                     name: googleData.name || 'Usuário Google',
                     jobTitle: 'Colaborador', // Default
                     department: 'Geral' // Default
                 }
+            });
+            user = await prisma.user.findUnique({
+                where: { id: created.id },
+                include: { manager: { select: { id: true, name: true } } }
             });
         }
         // 4. Definir Perfil de Sistema Persistente

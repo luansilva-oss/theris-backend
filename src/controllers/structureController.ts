@@ -3,6 +3,21 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+/** Mapeamento departamento -> prefixo KBS (ex: KBS-BO-1) para atualizar code ao mudar departamento */
+const DEPT_KBS_PREFIX: Record<string, string> = {
+    'Board': 'BO', 'Tecnologia e Segurança (SI)': 'SI', 'Administrativo': 'AD',
+    'Comercial Contact': 'CO', 'Expansão': 'CO', 'Comercial': 'CO',
+    'Marketing': 'MK', 'Parcerias': 'MK',
+    'Atendimento ao Cliente': 'AT', 'Professional Service': 'AT',
+    'Operações': 'OP', 'Pessoas e Performance': 'PC', 'Produto 3C+': 'PD',
+    'RevOps': 'RA', 'Instituto 3C': 'IN', 'Evolux': 'PD', 'Dizify': 'PD',
+    'Produto FiqOn': 'PD', 'Produto Dizparos': 'PD',
+};
+
+function getKbsPrefixForDepartment(deptName: string): string | null {
+    return DEPT_KBS_PREFIX[deptName] ?? null;
+}
+
 // --- UNIT CRUD ---
 
 export const createUnit = async (req: Request, res: Response) => {
@@ -273,25 +288,69 @@ export const updateRole = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { name, departmentId, code, kitItems } = req.body;
     try {
-        const oldRole = await prisma.role.findUnique({ where: { id }, include: { department: true } });
+        const oldRole = await prisma.role.findUnique({
+            where: { id },
+            include: { department: { include: { unit: true } } }
+        });
         if (!oldRole) return res.status(404).json({ error: "Cargo não encontrado." });
+
+        const oldDeptName = oldRole.department?.name ?? '';
+        const oldUnitName = oldRole.department?.unit?.name ?? '';
+        const departmentChanged = departmentId && departmentId !== oldRole.departmentId;
+
+        let newDeptName = oldDeptName;
+        let newUnitName = oldUnitName;
+
+        if (departmentChanged) {
+            const newDept = await prisma.department.findUnique({
+                where: { id: departmentId },
+                include: { unit: true }
+            });
+            if (!newDept) return res.status(400).json({ error: "Departamento de destino não encontrado." });
+            newDeptName = newDept.name;
+            newUnitName = newDept.unit?.name ?? '';
+        }
 
         const data: { name?: string; departmentId?: string; code?: string | null } = {};
         if (name !== undefined) data.name = name;
         if (departmentId !== undefined) data.departmentId = departmentId;
         if (code !== undefined) data.code = code || null;
 
+        // Ao mudar departamento: atualizar KBS code conforme prefixo do novo departamento
+        if (departmentChanged && newDeptName) {
+            const prefix = getKbsPrefixForDepartment(newDeptName);
+            if (prefix && oldRole.code) {
+                const match = oldRole.code.match(/^KBS-[A-Z]{2}-(\d+)$/);
+                const num = match ? match[1] : '1';
+                data.code = `KBS-${prefix}-${num}`;
+            }
+        }
+
         const role = await prisma.role.update({
             where: { id },
             data: Object.keys(data).length ? data : undefined
         });
 
-        // Sync jobTitle/department for users linked by roleId or by jobTitle+department
+        // Sync jobTitle for users linked by roleId or by jobTitle+department
         if (oldRole.name !== name && name) {
             await prisma.user.updateMany({
-                where: { OR: [{ roleId: id }, { jobTitle: oldRole.name, department: oldRole.department?.name ?? '' }] },
+                where: { OR: [{ roleId: id }, { jobTitle: oldRole.name, department: oldDeptName }] },
                 data: { jobTitle: name }
             });
+        }
+
+        // Ao mudar departamento: mover todos os colaboradores para o novo dept/unidade
+        if (departmentChanged) {
+            const userCount = await prisma.user.updateMany({
+                where: {
+                    OR: [
+                        { roleId: id },
+                        { jobTitle: oldRole.name, department: oldDeptName }
+                    ]
+                },
+                data: { department: newDeptName, unit: newUnitName }
+            });
+            console.log(`[Auditoria] Cargo "${role.name}" (${id}) movido de "${oldDeptName}" para "${newDeptName}". ${userCount.count} colaborador(es) atualizado(s).`);
         }
 
         // Sincronizar RoleKitItem se enviado

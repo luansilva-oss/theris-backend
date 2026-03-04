@@ -2624,6 +2624,8 @@ export default function App() {
         onClose={() => { setIsEditRoleKitModalOpen(false); setSelectedRoleForKit(null); setSelectedDepartmentForNewRole(null); }}
         role={selectedRoleForKit}
         departmentId={selectedRoleForKit ? selectedRoleForKit.departmentId : (selectedDepartmentForNewRole?.id ?? null)}
+        units={units}
+        departments={departments}
         onUpdate={loadData}
         showToast={showToast}
       />
