@@ -33,8 +33,9 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getDepartments = exports.deleteUser = exports.markPasswordChanged = exports.updateUser = exports.getMyTools = exports.manualAddUser = exports.getMe = exports.getAllUsers = void 0;
+exports.getDepartments = exports.deleteUser = exports.markPasswordChanged = exports.updateUser = exports.getMyTools = exports.getUserDetails = exports.getUserById = exports.manualAddUser = exports.getMe = exports.getAllUsers = void 0;
 const client_1 = require("@prisma/client");
+const auditLog_1 = require("../lib/auditLog");
 const prisma = new client_1.PrismaClient();
 // FUNÇÃO DE NORMALIZAÇÃO DE E-MAIL (nome.sobrenome@grupo-3c.com)
 const normalizeEmail = (email) => {
@@ -54,8 +55,10 @@ const getAllUsers = async (req, res) => {
                 name: true,
                 email: true,
                 jobTitle: true,
-                department: true,
-                unit: true,
+                departmentId: true,
+                unitId: true,
+                departmentRef: { select: { id: true, name: true } },
+                unitRef: { select: { id: true, name: true } },
                 systemProfile: true,
                 managerId: true,
                 roleId: true,
@@ -87,8 +90,10 @@ const getMe = async (req, res) => {
                 name: true,
                 email: true,
                 jobTitle: true,
-                department: true,
-                unit: true,
+                departmentId: true,
+                unitId: true,
+                departmentRef: { select: { id: true, name: true } },
+                unitRef: { select: { id: true, name: true } },
                 systemProfile: true,
                 managerId: true,
                 roleId: true,
@@ -134,7 +139,7 @@ const manualAddUser = async (req, res) => {
             return res.status(404).json({ error: 'Departamento não encontrado.' });
         if (role.departmentId !== department.id)
             return res.status(400).json({ error: 'O cargo não pertence ao departamento informado.' });
-        const unitName = department.unit?.name ?? null;
+        const unitId = department.unitId ?? null;
         const existing = await prisma.user.findUnique({ where: { email: emailStr } });
         if (existing) {
             await prisma.user.update({
@@ -142,23 +147,27 @@ const manualAddUser = async (req, res) => {
                 data: {
                     ...(nameStr && { name: nameStr }),
                     roleId: role.id,
-                    department: department.name,
+                    departmentId: department.id,
+                    unitId,
                     jobTitle: role.name,
-                    ...(unitName && { unit: unitName }),
                     isActive: true
                 }
             });
-            return res.status(200).json({ ...existing, roleId: role.id, department: department.name, jobTitle: role.name, unit: unitName, isActive: true });
+            return res.status(200).json({ ...existing, roleId: role.id, department: department.name, departmentId: department.id, jobTitle: role.name, unit: department.unit?.name ?? null, unitId, isActive: true });
         }
         const created = await prisma.user.create({
             data: {
                 name: nameStr || emailStr.split('@')[0],
                 email: emailStr,
                 roleId: role.id,
-                department: department.name,
+                departmentId: department.id,
+                unitId,
                 jobTitle: role.name,
-                ...(unitName && { unit: unitName }),
                 isActive: true
+            },
+            include: {
+                departmentRef: { select: { id: true, name: true } },
+                unitRef: { select: { id: true, name: true } }
             }
         });
         return res.status(201).json(created);
@@ -169,6 +178,91 @@ const manualAddUser = async (req, res) => {
     }
 };
 exports.manualAddUser = manualAddUser;
+/** GET /api/users/:id — usuário por ID com relations (departmentRef, unitRef, role) */
+const getUserById = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id },
+            include: {
+                departmentRef: { select: { id: true, name: true } },
+                unitRef: { select: { id: true, name: true } },
+                manager: { select: { id: true, name: true } }
+            }
+        });
+        if (!user)
+            return res.status(404).json({ error: 'Colaborador não encontrado.' });
+        let role = null;
+        if (user.roleId) {
+            const r = await prisma.role.findUnique({ where: { id: user.roleId }, select: { id: true, name: true, code: true } });
+            if (r)
+                role = r;
+        }
+        return res.json({ ...user, role });
+    }
+    catch (error) {
+        console.error('Erro ao buscar colaborador:', error);
+        return res.status(500).json({ error: 'Erro ao buscar colaborador.' });
+    }
+};
+exports.getUserById = getUserById;
+/** GET /api/users/:id/details — detalhes completos (user, kbsFerramentas, historicoCargos) */
+const getUserDetails = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id },
+            include: {
+                departmentRef: { select: { id: true, name: true } },
+                unitRef: { select: { id: true, name: true } },
+                manager: { select: { id: true, name: true } }
+            }
+        });
+        if (!user)
+            return res.status(404).json({ error: 'Colaborador não encontrado.' });
+        let role = null;
+        if (user.roleId) {
+            const r = await prisma.role.findUnique({
+                where: { id: user.roleId },
+                include: { kitItems: true }
+            });
+            if (r)
+                role = r;
+        }
+        const { getToolsAndLevelsMap } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+        const toolsAndLevels = getToolsAndLevelsMap();
+        let kbsFerramentas = [];
+        if (role?.kitItems) {
+            for (const k of role.kitItems) {
+                const code = k.accessLevelDesc ?? k.toolCode ?? '';
+                const toolKey = (k.toolName || '').trim();
+                const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
+                const levelLabel = (levelsForTool?.find((l) => l.value === code)?.label ?? code) || '—';
+                kbsFerramentas.push({
+                    ferramenta: k.toolName || '—',
+                    sigla: k.toolCode || '—',
+                    nivel: levelLabel,
+                    critico: k.isCritical ?? true
+                });
+            }
+        }
+        const historicoCargos = await prisma.historicoMudanca.findMany({
+            where: { entidadeId: id, tipo: 'USER_KBS_CHANGE' },
+            orderBy: { createdAt: 'desc' },
+            include: { autor: { select: { id: true, name: true } } }
+        });
+        return res.json({
+            user: { ...user, role },
+            kbsFerramentas,
+            historicoCargos
+        });
+    }
+    catch (error) {
+        console.error('Erro ao buscar detalhes do colaborador:', error);
+        return res.status(500).json({ error: 'Erro ao buscar detalhes.' });
+    }
+};
+exports.getUserDetails = getUserDetails;
 /** Painel do Colaborador (Viewer): Meu Kit Básico (role) + Acessos Extraordinários (tabela Access com isExtraordinary). */
 const getMyTools = async (req, res) => {
     const userId = req.headers['x-user-id']?.trim();
@@ -228,10 +322,10 @@ const getMyTools = async (req, res) => {
 exports.getMyTools = getMyTools;
 const updateUser = async (req, res) => {
     const { id } = req.params;
-    const { name, jobTitle, department, unit, systemProfile, managerId, roleId } = req.body;
+    const { name, jobTitle, departmentId, unitId: bodyUnitId, systemProfile, managerId, roleId, isActive } = req.body;
     const rawEmail = req.body.email;
     const email = rawEmail ? normalizeEmail(rawEmail) : undefined;
-    const requesterId = req.headers['x-requester-id'];
+    const requesterId = req.headers['x-requester-id'] || req.headers['x-user-id'];
     try {
         if (!requesterId)
             return res.status(401).json({ error: "Identificação do solicitante ausente." });
@@ -248,21 +342,60 @@ const updateUser = async (req, res) => {
                 return res.status(403).json({ error: "Gestores não podem conceder perfis administrativos superiores." });
             }
         }
+        const oldUser = await prisma.user.findUnique({ where: { id }, select: { name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true } });
         const data = {
             name,
             email,
             jobTitle,
-            department,
-            unit: unit !== undefined ? unit : undefined,
+            departmentId: departmentId !== undefined ? departmentId : undefined,
+            unitId: bodyUnitId !== undefined ? bodyUnitId : undefined,
             managerId,
             systemProfile: (isSuperAdmin || isGestor) ? systemProfile : undefined
         };
         if (roleId !== undefined)
             data.roleId = roleId || null;
+        if (isActive !== undefined)
+            data.isActive = Boolean(isActive);
         const updatedUser = await prisma.user.update({
             where: { id },
-            data
+            data,
+            include: {
+                departmentRef: { select: { id: true, name: true } },
+                unitRef: { select: { id: true, name: true } }
+            }
         });
+        // Auditoria: alteração de cargo/kit (roleId, jobTitle, departmentId, unitId)
+        const kbsChanged = oldUser && ((roleId !== undefined && roleId !== oldUser.roleId) ||
+            (jobTitle !== undefined && jobTitle !== oldUser.jobTitle) ||
+            (departmentId !== undefined && departmentId !== oldUser.departmentId) ||
+            (bodyUnitId !== undefined && bodyUnitId !== oldUser.unitId));
+        if (kbsChanged) {
+            const updatedWithRelations = await prisma.user.findUnique({
+                where: { id },
+                select: { departmentRef: { select: { name: true } }, unitRef: { select: { name: true } } }
+            });
+            await (0, auditLog_1.registrarMudanca)({
+                tipo: 'USER_KBS_CHANGE',
+                entidadeTipo: 'User',
+                entidadeId: id,
+                descricao: `Colaborador "${updatedUser.name}" teve cargo/departamento/unidade alterado.`,
+                dadosAntes: { roleId: oldUser?.roleId, jobTitle: oldUser?.jobTitle, departmentId: oldUser?.departmentId, unitId: oldUser?.unitId },
+                dadosDepois: { roleId: updatedUser.roleId, jobTitle: updatedUser.jobTitle, departmentId: updatedUser.departmentId, unitId: updatedUser.unitId, departmentName: updatedWithRelations?.departmentRef?.name, unitName: updatedWithRelations?.unitRef?.name },
+                autorId: requesterId,
+            });
+        }
+        // Auditoria: ativação/desativação
+        if (isActive !== undefined && oldUser && isActive !== oldUser.isActive) {
+            await (0, auditLog_1.registrarMudanca)({
+                tipo: 'USER_STATUS_CHANGE',
+                entidadeTipo: 'User',
+                entidadeId: id,
+                descricao: `Colaborador "${updatedUser.name}" ${isActive ? 'reativado' : 'desativado'}.`,
+                dadosAntes: { isActive: oldUser.isActive },
+                dadosDepois: { isActive: updatedUser.isActive },
+                autorId: requesterId,
+            });
+        }
         return res.json(updatedUser);
     }
     catch (error) {

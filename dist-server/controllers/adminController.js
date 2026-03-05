@@ -216,7 +216,7 @@ async function ensureUser(email, name) {
                     name: name || email.split('@')[0],
                     email: email,
                     jobTitle: "Não mapeado",
-                    department: "Geral"
+                    departmentId: (await prisma.department.findFirst({ where: { name: { equals: 'Geral', mode: 'insensitive' } } }))?.id ?? null
                 }
             });
         }

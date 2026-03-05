@@ -17,10 +17,11 @@ import {
 } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
-import { getAllUsers, getMe, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
+import { getAllUsers, getMe, getUserById, getUserDetails, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
 // NOVO: Importar o controlador de reset
 import { resetCatalog } from './controllers/adminController';
 import * as structureController from './controllers/structureController';
+import { getAuditLog } from './controllers/auditLogController';
 import { syncStructureFromUsers } from './services/structureSync'; // Import sync service
 import { startPasswordReminderCron } from './jobs/passwordReminderCron';
 
@@ -39,7 +40,11 @@ syncStructureFromUsers();
 startPasswordReminderCron();
 
 // --- CORS ---
-app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+}));
 
 // ⚠️ ROTA DO SLACK
 app.use('/api/slack', slackReceiver.router);
@@ -72,6 +77,7 @@ app.delete('/api/structure/units/:id', structureController.deleteUnit);
 app.post('/api/structure/units/:id/migrate-and-delete', structureController.migrateAndDeleteUnit);
 
 app.post('/api/structure/departments', structureController.createDepartment);
+app.get('/api/structure/departments/:id/user-count', structureController.getDepartmentUserCount);
 app.put('/api/structure/departments/:id', structureController.updateDepartment);
 app.delete('/api/structure/departments/:id', structureController.deleteDepartment);
 
@@ -80,6 +86,8 @@ app.put('/api/structure/roles/:id', structureController.updateRole);
 app.delete('/api/structure/roles/:id', structureController.deleteRole);
 app.get('/api/structure/roles/:id/kit', structureController.getRoleKit);
 app.put('/api/structure/roles/:id/kit', structureController.updateRoleKit);
+
+app.get('/api/audit-log', getAuditLog);
 
 // 2. Ferramentas
 app.get('/api/tools', getTools);
@@ -99,11 +107,13 @@ app.patch('/api/tools/:toolId/level/:oldLevelName', updateToolLevel);
 app.delete('/api/tools/:toolId/level/:levelName', deleteToolLevel);
 app.patch('/api/tools/:toolId/access/:userId', updateToolAccess); // Atualizar detalhes do acesso (ex: extra)
 
-// 3. Usuários (rotas /me, /me/tools e /manual-add antes de /:id)
+// 3. Usuários (rotas específicas antes de /:id)
 app.get('/api/users', getAllUsers);
 app.get('/api/users/me', getMe);
 app.get('/api/users/me/tools', getMyTools);
 app.post('/api/users/manual-add', manualAddUser);
+app.get('/api/users/:id/details', getUserDetails);
+app.get('/api/users/:id', getUserById);
 app.put('/api/users/:id', updateUser);
 app.patch('/api/users/:id/password-changed', markPasswordChanged);
 app.delete('/api/users/:id', deleteUser);

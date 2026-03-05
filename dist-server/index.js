@@ -49,6 +49,7 @@ const userController_1 = require("./controllers/userController");
 // NOVO: Importar o controlador de reset
 const adminController_1 = require("./controllers/adminController");
 const structureController = __importStar(require("./controllers/structureController"));
+const auditLogController_1 = require("./controllers/auditLogController");
 const structureSync_1 = require("./services/structureSync"); // Import sync service
 const passwordReminderCron_1 = require("./jobs/passwordReminderCron");
 // Slack
@@ -87,6 +88,7 @@ app.put('/api/structure/units/:id', structureController.updateUnit);
 app.delete('/api/structure/units/:id', structureController.deleteUnit);
 app.post('/api/structure/units/:id/migrate-and-delete', structureController.migrateAndDeleteUnit);
 app.post('/api/structure/departments', structureController.createDepartment);
+app.get('/api/structure/departments/:id/user-count', structureController.getDepartmentUserCount);
 app.put('/api/structure/departments/:id', structureController.updateDepartment);
 app.delete('/api/structure/departments/:id', structureController.deleteDepartment);
 app.post('/api/structure/roles', structureController.createRole);
@@ -94,6 +96,7 @@ app.put('/api/structure/roles/:id', structureController.updateRole);
 app.delete('/api/structure/roles/:id', structureController.deleteRole);
 app.get('/api/structure/roles/:id/kit', structureController.getRoleKit);
 app.put('/api/structure/roles/:id/kit', structureController.updateRoleKit);
+app.get('/api/audit-log', auditLogController_1.getAuditLog);
 // 2. Ferramentas
 app.get('/api/tools', toolController_1.getTools);
 app.get('/api/tools-and-levels', (_req, res) => res.json((0, slackService_1.getToolsAndLevelsMap)()));
@@ -109,11 +112,13 @@ const toolController_2 = require("./controllers/toolController"); // Helper impo
 app.patch('/api/tools/:toolId/level/:oldLevelName', toolController_1.updateToolLevel);
 app.delete('/api/tools/:toolId/level/:levelName', toolController_2.deleteToolLevel);
 app.patch('/api/tools/:toolId/access/:userId', toolController_1.updateToolAccess); // Atualizar detalhes do acesso (ex: extra)
-// 3. Usuários (rotas /me, /me/tools e /manual-add antes de /:id)
+// 3. Usuários (rotas específicas antes de /:id)
 app.get('/api/users', userController_1.getAllUsers);
 app.get('/api/users/me', userController_1.getMe);
 app.get('/api/users/me/tools', userController_1.getMyTools);
 app.post('/api/users/manual-add', userController_1.manualAddUser);
+app.get('/api/users/:id/details', userController_1.getUserDetails);
+app.get('/api/users/:id', userController_1.getUserById);
 app.put('/api/users/:id', userController_1.updateUser);
 app.patch('/api/users/:id/password-changed', userController_1.markPasswordChanged);
 app.delete('/api/users/:id', userController_1.deleteUser);

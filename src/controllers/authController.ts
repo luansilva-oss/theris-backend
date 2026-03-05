@@ -45,12 +45,13 @@ export const googleLogin = async (req: Request, res: Response) => {
     });
 
     if (!user) {
+      const deptGeral = await prisma.department.findFirst({ where: { name: { equals: 'Geral', mode: 'insensitive' } } });
       const created = await prisma.user.create({
         data: {
           email,
           name: googleData.name || 'Usuário Google',
-          jobTitle: 'Colaborador', // Default
-          department: 'Geral'      // Default
+          jobTitle: 'Colaborador',
+          departmentId: deptGeral?.id ?? null
         }
       });
       user = await prisma.user.findUnique({

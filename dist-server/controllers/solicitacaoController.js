@@ -111,8 +111,8 @@ async function runOffboardingAutomation(requestId, requestType, detailsJson) {
         where: { id: targetUser.id },
         data: {
             roleId: null,
-            department: null,
-            unit: null,
+            departmentId: null,
+            unitId: null,
             jobTitle: null,
             managerId: null,
             isActive: false
@@ -188,8 +188,7 @@ async function runOnboardingAutomation(requestId, request) {
             data: { name: roleName, departmentId: department.id }
         });
     }
-    // d) Colaborador (User): upsert — roleId, department (string), unit (string), jobTitle, isActive
-    const unitDisplayName = unit?.name ?? null;
+    // d) Colaborador (User): upsert — roleId, departmentId, unitId, jobTitle, isActive
     let user = collaboratorEmail
         ? await prisma.user.findUnique({ where: { email: collaboratorEmail } })
         : null;
@@ -203,9 +202,9 @@ async function runOnboardingAutomation(requestId, request) {
             where: { id: user.id },
             data: {
                 roleId: role.id,
-                department: department.name,
+                departmentId: department.id,
+                unitId: unit?.id ?? null,
                 jobTitle: role.name,
-                ...(unitDisplayName != null && { unit: unitDisplayName }),
                 isActive: true
             }
         });
@@ -220,10 +219,10 @@ async function runOnboardingAutomation(requestId, request) {
         data: {
             name: collaboratorName || collaboratorEmail.split('@')[0],
             email: collaboratorEmail,
-            department: department.name,
+            departmentId: department.id,
+            unitId: unit?.id ?? null,
             jobTitle: role.name,
             roleId: role.id,
-            ...(unitDisplayName != null && { unit: unitDisplayName }),
             isActive: true
         }
     });

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
 
 import { API_URL } from '../config';
+import { EntityAuditHistory } from './EntityAuditHistory';
 
 interface User {
     id: string;
@@ -10,6 +11,10 @@ interface User {
     jobTitle?: string;
     department?: string;
     unit?: string;
+    departmentId?: string | null;
+    unitId?: string | null;
+    departmentRef?: { id: string; name: string } | null;
+    unitRef?: { id: string; name: string } | null;
     systemProfile: string;
     managerId?: string | null;
     roleId?: string | null;
@@ -34,30 +39,32 @@ interface Props {
     currentUser: { id: string, systemProfile: string };
     allUsers: User[]; // Adicionado para selecionar gestor
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
+    onOpenAuditHistory?: (entidadeId: string, entidadeTipo: string) => void;
 }
 
-export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers, showToast }) => {
+export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers, showToast, onOpenAuditHistory }) => {
     if (!isOpen) return null;
 
     const [name, setName] = useState(user.name);
     const [email, setEmail] = useState(user.email);
     const [jobTitle, setJobTitle] = useState(user.jobTitle);
-    const [department, setDepartment] = useState(user.department);
-    const [unit, setUnit] = useState(user.unit);
+    const [departmentId, setDepartmentId] = useState<string | null>(user.departmentId ?? user.departmentRef?.id ?? null);
+    const [unitId, setUnitId] = useState<string | null>(user.unitId ?? user.unitRef?.id ?? null);
     const [systemProfile, setSystemProfile] = useState(user.systemProfile || 'VIEWER');
     const [managerId, setManagerId] = useState<string | null>(user.managerId || null);
     const [roleId, setRoleId] = useState<string | null>(user.roleId || null);
     const [isSaving, setIsSaving] = useState(false);
 
-    const [availableDepts, setAvailableDepts] = useState<Department[]>([]);
+    const [availableUnits, setAvailableUnits] = useState<{ id: string; name: string }[]>([]);
+    const [availableDepts, setAvailableDepts] = useState<(Department & { unitId?: string })[]>([]);
     const [availableRoles, setAvailableRoles] = useState<Role[]>([]);
 
     useEffect(() => {
         setName(user.name);
         setEmail(user.email);
         setJobTitle(user.jobTitle);
-        setDepartment(user.department);
-        setUnit(user.unit);
+        setDepartmentId(user.departmentId ?? user.departmentRef?.id ?? null);
+        setUnitId(user.unitId ?? user.unitRef?.id ?? null);
         setSystemProfile(user.systemProfile || 'VIEWER');
         setManagerId(user.managerId || null);
         setRoleId(user.roleId || null);
@@ -70,8 +77,10 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
             if (res.ok) {
                 const data = await res.json();
                 const unitList = data.units || [];
-                const depts = unitList.flatMap((u: { departments?: { id: string; name: string }[] }) => u.departments || []);
+                const depts = unitList.flatMap((u: { id: string; name: string; departments?: { id: string; name: string; unitId?: string }[] }) =>
+                    (u.departments || []).map((d: { id: string; name: string; unitId?: string }) => ({ ...d, unitId: d.unitId ?? u.id })));
                 const roles = depts.flatMap((d: { roles?: { id: string; name: string; departmentId: string }[] }) => d.roles || []);
+                setAvailableUnits(unitList.map((u: { id: string; name: string }) => ({ id: u.id, name: u.name })));
                 setAvailableDepts(depts);
                 setAvailableRoles(roles);
             }
@@ -87,7 +96,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                     'Content-Type': 'application/json',
                     'x-requester-id': currentUser.id
                 },
-                body: JSON.stringify({ name, email, jobTitle, department, unit, systemProfile, managerId, roleId })
+                body: JSON.stringify({ name, email, jobTitle, departmentId, unitId, systemProfile, managerId, roleId })
             });
 
             if (res.ok) {
@@ -145,53 +154,63 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                     />
                 </div>
 
-                <div className="form-group">
-                    <label>Unidade</label>
-                    <input
-                        className="form-input"
-                        value={unit || ''}
-                        onChange={(e) => setUnit(e.target.value)}
-                        placeholder="Ex: 3C+, Dizify"
-                    />
-                </div>
-
                 <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                     <div>
-                        <label>Departamento</label>
+                        <label>Unidade</label>
                         <select
                             className="form-input"
-                            value={department}
+                            value={unitId || ''}
                             onChange={(e) => {
-                                setDepartment(e.target.value);
+                                const id = e.target.value || null;
+                                setUnitId(id);
+                                setDepartmentId(null);
                                 setRoleId(null);
                                 setJobTitle('');
                             }}
                             style={{ width: '100%', fontSize: 13 }}
                         >
                             <option value="">Selecione...</option>
-                            {availableDepts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                            {availableUnits.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                         </select>
                     </div>
                     <div>
-                        <label>Cargo</label>
+                        <label>Departamento</label>
                         <select
                             className="form-input"
-                            value={roleId || ''}
+                            value={departmentId || ''}
                             onChange={(e) => {
                                 const id = e.target.value || null;
-                                setRoleId(id);
-                                const role = availableRoles.find(r => r.id === id);
-                                setJobTitle(role?.name ?? '');
+                                setDepartmentId(id);
+                                setRoleId(null);
+                                setJobTitle('');
                             }}
                             style={{ width: '100%', fontSize: 13 }}
                         >
                             <option value="">Selecione...</option>
-                            {availableRoles
-                                .filter(r => !department || r.departmentId === availableDepts.find(d => d.name === department)?.id)
-                                .map(r => <option key={r.id} value={r.id}>{r.name}</option>)
-                            }
+                            {availableDepts
+                                .filter(d => !unitId || d.unitId === unitId)
+                                .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                         </select>
                     </div>
+                </div>
+                <div className="form-group">
+                    <label>Cargo</label>
+                    <select
+                        className="form-input"
+                        value={roleId || ''}
+                        onChange={(e) => {
+                            const id = e.target.value || null;
+                            setRoleId(id);
+                            const role = availableRoles.find(r => r.id === id);
+                            setJobTitle(role?.name ?? '');
+                        }}
+                        style={{ width: '100%', fontSize: 13 }}
+                    >
+                        <option value="">Selecione...</option>
+                        {availableRoles
+                            .filter(r => !departmentId || r.departmentId === departmentId)
+                            .map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
                 </div>
 
                 <div className="form-group">
@@ -228,6 +247,15 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                         }
                     </select>
                 </div>
+
+                {user && (
+                    <EntityAuditHistory
+                        entidadeId={user.id}
+                        entidadeTipo="User"
+                        limit={5}
+                        onOpenFullHistory={onOpenAuditHistory ? (p) => onOpenAuditHistory(p.entidadeId, p.entidadeTipo) : undefined}
+                    />
+                )}
 
                 <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
                     <button

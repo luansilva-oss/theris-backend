@@ -1,8 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateRoleKit = exports.getRoleKit = exports.deleteRole = exports.updateRole = exports.createRole = exports.deleteDepartment = exports.updateDepartment = exports.createDepartment = exports.getStructure = exports.migrateAndDeleteUnit = exports.deleteUnit = exports.updateUnit = exports.createUnit = void 0;
+exports.updateRoleKit = exports.getRoleKit = exports.deleteRole = exports.updateRole = exports.createRole = exports.deleteDepartment = exports.getDepartmentUserCount = exports.updateDepartment = exports.createDepartment = exports.getStructure = exports.migrateAndDeleteUnit = exports.deleteUnit = exports.updateUnit = exports.createUnit = void 0;
 const client_1 = require("@prisma/client");
+const auditLog_1 = require("../lib/auditLog");
 const prisma = new client_1.PrismaClient();
+function getAutorId(req) {
+    return req.headers['x-user-id']?.trim() || undefined;
+}
 /** Mapeamento departamento -> prefixo KBS (ex: KBS-BO-1) para atualizar code ao mudar departamento */
 const DEPT_KBS_PREFIX = {
     'Board': 'BO', 'Tecnologia e Segurança (SI)': 'SI', 'Administrativo': 'AD',
@@ -136,12 +140,26 @@ const migrateAndDeleteUnit = async (req, res) => {
                         where: { id: dec.departmentId },
                         data: { unitId: dec.targetUnitId }
                     });
+                    await tx.user.updateMany({
+                        where: { departmentId: dec.departmentId },
+                        data: { unitId: dec.targetUnitId }
+                    });
                 }
                 else if (dec.action === "delete_department" && dec.targetDepartmentId) {
-                    await tx.role.updateMany({
-                        where: { departmentId: dec.departmentId },
-                        data: { departmentId: dec.targetDepartmentId }
-                    });
+                    const srcDept = await tx.department.findUnique({ where: { id: dec.departmentId }, include: { unit: true } });
+                    const tgtDept = await tx.department.findUnique({ where: { id: dec.targetDepartmentId }, include: { unit: true } });
+                    if (srcDept && tgtDept) {
+                        // Mover cargos
+                        await tx.role.updateMany({
+                            where: { departmentId: dec.departmentId },
+                            data: { departmentId: dec.targetDepartmentId }
+                        });
+                        // Atualizar usuários (departmentId/unitId)
+                        await tx.user.updateMany({
+                            where: { departmentId: dec.departmentId },
+                            data: { departmentId: dec.targetDepartmentId, unitId: tgtDept.unitId ?? null }
+                        });
+                    }
                     await tx.department.delete({ where: { id: dec.departmentId } });
                 }
             }
@@ -208,12 +226,7 @@ const updateDepartment = async (req, res) => {
         if (unitId !== undefined)
             data.unitId = unitId;
         const dept = await prisma.department.update({ where: { id }, data });
-        if (oldDept.name !== name) {
-            await prisma.user.updateMany({
-                where: { department: oldDept.name },
-                data: { department: name ?? oldDept.name }
-            });
-        }
+        // Com FK, users.departmentId já aponta para este departamento; renomear dept não exige update em User
         return res.json(dept);
     }
     catch (error) {
@@ -221,6 +234,21 @@ const updateDepartment = async (req, res) => {
     }
 };
 exports.updateDepartment = updateDepartment;
+/** GET /api/structure/departments/:id/user-count — contagem em tempo real (evita cache stale) */
+const getDepartmentUserCount = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const dept = await prisma.department.findUnique({ where: { id } });
+        if (!dept)
+            return res.status(404).json({ error: "Departamento não encontrado." });
+        const count = await prisma.user.count({ where: { departmentId: id } });
+        return res.json({ count });
+    }
+    catch (error) {
+        return res.status(500).json({ error: "Erro ao contar usuários." });
+    }
+};
+exports.getDepartmentUserCount = getDepartmentUserCount;
 const deleteDepartment = async (req, res) => {
     const { id } = req.params;
     const { redirectToDepartmentId } = req.body; // Alvo para mover usuários
@@ -234,13 +262,13 @@ const deleteDepartment = async (req, res) => {
             if (!targetDept)
                 return res.status(400).json({ error: "Departamento de destino não encontrado." });
             await prisma.user.updateMany({
-                where: { department: deptToDelete.name },
-                data: { department: targetDept.name }
+                where: { departmentId: id },
+                data: { departmentId: redirectToDepartmentId, unitId: targetDept.unitId ?? null }
             });
         }
         else {
             // Se não houver redirecionamento, verificar se o departamento está vazio
-            const userCount = await prisma.user.count({ where: { department: deptToDelete.name } });
+            const userCount = await prisma.user.count({ where: { departmentId: id } });
             if (userCount > 0) {
                 return res.status(400).json({
                     error: `O departamento possui ${userCount} usuários. Selecione um destino para movê-los.`
@@ -283,8 +311,24 @@ const createRole = async (req, res) => {
         }
         const created = await prisma.role.findUnique({
             where: { id: role.id },
-            include: { kitItems: true, department: true }
+            include: { kitItems: true, department: { include: { unit: true } } }
         });
+        if (created) {
+            await (0, auditLog_1.registrarMudanca)({
+                tipo: 'ROLE_CREATED',
+                entidadeTipo: 'Role',
+                entidadeId: created.id,
+                descricao: `Cargo "${created.name}" criado no departamento "${created.department?.name ?? '—'}"${created.code ? ` (${created.code})` : ''}.`,
+                dadosDepois: {
+                    name: created.name,
+                    code: created.code,
+                    departmentId: created.departmentId,
+                    departmentName: created.department?.name,
+                    unit: created.department?.unit?.name,
+                },
+                autorId: getAutorId(req),
+            });
+        }
         return res.json(created);
     }
     catch (error) {
@@ -303,11 +347,12 @@ const updateRole = async (req, res) => {
         });
         if (!oldRole)
             return res.status(404).json({ error: "Cargo não encontrado." });
+        const oldDeptId = oldRole.departmentId;
         const oldDeptName = oldRole.department?.name ?? '';
-        const oldUnitName = oldRole.department?.unit?.name ?? '';
         const departmentChanged = departmentId && departmentId !== oldRole.departmentId;
+        let newDeptId = oldDeptId;
         let newDeptName = oldDeptName;
-        let newUnitName = oldUnitName;
+        let newUnitId = null;
         if (departmentChanged) {
             const newDept = await prisma.department.findUnique({
                 where: { id: departmentId },
@@ -315,8 +360,9 @@ const updateRole = async (req, res) => {
             });
             if (!newDept)
                 return res.status(400).json({ error: "Departamento de destino não encontrado." });
+            newDeptId = newDept.id;
             newDeptName = newDept.name;
-            newUnitName = newDept.unit?.name ?? '';
+            newUnitId = newDept.unitId ?? null;
         }
         const data = {};
         if (name !== undefined)
@@ -338,25 +384,50 @@ const updateRole = async (req, res) => {
             where: { id },
             data: Object.keys(data).length ? data : undefined
         });
-        // Sync jobTitle for users linked by roleId or by jobTitle+department
+        // Sync jobTitle for users linked by roleId or by jobTitle+departmentId
         if (oldRole.name !== name && name) {
             await prisma.user.updateMany({
-                where: { OR: [{ roleId: id }, { jobTitle: oldRole.name, department: oldDeptName }] },
+                where: { OR: [{ roleId: id }, { jobTitle: oldRole.name, departmentId: oldDeptId }] },
                 data: { jobTitle: name }
             });
         }
-        // Ao mudar departamento: mover todos os colaboradores para o novo dept/unidade
+        // Ao mudar departamento: mover todos os colaboradores vinculados ao cargo (departmentId/unitId)
         if (departmentChanged) {
-            const userCount = await prisma.user.updateMany({
-                where: {
-                    OR: [
-                        { roleId: id },
-                        { jobTitle: oldRole.name, department: oldDeptName }
-                    ]
-                },
-                data: { department: newDeptName, unit: newUnitName }
+            const result = await prisma.user.updateMany({
+                where: { roleId: id },
+                data: { departmentId: newDeptId, unitId: newUnitId }
             });
-            console.log(`[Auditoria] Cargo "${role.name}" (${id}) movido de "${oldDeptName}" para "${newDeptName}". ${userCount.count} colaborador(es) atualizado(s).`);
+            // Também atualizar usuários "soft-linked" (jobTitle + departmentId) sem roleId
+            const softLinked = await prisma.user.updateMany({
+                where: {
+                    roleId: null,
+                    jobTitle: oldRole.name,
+                    departmentId: oldDeptId
+                },
+                data: { departmentId: newDeptId, unitId: newUnitId }
+            });
+            const total = result.count + softLinked.count;
+            if (total > 0) {
+                await (0, auditLog_1.registrarMudanca)({
+                    tipo: 'ROLE_DEPARTMENT_CHANGE',
+                    entidadeTipo: 'Role',
+                    entidadeId: id,
+                    descricao: `Cargo "${role.name}" movido do departamento "${oldDeptName}" para "${newDeptName}". ${total} colaborador(es) atualizado(s).`,
+                    dadosAntes: {
+                        departmentId: oldRole.departmentId,
+                        departmentName: oldDeptName,
+                        kbsCode: oldRole.code,
+                        unit: oldRole.department?.unit?.name,
+                    },
+                    dadosDepois: {
+                        departmentId: departmentId,
+                        departmentName: newDeptName,
+                        kbsCode: role.code,
+                        unit: (await prisma.department.findUnique({ where: { id: departmentId }, include: { unit: true } }))?.unit?.name,
+                    },
+                    autorId: getAutorId(req),
+                });
+            }
         }
         // Sincronizar RoleKitItem se enviado
         if (Array.isArray(kitItems)) {
@@ -395,13 +466,12 @@ const deleteRole = async (req, res) => {
         });
         if (!role)
             return res.status(404).json({ error: "Cargo não encontrado." });
-        // Usuários vinculados: por roleId ou por jobTitle + department (dados em texto no User)
-        const deptName = role.department?.name ?? '';
+        // Usuários vinculados: por roleId ou por jobTitle + departmentId
         const userCount = await prisma.user.count({
             where: {
                 OR: [
                     { roleId: id },
-                    { jobTitle: role.name, department: deptName }
+                    { jobTitle: role.name, departmentId: role.departmentId }
                 ]
             }
         });
@@ -421,23 +491,35 @@ const deleteRole = async (req, res) => {
                 return res.status(400).json({ error: "Cargo de destino não encontrado." });
             if (targetRole.id === id)
                 return res.status(400).json({ error: "O cargo de destino não pode ser o mesmo que está sendo excluído." });
-            const targetDeptName = targetRole.department?.name ?? '';
-            const targetUnitName = targetRole.department?.unit?.name ?? '';
             await prisma.user.updateMany({
                 where: {
                     OR: [
                         { roleId: id },
-                        { jobTitle: role.name, department: deptName }
+                        { jobTitle: role.name, departmentId: role.departmentId }
                     ]
                 },
                 data: {
                     roleId: fallbackRoleId,
                     jobTitle: targetRole.name,
-                    department: targetDeptName,
-                    unit: targetUnitName
+                    departmentId: targetRole.departmentId,
+                    unitId: targetRole.department?.unitId ?? null
                 }
             });
         }
+        await (0, auditLog_1.registrarMudanca)({
+            tipo: 'ROLE_DELETED',
+            entidadeTipo: 'Role',
+            entidadeId: id,
+            descricao: `Cargo "${role.name}" excluído do departamento "${role.department?.name ?? '—'}". ${userCount > 0 ? `Colaboradores redirecionados para cargo de destino.` : ''}`,
+            dadosAntes: {
+                name: role.name,
+                code: role.code,
+                departmentId: role.departmentId,
+                departmentName: role.department?.name,
+                unit: role.department?.unit?.name,
+            },
+            autorId: getAutorId(req),
+        });
         await prisma.role.delete({ where: { id } });
         return res.json({ success: true });
     }

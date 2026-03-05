@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 
 import { API_URL } from '../config';
+import { EntityAuditHistory } from './EntityAuditHistory';
 
 interface RoleKitItem {
     id?: string;
@@ -52,9 +53,10 @@ interface Props {
     departments?: Department[];
     onUpdate: () => void;
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
+    onOpenAuditHistory?: (entidadeId: string, entidadeTipo: string) => void;
 }
 
-export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, departmentId, units = [], departments = [], onUpdate, showToast }) => {
+export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, departmentId, units = [], departments = [], onUpdate, showToast, onOpenAuditHistory }) => {
     if (!isOpen) return null;
 
     const isCreateMode = !role;
@@ -419,6 +421,15 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                                     <Plus size={14} style={{ marginRight: 6 }} /> Adicionar ferramenta
                                 </button>
                             </div>
+
+                            {!isCreateMode && role && (
+                                <EntityAuditHistory
+                                    entidadeId={role.id}
+                                    entidadeTipo="Role"
+                                    limit={5}
+                                    onOpenFullHistory={onOpenAuditHistory ? (p) => onOpenAuditHistory(p.entidadeId, p.entidadeTipo) : undefined}
+                                />
+                            )}
                         </>
                     )}
                 </div>

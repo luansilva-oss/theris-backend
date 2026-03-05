@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, AlertTriangle, Trash2 } from 'lucide-react';
 
 interface Department {
@@ -11,7 +11,8 @@ interface Props {
     onClose: () => void;
     department: Department | null;
     allDepartments: Department[];
-    userCount: number;
+    /** Contagem em cache (fallback); modal busca valor em tempo real ao abrir */
+    userCount?: number;
     onDeleted: () => void;
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
     customConfirm: (config: { title: string; message: string; onConfirm: () => void; isDestructive?: boolean; confirmLabel?: string }) => void;
@@ -19,9 +20,22 @@ interface Props {
 
 import { API_URL } from '../config';
 
-export const DeleteDepartmentModal: React.FC<Props> = ({ isOpen, onClose, department, allDepartments, userCount, onDeleted, showToast, customConfirm }) => {
+export const DeleteDepartmentModal: React.FC<Props> = ({ isOpen, onClose, department, allDepartments, userCount: initialUserCount = 0, onDeleted, showToast, customConfirm }) => {
     const [redirectToId, setRedirectToId] = useState('');
     const [isDeleting, setIsDeleting] = useState(false);
+    const [userCount, setUserCount] = useState(initialUserCount);
+    const [loadingCount, setLoadingCount] = useState(false);
+
+    // Busca contagem em tempo real ao abrir — evita cache stale após mover cargos
+    useEffect(() => {
+        if (!isOpen || !department?.id) return;
+        setLoadingCount(true);
+        fetch(`${API_URL}/api/structure/departments/${department.id}/user-count`)
+            .then(r => r.ok ? r.json() : { count: 0 })
+            .then(data => setUserCount(data.count ?? 0))
+            .catch(() => setUserCount(initialUserCount))
+            .finally(() => setLoadingCount(false));
+    }, [isOpen, department?.id]);
 
     if (!isOpen || !department) return null;
 
@@ -77,10 +91,12 @@ export const DeleteDepartmentModal: React.FC<Props> = ({ isOpen, onClose, depart
                         Você está prestes a excluir o departamento <strong>{department.name}</strong>.
                     </p>
 
-                    {userCount > 0 ? (
+                    {loadingCount ? (
+                        <p style={{ color: '#71717a', fontSize: 13, fontStyle: 'italic' }}>Verificando colaboradores vinculados...</p>
+                    ) : userCount > 0 ? (
                         <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '16px', borderRadius: '8px' }}>
                             <p style={{ color: '#f87171', fontSize: 13, marginBottom: 12, fontWeight: 500 }}>
-                                ⚠️ Existem {userCount} colaboradores vinculados a este departamento.
+                                ⚠️ Existem {userCount} colaborador(es) vinculado(s) a este departamento.
                                 <br />Para onde deseja movê-los?
                             </p>
 
@@ -112,7 +128,7 @@ export const DeleteDepartmentModal: React.FC<Props> = ({ isOpen, onClose, depart
                         </button>
                         <button
                             onClick={handleDelete}
-                            disabled={isDeleting || (userCount > 0 && !redirectToId)}
+                            disabled={isDeleting || loadingCount || (userCount > 0 && !redirectToId)}
                             className="btn-verify"
                             style={{
                                 flex: 2,

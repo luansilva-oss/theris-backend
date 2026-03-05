@@ -39,18 +39,22 @@ const handleConveniaWebhook = async (req, res) => {
         // --- CENÁRIO 1: ADMISSÃO ou MUDANÇA ---
         if (event === 'employee.created' || event === 'employee.updated') {
             console.log(`🔄 Processando ${event} para: ${employeeData.name}`);
+            const deptName = employeeData.department?.trim();
+            const dept = deptName
+                ? await prisma.department.findFirst({ where: { name: { equals: deptName, mode: 'insensitive' } } })
+                : null;
             const user = await prisma.user.upsert({
                 where: { email: employeeData.email },
                 update: {
                     name: employeeData.name,
                     jobTitle: employeeData.jobTitle,
-                    department: employeeData.department
+                    departmentId: dept?.id ?? undefined
                 },
                 create: {
                     email: employeeData.email,
                     name: employeeData.name,
                     jobTitle: employeeData.jobTitle,
-                    department: employeeData.department
+                    departmentId: dept?.id ?? null
                 }
             });
             if (employeeData.managerName) {

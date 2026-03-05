@@ -226,7 +226,8 @@ export const addToolAccess = async (req: Request, res: Response) => {
       data: {
         toolId: id,
         userId,
-        status: level // Usamos o campo status como o nível de acesso (ex: "Admin", "User")
+        status: level, // Usamos o campo status como o nível de acesso (ex: "Admin", "User")
+        ...(level && { level })
       }
     });
     return res.json(access);
@@ -253,14 +254,15 @@ export const removeToolAccess = async (req: Request, res: Response) => {
 
 export const updateToolAccess = async (req: Request, res: Response) => {
   const { toolId, userId } = req.params;
-  const { isExtraordinary, duration, unit } = req.body;
+  const { isExtraordinary, duration, unit, level } = req.body;
   try {
     await prisma.access.updateMany({
       where: { toolId, userId },
       data: {
         isExtraordinary: isExtraordinary ?? undefined,
         duration: duration !== undefined ? (duration ? parseInt(duration) : null) : undefined,
-        unit: unit ?? undefined
+        unit: unit ?? undefined,
+        ...(level !== undefined && { level: level || null })
       } as any
     });
     return res.json({ message: 'Acesso atualizado' });

@@ -81,8 +81,8 @@ async function runOffboardingAutomation(requestId: string, requestType: string, 
     where: { id: targetUser.id },
     data: {
       roleId: null,
-      department: null,
-      unit: null,
+      departmentId: null,
+      unitId: null,
       jobTitle: null,
       managerId: null,
       isActive: false
@@ -162,8 +162,7 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
     });
   }
 
-  // d) Colaborador (User): upsert — roleId, department (string), unit (string), jobTitle, isActive
-  const unitDisplayName = unit?.name ?? null;
+  // d) Colaborador (User): upsert — roleId, departmentId, unitId, jobTitle, isActive
   let user = collaboratorEmail
     ? await prisma.user.findUnique({ where: { email: collaboratorEmail } })
     : null;
@@ -178,9 +177,9 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
       where: { id: user.id },
       data: {
         roleId: role.id,
-        department: department.name,
+        departmentId: department.id,
+        unitId: unit?.id ?? null,
         jobTitle: role.name,
-        ...(unitDisplayName != null && { unit: unitDisplayName }),
         isActive: true
       }
     });
@@ -197,10 +196,10 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
     data: {
       name: collaboratorName || collaboratorEmail.split('@')[0],
       email: collaboratorEmail,
-      department: department.name,
+      departmentId: department.id,
+      unitId: unit?.id ?? null,
       jobTitle: role.name,
       roleId: role.id,
-      ...(unitDisplayName != null && { unit: unitDisplayName }),
       isActive: true
     }
   });
@@ -253,12 +252,14 @@ async function runExtraordinaryAccessAutomation(requestId: string, request: { ty
   const unit = (request.extraordinaryUnit ?? d.unit) as string | null;
   const statusValue = (levelRequested && String(levelRequested).trim()) || 'ACTIVE';
 
+  const levelValue = levelRequested && String(levelRequested).trim() ? levelRequested.trim() : null;
   if (existing) {
     await prisma.access.update({
       where: { id: existing.id },
       data: {
         status: statusValue,
         isExtraordinary: isExtra,
+        ...(levelValue != null && { level: levelValue }),
         ...(duration != null && { duration }),
         ...(unit != null && { unit })
       }
@@ -270,6 +271,7 @@ async function runExtraordinaryAccessAutomation(requestId: string, request: { ty
         userId: targetUserId,
         status: statusValue,
         isExtraordinary: isExtra,
+        ...(levelValue != null && { level: levelValue }),
         ...(duration != null && { duration }),
         ...(unit != null && { unit })
       }
@@ -412,7 +414,8 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
     return res.status(201).json(newRequest);
   } catch (error) {
-    console.error('Erro ao criar solicitação:', error);
+    console.error('SOLICITACOES ERROR (createSolicitacao):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
     return res.status(500).json({ error: 'Erro interno.' });
   }
 };
@@ -490,13 +493,15 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        requester: { select: { id: true, name: true, email: true, department: true } },
+        requester: { select: { id: true, name: true, email: true, departmentRef: { select: { id: true, name: true } } } },
         approver: { select: { id: true, name: true, email: true } },
         assignee: { select: { id: true, name: true, email: true } }
       }
     });
     return res.json(requests);
   } catch (error) {
+    console.error('SOLICITACOES ERROR (getSolicitacoes):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
     return res.status(500).json({ error: 'Erro ao buscar solicitações' });
   }
 };
@@ -534,13 +539,15 @@ export const getMyTickets = async (req: Request, res: Response) => {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        requester: { select: { id: true, name: true, email: true, department: true } },
+        requester: { select: { id: true, name: true, email: true, departmentRef: { select: { id: true, name: true } } } },
         approver: { select: { id: true, name: true, email: true } },
         assignee: { select: { id: true, name: true, email: true } }
       }
     });
     return res.json(requests);
   } catch (error) {
+    console.error('SOLICITACOES ERROR (getMyTickets):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
     return res.status(500).json({ error: 'Erro ao buscar seus chamados' });
   }
 };
@@ -765,7 +772,8 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
 
     return res.json(updatedRequest);
   } catch (error) {
-    console.error(error);
+    console.error('SOLICITACOES ERROR (updateSolicitacao):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
     return res.status(500).json({ error: 'Erro ao atualizar solicitação' });
   }
 };
@@ -781,7 +789,7 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
     const request = await prisma.request.findUnique({
       where: { id },
       include: {
-        requester: { select: { id: true, name: true, email: true, department: true } },
+        requester: { select: { id: true, name: true, email: true, departmentRef: { select: { id: true, name: true } } } },
         approver: { select: { id: true, name: true, email: true } },
         assignee: { select: { id: true, name: true, email: true } },
         comments: { orderBy: { createdAt: 'asc' }, include: { author: { select: { id: true, name: true, email: true } } } },
@@ -792,7 +800,8 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
     if (viewerContext && userId && request.requesterId !== userId) return res.status(403).json({ error: 'Acesso negado a este chamado.' });
     return res.json(request);
   } catch (error) {
-    console.error(error);
+    console.error('SOLICITACOES ERROR (getSolicitacaoById):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
     return res.status(500).json({ error: 'Erro ao buscar solicitação' });
   }
 };
@@ -853,7 +862,8 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
 
     return res.json(updated);
   } catch (error) {
-    console.error(error);
+    console.error('SOLICITACOES ERROR (updateSolicitacaoMetadata):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
     return res.status(500).json({ error: 'Erro ao atualizar metadados' });
   }
 };
@@ -884,7 +894,8 @@ export const createComment = async (req: Request, res: Response) => {
 
     return res.status(201).json(comment);
   } catch (error) {
-    console.error(error);
+    console.error('SOLICITACOES ERROR (createComment):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
     return res.status(500).json({ error: 'Erro ao adicionar comentário' });
   }
 };
@@ -936,7 +947,8 @@ export const createAttachment = async (req: Request, res: Response) => {
 
     return res.status(201).json(attachment);
   } catch (error) {
-    console.error(error);
+    console.error('SOLICITACOES ERROR (createAttachment):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
     return res.status(500).json({ error: 'Erro ao adicionar anexo' });
   }
 };

@@ -9,10 +9,17 @@ interface User {
     jobTitle?: string;
     department?: string;
     unit?: string;
+    departmentId?: string | null;
+    unitId?: string | null;
+    departmentRef?: { id: string; name: string } | null;
+    unitRef?: { id: string; name: string } | null;
     systemProfile: string;
     managerId?: string | null;
     manager?: { name: string };
 }
+
+const userDeptName = (u: User) => u.departmentRef?.name ?? u.department ?? '';
+const userUnitName = (u: User) => u.unitRef?.name ?? u.unit ?? '';
 
 interface Department {
     id: string;
@@ -43,6 +50,8 @@ interface PersonnelListViewProps {
     departments: Department[];
     roles: Role[];
     onEditUser: (user: User) => void;
+    /** Ao clicar no nome/avatar do colaborador, navega para detalhes. Se não informado, usa onEditUser. */
+    onViewCollaborator?: (user: User) => void;
     onDeleteUser?: (user: User) => void;
     onEditDepartment: (dept: Department) => void;
     onDeleteDepartment: (dept: Department) => void;
@@ -58,7 +67,7 @@ interface PersonnelListViewProps {
 const UNIT_ORDER = ['3C+', 'Evolux', 'Dizify', 'Instituto 3C', 'FiqOn', 'Dizparos'];
 
 export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
-    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole, onAddCollaborator, onAddRole,
+    units: unitsFromApi, users, departments, roles, onEditUser, onDeleteUser, onViewCollaborator, onEditDepartment, onDeleteDepartment, onEditRole, onDeleteRole, onAddCollaborator, onAddRole,
     onAddDepartmentToUnit, onEditUnit, onDeleteUnit
 }) => {
     const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({});
@@ -81,9 +90,9 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
             });
     }, [unitsFromApi]);
 
-    const matchUserToUnit = (u: User, unitName: string) => (u.unit || '').trim() === unitName;
+    const matchUserToUnit = (u: User, unitName: string) => userUnitName(u).trim() === unitName;
     const getUsersByUnitDeptJob = (unitName: string, dept: string, jobTitle: string) =>
-        users.filter(u => matchUserToUnit(u, unitName) && u.department === dept && (u.jobTitle || '').trim() === jobTitle);
+        users.filter(u => matchUserToUnit(u, unitName) && userDeptName(u) === dept && (u.jobTitle || '').trim() === jobTitle);
 
     const findDepartment = (name: string) => departments.find(d => d.name === name);
     const findRole = (deptName: string, roleName: string) =>
@@ -99,7 +108,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                 const usersInUnit = users.filter(u => matchUserToUnit(u, unitName));
                 const deptList = unitDepts.length > 0
                     ? unitDepts
-                    : [...new Set(usersInUnit.map(u => u.department).filter(Boolean))].map((d: string) => ({ id: '', name: d, roles: roles.filter((r: Role) => r.department?.name === d) }));
+                    : [...new Set(usersInUnit.map(u => userDeptName(u)).filter(Boolean))].map((d: string) => ({ id: '', name: d, roles: roles.filter((r: Role) => r.department?.name === d) }));
                 const unitKey = `unit-${unitName}`;
                 const unitEntity: Unit = { id: unitId, name: unitName, departments: unitDepts };
                 return (
@@ -138,7 +147,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                             <div style={{ padding: '12px 16px 16px', background: '#09090b' }}>
                                 {deptList.map((dept: Department) => {
                                     const deptName = dept.name;
-                                    const usersInDept = usersInUnit.filter(u => u.department === deptName);
+                                    const usersInDept = usersInUnit.filter(u => userDeptName(u) === deptName);
                                     const jobTitles = (dept.roles && dept.roles.length > 0)
                                         ? dept.roles.map((r: Role) => r.name)
                                         : [...new Set(usersInDept.map(u => (u.jobTitle || '').trim()).filter(Boolean))];
@@ -223,7 +232,11 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                             roleUsers.map(user => (
                                                                                 <div
                                                                                     key={user.id}
-                                                                                    onClick={() => onEditUser(user)}
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        console.log('clicou', user.id);
+                                                                                        (onViewCollaborator ?? onEditUser)(user);
+                                                                                    }}
                                                                                     style={{
                                                                                         padding: '10px 14px 10px 38px',
                                                                                         display: 'flex',

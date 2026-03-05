@@ -40,9 +40,10 @@ interface Props {
     allUsers: User[];
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
     customConfirm: (config: { title: string; message: string; onConfirm: () => void; isDestructive?: boolean; confirmLabel?: string }) => void;
+    onViewCollaborator?: (user: User) => void;
 }
 
-export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdate, initialDepartment, allUsers, showToast, customConfirm }) => {
+export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdate, initialDepartment, allUsers, showToast, customConfirm, onViewCollaborator }) => {
     const [units, setUnits] = useState<Unit[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -295,7 +296,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                             email: user.email,
                             systemProfile: (user as any).systemProfile || 'VIEWER',
                             jobTitle: '',
-                            department: user.department
+                            departmentId: (user as any).departmentId ?? (user as any).departmentRef?.id ?? null
                         })
                     });
                     if (res.ok) {
@@ -462,7 +463,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                     {/* Scrollable Roles Container */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '400px', overflowY: 'auto', paddingRight: 8 }}>
                                         {flatRoles.filter(r => r.departmentId === currentDept.id).map(role => {
-                                            const roleUsers = allUsers.filter(u => u.jobTitle === role.name && u.department === currentDept.name);
+                                            const roleUsers = allUsers.filter(u => u.jobTitle === role.name && ((u as any).departmentId === currentDept.id || (u as any).departmentRef?.name === currentDept.name));
 
                                             return (
                                                 <div key={role.id} style={{ border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
@@ -526,13 +527,17 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                                         ) : (
                                                             roleUsers.map(u => (
                                                                 <div key={u.id} style={{
-                                                                    display: 'inline-flex', alignItems: 'center', gap: 6, // Trocado para inline-flex
+                                                                    display: 'inline-flex', alignItems: 'center', gap: 6,
                                                                     background: '#09090b', padding: '6px 12px', borderRadius: 20,
                                                                     border: '1px solid #27272a', fontSize: 12, color: '#d4d4d8',
                                                                     flexShrink: 0
                                                                 }}>
                                                                     <UserIcon size={10} color="#a1a1aa" />
-                                                                    <span style={{ whiteSpace: 'nowrap' }}>{u.name}</span>
+                                                                    <span
+                                                                        style={{ whiteSpace: 'nowrap', cursor: onViewCollaborator ? 'pointer' : undefined, textDecoration: onViewCollaborator ? 'underline' : undefined }}
+                                                                        onClick={() => onViewCollaborator?.(u)}
+                                                                        title={onViewCollaborator ? 'Ver detalhes' : undefined}
+                                                                    >{u.name}</span>
                                                                     <button
                                                                         onClick={() => handleRemoveUserFromRole(u)}
                                                                         style={{
@@ -594,7 +599,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                         className="hover:bg-zinc-800"
                                     >
                                         <span>{u.name}</span>
-                                        <span style={{ fontSize: 11, color: '#71717a' }}>{u.department || 'Sem Depto'}</span>
+                                        <span style={{ fontSize: 11, color: '#71717a' }}>{(u as any).departmentRef?.name ?? (u as any).department ?? 'Sem Depto'}</span>
                                     </button>
                                 ))}
                                 {pickerUsers.length === 0 && <div style={{ textAlign: 'center', color: '#52525b', fontSize: 12, padding: 10 }}>Nenhum usuário encontrado.</div>}

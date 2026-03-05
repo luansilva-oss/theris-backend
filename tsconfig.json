@@ -30,6 +30,7 @@
     "dist-server",
     "src/App.tsx",
     "src/main.tsx",
+    "src/lib/api.ts",
     "src/vite-env.d.ts"
   ]
 }

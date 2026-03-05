@@ -199,6 +199,15 @@ html {
   background: transparent;
 }
 
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
 @keyframes blobMove {
   from {
     transform: translate(0, 0);
@@ -1051,4 +1060,10 @@ html {
 
 .fade-in {
   animation: fadeIn 0.4s ease-out;
+}
+
+@media (max-width: 768px) {
+  .collaborator-details-grid {
+    grid-template-columns: 1fr !important;
+  }
 }

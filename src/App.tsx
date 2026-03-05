@@ -24,9 +24,14 @@ import { UnitMigrationWizardModal } from './components/UnitMigrationWizardModal'
 import { DeleteDepartmentModal } from './components/DeleteDepartmentModal';
 import { EditRoleKitModal } from './components/EditRoleKitModal';
 import { DeleteRoleModal } from './components/DeleteRoleModal';
+import { EntityAuditHistory } from './components/EntityAuditHistory';
+import { AuditLog } from './pages/AuditLog';
+import { CollaboratorDetails } from './pages/CollaboratorDetails';
+import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { ToastContainer, Toast } from './components/ToastContainer';
 import { CustomConfirmModal } from './components/CustomConfirmModal';
 import { API_URL } from './config';
+import { setUserIdGetter } from './lib/api';
 
 // --- TYPES ---
 interface User {
@@ -36,11 +41,18 @@ interface User {
   jobTitle?: string;
   department?: string;
   unit?: string;
+  departmentId?: string | null;
+  unitId?: string | null;
+  departmentRef?: { id: string; name: string } | null;
+  unitRef?: { id: string; name: string } | null;
   systemProfile: string;
   managerId?: string | null;
   manager?: { name: string };
   myDeputy?: User;
 }
+
+const userDeptName = (u: User) => u.departmentRef?.name ?? u.department ?? '';
+const userUnitName = (u: User) => u.unitRef?.name ?? u.unit ?? '';
 
 interface Tool {
   id: string;
@@ -62,6 +74,8 @@ interface Tool {
     isExtraordinary: boolean;
     duration?: number;
     unit?: string;
+    createdAt?: string;
+    level?: string;
   }[];
   /** Sincronização KBS: membros permanentes por nível (Gestão de Pessoas) */
   kbsMembersByLevel?: { level: string; users: { id: string; name: string; email: string }[] }[];
@@ -231,6 +245,12 @@ function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 
 }
 
 export default function App() {
+  const location = useLocation();
+  const params = useParams();
+  const navigate = useNavigate();
+  const match = location.pathname.match(/^\/collaborators\/([^/]+)/);
+  const collaboratorId = match ? match[1] : null;
+
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const s = localStorage.getItem('theris_user'); return s ? JSON.parse(s) : null;
   });
@@ -238,10 +258,24 @@ export default function App() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isMfaRequired, setIsMfaRequired] = useState(false);
+
+  useEffect(() => {
+    setUserIdGetter(() => currentUser?.id);
+  }, [currentUser?.id]);
   const [mfaCode, setMfaCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<string>(() => localStorage.getItem('theris_activeTab') || 'DASHBOARD');
+  // activeTab derivado da URL (pathname como fonte da verdade)
+  const pathname = location.pathname;
+  const activeTab = pathname.startsWith('/collaborators/') ? 'PEOPLE' : // highlight PEOPLE quando em detalhes
+    pathname === '/' || pathname === '/dashboard' ? 'DASHBOARD' :
+    pathname === '/people' ? 'PEOPLE' :
+    pathname.startsWith('/tools') ? 'TOOLS' :
+    pathname === '/history' ? 'HISTORY' :
+    pathname === '/audit-log' ? 'AUDIT_LOG' :
+    pathname === '/tickets' ? 'TICKETS' :
+    pathname === '/my-tickets' ? 'MY_TICKETS' :
+    'DASHBOARD';
 
   // DADOS
   const [tools, setTools] = useState<Tool[]>([]);
@@ -351,6 +385,7 @@ export default function App() {
   const [isCreateDepartmentModalOpen, setIsCreateDepartmentModalOpen] = useState(false);
   const [selectedUnitForAddDept, setSelectedUnitForAddDept] = useState<{ id: string; name: string } | null>(null);
   const [unitMigrationData, setUnitMigrationData] = useState<{ unit: { id: string; name: string }; departments: { id: string; name: string; rolesCount: number }[] } | null>(null);
+  const [auditLogFilters, setAuditLogFilters] = useState<{ entidadeId?: string; entidadeTipo?: string }>({});
   const [isAddCollaboratorModalOpen, setIsAddCollaboratorModalOpen] = useState(false);
   const [addCollaboratorContext, setAddCollaboratorContext] = useState<{ role: { id: string; name: string }; department: { id: string; name: string } } | null>(null);
   const [addCollaboratorName, setAddCollaboratorName] = useState('');
@@ -400,23 +435,33 @@ export default function App() {
   // Stats
   const stats = {
     pending: requests.filter(r => {
-      if (!r.status.includes('PENDENTE')) return false;
-      if (systemProfile === 'VIEWER') return r.requester.id === currentUser?.id;
+      if (!r?.status?.includes('PENDENTE')) return false;
+      if (systemProfile === 'VIEWER') return r?.requester?.id === currentUser?.id;
       return true;
     }).length,
     approved: requests.filter(r => {
-      if (r.status !== 'APROVADO') return false;
-      if (systemProfile === 'VIEWER') return r.requester.id === currentUser?.id;
+      if (r?.status !== 'APROVADO') return false;
+      if (systemProfile === 'VIEWER') return r?.requester?.id === currentUser?.id;
       return true;
     }).length,
     total: requests.filter(r => {
-      if (systemProfile === 'VIEWER') return r.requester.id === currentUser?.id;
+      if (systemProfile === 'VIEWER') return r?.requester?.id === currentUser?.id;
       return true;
     }).length,
-    myReqs: requests.filter(r => r.requester.id === currentUser?.id).length
+    myReqs: requests.filter(r => r?.requester?.id === currentUser?.id).length
   };
 
-  useEffect(() => { localStorage.setItem('theris_activeTab', activeTab); }, [activeTab]);
+  useEffect(() => { if (!pathname.startsWith('/collaborators/')) localStorage.setItem('theris_activeTab', activeTab); }, [pathname, activeTab]);
+  useEffect(() => { if (!pathname.startsWith('/tools')) setSelectedTool(null); }, [pathname]);
+  // Sync URL query params → auditLogFilters quando em /audit-log
+  useEffect(() => {
+    if (pathname === '/audit-log') {
+      const sp = new URLSearchParams(location.search);
+      const eid = sp.get('entidadeId');
+      const etipo = sp.get('entidadeTipo');
+      if (eid || etipo) setAuditLogFilters(prev => ({ ...prev, entidadeId: eid || prev.entidadeId, entidadeTipo: etipo || prev.entidadeTipo }));
+    }
+  }, [pathname, location.search]);
   useEffect(() => {
     if (selectedTool) localStorage.setItem('theris_selectedToolId', selectedTool.id);
     else if (activeTab === 'TOOLS' && !selectedTool) localStorage.removeItem('theris_selectedToolId');
@@ -748,7 +793,7 @@ export default function App() {
     setMfaCode(clean);
   };
 
-  const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); setActiveTab('DASHBOARD'); setSelectedTool(null); setIsMfaRequired(false); };
+  const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); navigate('/'); setSelectedTool(null); setIsMfaRequired(false); };
 
   const handleDeleteTool = async (id: string) => {
     customConfirm({
@@ -890,7 +935,7 @@ export default function App() {
     });
 
     allUsers.forEach(u => {
-      const dept = u.department || 'Geral';
+      const dept = userDeptName(u) || 'Geral';
       const role = u.jobTitle || 'Sem Cargo';
       if (!grouped[dept]) grouped[dept] = {};
       if (!grouped[dept][role]) grouped[dept][role] = [];
@@ -1033,21 +1078,23 @@ export default function App() {
         <div className="nav-section">
           {(['SUPER_ADMIN', 'GESTOR', 'ADMIN', 'APPROVER'].includes(systemProfile)) ? (
             <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Visão Geral</div>
+              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { navigate('/'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Visão Geral</div>
               {systemProfile !== 'APPROVER' && (
                 <>
-                  <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => setActiveTab('PEOPLE')}><Users size={18} /> Gestão de Pessoas</div>
-                  <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { setActiveTab('TOOLS'); setSelectedTool(null) }}><Layers size={18} /> Catálogo</div>
+                  <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => navigate('/people')}><Users size={18} /> Gestão de Pessoas</div>
+                  <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { navigate('/tools'); setSelectedTool(null); }}><Layers size={18} /> Catálogo</div>
                 </>
               )}
-              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Relatório</div>
-              <div className={`nav-item ${activeTab === 'TICKETS' ? 'active' : ''}`} onClick={() => setActiveTab('TICKETS')}><MessageSquare size={18} /> Gestão de Chamados</div>
+              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => navigate('/history')}><FileText size={18} /> Relatório</div>
+              <div className={`nav-item ${activeTab === 'AUDIT_LOG' ? 'active' : ''}`} onClick={() => { navigate('/audit-log'); setAuditLogFilters({}); }}><Clock size={18} /> Histórico</div>
+              <div className={`nav-item ${activeTab === 'TICKETS' ? 'active' : ''}`} onClick={() => navigate('/tickets')}><MessageSquare size={18} /> Gestão de Chamados</div>
             </>
           ) : (
             <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { setActiveTab('DASHBOARD'); setSelectedTool(null) }}><LayoutDashboard size={18} /> Meu Painel</div>
-              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => setActiveTab('HISTORY')}><FileText size={18} /> Relatório</div>
-              <div className={`nav-item ${activeTab === 'MY_TICKETS' ? 'active' : ''}`} onClick={() => { setActiveTab('MY_TICKETS'); setSelectedChamadoId(null); setChamadoDetail(null); }}><MessageSquare size={18} /> Chamados relacionados</div>
+              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { navigate('/'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Meu Painel</div>
+              <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => navigate('/history')}><FileText size={18} /> Relatório</div>
+              <div className={`nav-item ${activeTab === 'AUDIT_LOG' ? 'active' : ''}`} onClick={() => { navigate('/audit-log'); setAuditLogFilters({}); }}><Clock size={18} /> Histórico</div>
+              <div className={`nav-item ${activeTab === 'MY_TICKETS' ? 'active' : ''}`} onClick={() => { navigate('/my-tickets'); setSelectedChamadoId(null); setChamadoDetail(null); }}><MessageSquare size={18} /> Chamados relacionados</div>
             </>
           )}
         </div>
@@ -1064,13 +1111,25 @@ export default function App() {
       {/* MAIN CANVAS */}
       <main className="main-area">
         <header className="header-bar">
-          <div className="page-title">Pagina: <span>{activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab === 'MY_TICKETS' ? 'CHAMADOS RELACIONADOS' : activeTab}</span></div>
+          <div className="page-title">Pagina: <span>{collaboratorId ? 'DETALHES DO COLABORADOR' : activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab === 'MY_TICKETS' ? 'CHAMADOS RELACIONADOS' : activeTab === 'AUDIT_LOG' ? 'HISTÓRICO DE MUDANÇAS' : activeTab}</span></div>
         </header>
 
         <div className="content-scroll">
 
-          {/* DASHBOARD */}
-          {activeTab === 'DASHBOARD' && (
+          {/* DETALHES DO COLABORADOR */}
+          {collaboratorId && (
+            <CollaboratorDetails
+              id={collaboratorId}
+              onBack={() => navigate('/people')}
+              onOpenAuditHistory={(entidadeId, entidadeTipo) => {
+                setAuditLogFilters({ entidadeId, entidadeTipo });
+                navigate(`/audit-log?entidadeId=${encodeURIComponent(entidadeId)}&entidadeTipo=${encodeURIComponent(entidadeTipo)}`);
+              }}
+            />
+          )}
+
+          {/* CONTEÚDO PADRÃO (quando não está em /collaborators/:id) */}
+          {!collaboratorId && activeTab === 'DASHBOARD' && (
             <div className="bento-grid fade-in">
               <div className="card-base cell-hero" style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #09090b 100%)', borderColor: '#312e81' }}>
                 <h1 style={{ fontSize: '28px', color: 'white', marginBottom: 10 }}>Olá, {currentUser?.name.split(' ')[0]}</h1>
@@ -1099,7 +1158,7 @@ export default function App() {
                     </div>
                     <div>
                       <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Departamento</div>
-                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.department || '—'}</div>
+                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{userDeptName(currentUser) || '—'}</div>
                     </div>
                   </div>
                   </div>
@@ -1242,7 +1301,7 @@ export default function App() {
                             <div className="action-tile-buttons">
                               <button
                                 className="btn-mini approve"
-                                onClick={() => { setActiveTab('TICKETS'); setSelectedChamadoId(r.id); }}
+                                onClick={() => { navigate('/tickets'); setSelectedChamadoId(r.id); }}
                               >
                                 Acessar chamado
                               </button>
@@ -1259,7 +1318,7 @@ export default function App() {
                 <div className="card-header"><span className="card-title">Feed Recente</span></div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {requests
-                    .filter(r => systemProfile === 'VIEWER' ? r.requester.id === currentUser?.id : true)
+                    .filter(r => systemProfile === 'VIEWER' ? r?.requester?.id === currentUser?.id : true)
                     .slice(0, 5)
                     .map(r => {
                       const { category, title } = getRequestCardContent(r);
@@ -1282,7 +1341,7 @@ export default function App() {
           )}
 
           {/* GESTÃO DE PESSOAS INTERATIVA (LISTA EM CASCATA) */}
-          {activeTab === 'PEOPLE' && (
+          {!collaboratorId && activeTab === 'PEOPLE' && (
             <div className="fade-in" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
               <div style={{ marginBottom: 20 }}>
                 <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Gestão de Pessoas</h2>
@@ -1291,12 +1350,17 @@ export default function App() {
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 <PersonnelListView
                   units={units}
-                  users={allUsers.filter(u => u.department && u.department !== 'Geral')}
+                  users={allUsers.filter(u => userDeptName(u) && userDeptName(u) !== 'Geral')}
                   departments={departments.filter((d: any) => d.name !== 'Geral')}
                   roles={roles}
                   onEditUser={(user) => {
                     setSelectedUser(user);
                     setIsEditUserModalOpen(true);
+                  }}
+                  onViewCollaborator={(user) => {
+                    const path = `/collaborators/${user.id}`;
+                    console.log('navigating to', path);
+                    navigate(path);
                   }}
                   onDeleteUser={['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? handleDeleteUser : undefined}
                   onEditDepartment={(dept) => {
@@ -1345,7 +1409,7 @@ export default function App() {
           )}
 
           {/* CATÁLOGO DE TOOLS (LISTA) */}
-          {activeTab === 'TOOLS' && !selectedTool && (
+          {!collaboratorId && activeTab === 'TOOLS' && !selectedTool && (
             <div className="fade-in">
               <h2 style={{ color: 'white', fontSize: 20, marginBottom: 20 }}>Sistemas Conectados</h2>
               <div className="tools-wrapper">
@@ -1372,7 +1436,7 @@ export default function App() {
           )}
 
           {/* TOOL DETAILS (VISUAL ATUALIZADO COM OWNER E NÍVEIS) */}
-          {activeTab === 'TOOLS' && selectedTool && (
+          {!collaboratorId && activeTab === 'TOOLS' && selectedTool && (
             <div className="fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <button onClick={() => { setSelectedTool(null); setExpandedLevel(null) }} className="btn-text">
@@ -1639,72 +1703,82 @@ export default function App() {
                           </div>
                         );
                       }
+                      const statusLabel = (s: string) => s === 'ACTIVE' ? 'ATIVO' : s === 'INACTIVE' ? 'INATIVO' : s;
+                      const statusColor = (s: string) => s === 'ACTIVE' ? '#22c55e' : s === 'INACTIVE' ? '#ef4444' : '#71717a';
+                      const formatDataConcessao = (d: string | Date | undefined) => d ? new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+                      const duracaoTexto = (dur: number | undefined, u: string | undefined) => (dur != null && u) ? `${dur} ${u}` : 'Não informada';
                       return (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {/* Cabeçalho da lista */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 80px 140px 100px 90px minmax(80px, auto)', gap: 12, padding: '8px 16px', fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, borderBottom: '1px solid #27272a' }}>
+                            <span></span>
+                            <span>Colaborador</span>
+                            <span>Status</span>
+                            <span>Nível</span>
+                            <span>Duração</span>
+                            <span>Desde</span>
+                            <span></span>
+                          </div>
                           {extraordinary.map((acc) => (
-                            <div key={acc.user.id} className="card-base" style={{
-                              display: 'flex',
+                            <div key={acc.id || acc.user.id} style={{
+                              display: 'grid',
+                              gridTemplateColumns: '40px 1fr 80px 140px 100px 90px minmax(80px, auto)',
                               alignItems: 'center',
-                              gap: 16,
-                              padding: '16px 24px',
+                              gap: 12,
+                              padding: '12px 16px',
                               background: 'rgba(167, 139, 250, 0.05)',
-                              border: '1px solid rgba(167, 139, 250, 0.1)'
+                              border: '1px solid rgba(167, 139, 250, 0.15)',
+                              borderRadius: 8
                             }}>
-                              <div style={{ width: 42, height: 42, borderRadius: '12px', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>
+                              <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>
                                 {acc.user.name.charAt(0)}
                               </div>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <span style={{ color: 'white', fontWeight: 600 }}>{acc.user.name}</span>
-                                  <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>
-                                    {acc.status}
-                                  </span>
-                                </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ color: 'white', fontWeight: 600, fontSize: 14 }}>{acc.user.name}</div>
                                 <div style={{ color: '#a1a1aa', fontSize: 12 }}>{acc.user.email}</div>
                               </div>
-                              <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 20 }}>
-                                <div>
-                                  <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700 }}>Duração Pedida</div>
-                                  <div style={{ color: '#f4f4f5', fontWeight: 600 }}>{acc.duration} {acc.unit}</div>
-                                </div>
-                                {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
-                                  <button
-                                    className="btn-mini"
-                                    style={{ padding: '8px 12px', display: 'flex', gap: 6, alignItems: 'center', background: '#27272a' }}
-                                    onClick={() => { setSelectedAccess(acc); setIsEditAccessModalOpen(true); }}
-                                  >
-                                    <Pen size={12} /> Editar
-                                  </button>
-                                )}
-                              </div>
+                              <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: `${statusColor(acc.status)}22`, color: statusColor(acc.status), fontWeight: 700, textTransform: 'uppercase' }}>
+                                {statusLabel(acc.status)}
+                              </span>
+                              <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 600 }}>
+                                {acc.level ?? '—'}
+                              </span>
+                              <div style={{ color: '#f4f4f5', fontSize: 13 }}>{duracaoTexto(acc.duration, acc.unit)}</div>
+                              <div style={{ color: '#a1a1aa', fontSize: 12 }}>{formatDataConcessao(acc.createdAt)}</div>
+                              {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? (
+                                <button
+                                  className="btn-mini"
+                                  style={{ padding: '6px 10px', display: 'flex', gap: 4, alignItems: 'center', background: '#27272a', justifySelf: 'start' }}
+                                  onClick={() => { setSelectedAccess(acc); setIsEditAccessModalOpen(true); }}
+                                >
+                                  <Pen size={12} /> Editar
+                                </button>
+                              ) : <span />}
                             </div>
                           ))}
                           {extraordinaryApprovals.map((req) => (
-                            <div key={req.id} className="card-base" style={{
-                              display: 'flex',
+                            <div key={req.id} style={{
+                              display: 'grid',
+                              gridTemplateColumns: '40px 1fr 80px 140px 100px 90px minmax(80px, auto)',
                               alignItems: 'center',
-                              gap: 16,
-                              padding: '16px 24px',
+                              gap: 12,
+                              padding: '12px 16px',
                               background: 'rgba(167, 139, 250, 0.05)',
-                              border: '1px solid rgba(167, 139, 250, 0.1)'
+                              border: '1px solid rgba(167, 139, 250, 0.15)',
+                              borderRadius: 8
                             }}>
-                              <div style={{ width: 42, height: 42, borderRadius: '12px', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>
+                              <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#2e1065', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>
                                 {req.requesterName.charAt(0)}
                               </div>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <span style={{ color: 'white', fontWeight: 600 }}>{req.requesterName}</span>
-                                  <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>
-                                    {req.level}
-                                  </span>
-                                </div>
-                                {req.requesterEmail && <div style={{ color: '#a1a1aa', fontSize: 12 }}>{req.requesterEmail}</div>}
-                                {req.justification && <div style={{ color: '#71717a', fontSize: 12, marginTop: 6 }}>{req.justification}</div>}
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ color: 'white', fontWeight: 600, fontSize: 14 }}>{req.requesterName}</div>
+                                <div style={{ color: '#a1a1aa', fontSize: 12 }}>{req.requesterEmail ?? '—'}</div>
                               </div>
-                              <div style={{ textAlign: 'right', fontSize: 11, color: '#71717a' }}>
-                                <div style={{ textTransform: 'uppercase', fontWeight: 700 }}>Aprovado em</div>
-                                <div style={{ color: '#f4f4f5' }}>{new Date(req.approvedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-                              </div>
+                              <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: '#22c55e22', color: '#22c55e', fontWeight: 700, textTransform: 'uppercase' }}>Aprovado</span>
+                              <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 600 }}>{req.level}</span>
+                              <div style={{ color: '#f4f4f5', fontSize: 13 }}>Não informada</div>
+                              <div style={{ color: '#a1a1aa', fontSize: 12 }}>{formatDataConcessao(req.approvedAt)}</div>
+                              <span></span>
                             </div>
                           ))}
                         </div>
@@ -1717,7 +1791,7 @@ export default function App() {
           )}
 
           {/* AUDITORIA */}
-          {activeTab === 'HISTORY' && (
+          {!collaboratorId && activeTab === 'HISTORY' && (
             <div className="fade-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Relatório de Chamados</h2>
@@ -1725,7 +1799,7 @@ export default function App() {
                   {systemProfile === 'VIEWER' ? 'Seus registros' : 'Total de Registros'}: {
                     requests.filter(r => {
                       if (r.status === 'PENDENTE') return false;
-                      if (systemProfile === 'VIEWER') return r.requester.id === currentUser?.id;
+                      if (systemProfile === 'VIEWER') return r?.requester?.id === currentUser?.id;
                       return true;
                     }).length
                   }
@@ -1834,7 +1908,7 @@ export default function App() {
                     {requests
                       .filter(r => {
                         // 0. Filtro de permissão
-                        if (systemProfile === 'VIEWER' && r.requester.id !== currentUser?.id) return false;
+                        if (systemProfile === 'VIEWER' && r?.requester?.id !== currentUser?.id) return false;
 
                         // 1. Filtro por tipo (personalizado)
                         const typeKey = REQUEST_TYPE_OPTIONS.some(o => o.value === r.type) ? r.type : '__OTHER__';
@@ -2017,7 +2091,7 @@ export default function App() {
                         )
                       })}
                     {requests.filter(r => {
-                      if (systemProfile === 'VIEWER' && r.requester.id !== currentUser?.id) return false;
+                      if (systemProfile === 'VIEWER' && r?.requester?.id !== currentUser?.id) return false;
                       const typeKey = REQUEST_TYPE_OPTIONS.some(o => o.value === r.type) ? r.type : '__OTHER__';
                       if (typeFilterEnabled[typeKey] === false) return false;
                       if (statusFilter !== 'ALL') {
@@ -2042,8 +2116,16 @@ export default function App() {
             </div>
           )}
 
+          {/* HISTÓRICO DE AUDITORIA */}
+          {!collaboratorId && activeTab === 'AUDIT_LOG' && (
+            <AuditLog
+              initialEntidadeId={auditLogFilters.entidadeId}
+              initialEntidadeTipo={auditLogFilters.entidadeTipo}
+            />
+          )}
+
           {/* GESTÃO DE CHAMADOS / CHAMADOS RELACIONADOS (Viewer) */}
-          {(activeTab === 'TICKETS' || activeTab === 'MY_TICKETS') && (
+          {!collaboratorId && (activeTab === 'TICKETS' || activeTab === 'MY_TICKETS') && (
             <div className="fade-in">
               {selectedChamadoId ? (
                 /* Detalhe do chamado: chat + sidebar */
@@ -2436,6 +2518,12 @@ export default function App() {
             currentUser={{ id: currentUser?.id || '', systemProfile }}
             allUsers={allUsers}
             showToast={showToast}
+            onOpenAuditHistory={(entidadeId, entidadeTipo) => {
+              setIsEditUserModalOpen(false);
+              setSelectedUser(null);
+              setAuditLogFilters({ entidadeId, entidadeTipo });
+              navigate(`/audit-log?entidadeId=${encodeURIComponent(entidadeId)}&entidadeTipo=${encodeURIComponent(entidadeTipo)}`);
+            }}
           />
         )
       }
@@ -2468,6 +2556,11 @@ export default function App() {
         allUsers={allUsers}
         showToast={showToast}
         customConfirm={customConfirm}
+        onViewCollaborator={(user) => {
+          setIsManageStructureOpen(false);
+          setSelectedStructureDept(null);
+          navigate(`/collaborators/${user.id}`);
+        }}
       />
 
       {
@@ -2611,7 +2704,7 @@ export default function App() {
             onClose={() => setIsDeleteDeptModalOpen(false)}
             department={selectedDeptForAction}
             allDepartments={departments}
-            userCount={selectedDeptForAction ? allUsers.filter(u => u.department === selectedDeptForAction.name).length : 0}
+            userCount={selectedDeptForAction ? allUsers.filter(u => (u.departmentId === selectedDeptForAction.id || userDeptName(u) === selectedDeptForAction.name)).length : 0}
             onDeleted={loadData}
             showToast={showToast}
             customConfirm={customConfirm}
@@ -2628,6 +2721,12 @@ export default function App() {
         departments={departments}
         onUpdate={loadData}
         showToast={showToast}
+        onOpenAuditHistory={(entidadeId, entidadeTipo) => {
+          setIsEditRoleKitModalOpen(false);
+          setSelectedRoleForKit(null);
+          setAuditLogFilters({ entidadeId, entidadeTipo });
+          navigate(`/audit-log?entidadeId=${encodeURIComponent(entidadeId)}&entidadeTipo=${encodeURIComponent(entidadeTipo)}`);
+        }}
       />
 
       <DeleteRoleModal
@@ -2637,7 +2736,7 @@ export default function App() {
         units={units}
         userCountInRole={selectedRoleForDelete ? allUsers.filter(u =>
           u.roleId === selectedRoleForDelete.id ||
-          (u.jobTitle === selectedRoleForDelete.name && u.department === departments.find(d => d.id === selectedRoleForDelete.departmentId)?.name)
+          (u.jobTitle === selectedRoleForDelete.name && (u.departmentId === selectedRoleForDelete.departmentId || userDeptName(u) === departments.find(d => d.id === selectedRoleForDelete.departmentId)?.name))
         ).length : 0}
         onDeleted={loadData}
         showToast={showToast}

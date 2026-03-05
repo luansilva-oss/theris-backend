@@ -13,6 +13,7 @@ model Unit {
   name        String       @unique
   createdAt   DateTime     @default(now())
   departments Department[]
+  users       User[]       @relation("UserUnit")
 }
 
 model Department {
@@ -22,6 +23,7 @@ model Department {
   unit      Unit?    @relation(fields: [unitId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   roles     Role[]
+  users     User[]   @relation("UserDepartment")
 
   @@unique([unitId, name])
 }
@@ -51,10 +53,12 @@ model User {
   name          String
   email         String    @unique
   
-  // --- MUDANÇA 1: Simplificado para facilitar importação do CSV ---
-  department    String?   // Agora é texto simples (Ex: "Comercial")
+  // --- MUDANÇA 1: FKs para Department e Unit ---
   jobTitle      String?   // Cargo (Ex: "SDR")
-  unit          String?   // Unidade (Ex: "3C+", "Dizify", "Instituto 3C")
+  departmentId  String?
+  departmentRef Department? @relation("UserDepartment", fields: [departmentId], references: [id])
+  unitId        String?
+  unitRef       Unit?       @relation("UserUnit", fields: [unitId], references: [id])
   // ---------------------------------------------------------------
 
   roleId        String?
@@ -96,6 +100,22 @@ model User {
 
   // Lembrete de troca de senha (automação 90 dias)
   lastPasswordChangeAt DateTime? @default(now())
+
+  // Auditoria: histórico de mudanças estruturais
+  historicoMudancas HistoricoMudanca[] @relation("HistoricoMudancaAutor")
+}
+
+model HistoricoMudanca {
+  id           String   @id @default(uuid())
+  tipo         String   // Ex: "ROLE_DEPARTMENT_CHANGE", "USER_ROLE_CHANGE"
+  entidadeTipo String   // Ex: "Role", "User", "Department"
+  entidadeId   String   // ID do registro afetado
+  descricao    String   // Texto legível
+  dadosAntes   Json?    // Snapshot do estado anterior
+  dadosDepois  Json?    // Snapshot do estado novo
+  autorId      String?
+  autor        User?    @relation("HistoricoMudancaAutor", fields: [autorId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
 }
 
 model Tool {
@@ -145,6 +165,7 @@ model Access {
   
   // Detalhes Extraordinários
   isExtraordinary Boolean   @default(false)
+  level           String?   // ex: "NÍVEL 3 (CP-1)"
   duration        Int?      
   unit            String?   // horas, dias, meses
   expiresAt       DateTime? 
