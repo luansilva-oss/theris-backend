@@ -13,7 +13,8 @@ import {
   getSolicitacaoById,
   updateSolicitacaoMetadata,
   createComment,
-  createAttachment
+  createAttachment,
+  exportRequestsCsv
 } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
@@ -132,6 +133,7 @@ app.post('/api/webhooks/convenia', handleConveniaWebhook);
 // ============================================================
 // --- WORKFLOW (SOLICITAÇÕES) ---
 // ============================================================
+app.get('/api/requests/export/csv', exportRequestsCsv);
 app.get('/api/solicitacoes', getSolicitacoes);
 app.get('/api/solicitacoes/my-tickets', getMyTickets);
 app.get('/api/solicitacoes/:id', getSolicitacaoById);

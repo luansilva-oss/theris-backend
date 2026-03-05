@@ -191,21 +191,42 @@ export const getUserDetails = async (req: Request, res: Response) => {
     const { getToolsAndLevelsMap } = await import('../services/slackService');
     const toolsAndLevels = getToolsAndLevelsMap();
 
-    let kbsFerramentas: { ferramenta: string; sigla: string; nivel: string; critico: boolean }[] = [];
-    if (role?.kitItems) {
-      for (const k of role.kitItems) {
-        const code = k.accessLevelDesc ?? k.toolCode ?? '';
-        const toolKey = (k.toolName || '').trim();
-        const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
-        const levelLabel = (levelsForTool?.find((l: { value: string }) => l.value === code)?.label ?? code) || '—';
-        kbsFerramentas.push({
-          ferramenta: k.toolName || '—',
-          sigla: k.toolCode || '—',
-          nivel: levelLabel,
-          critico: k.isCritical ?? true
-        });
-      }
+    const kitItemsWithCriticality = role?.kitItems ?? [];
+    let kbsFerramentas: { ferramenta: string; sigla: string; nivel: string; critico: boolean; criticidade: string }[] = [];
+    for (const k of kitItemsWithCriticality) {
+      const code = k.accessLevelDesc ?? k.toolCode ?? '';
+      const toolKey = (k.toolName || '').trim();
+      const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
+      const levelLabel = (levelsForTool?.find((l: { value: string }) => l.value === code)?.label ?? code) || '—';
+      const criticidade = (k as { criticality?: string }).criticality?.trim() || (k.isCritical ? 'Crítico' : '—');
+      kbsFerramentas.push({
+        ferramenta: k.toolName || '—',
+        sigla: k.toolCode || '—',
+        nivel: levelLabel,
+        critico: k.isCritical ?? true,
+        criticidade
+      });
     }
+
+    const extraordinaryAccesses = await prisma.access.findMany({
+      where: { userId: id, isExtraordinary: true },
+      include: { tool: true }
+    });
+    const acessosExtraordinarios: { ferramenta: string; sigla: string; nivel: string; critico: boolean; criticidade: string }[] = extraordinaryAccesses.map((a) => {
+      const toolName = a.tool?.name ?? '—';
+      const toolKey = toolName.trim();
+      const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
+      const code = (a as { level?: string }).level ?? (a as { status?: string }).status ?? '';
+      const levelLabel = (levelsForTool?.find((l: { value: string }) => l.value === code)?.label ?? code) || '—';
+      const criticidade = (a.tool as { criticality?: string })?.criticality?.trim() ?? ((a.tool as { isCritical?: boolean })?.isCritical ? 'Crítico' : '—');
+      return {
+        ferramenta: toolName,
+        sigla: (a.tool as { acronym?: string })?.acronym ?? a.tool?.id ?? '—',
+        nivel: levelLabel,
+        critico: (a.tool as { isCritical?: boolean })?.isCritical ?? false,
+        criticidade: criticidade || '—'
+      };
+    });
 
     const historicoCargos = await prisma.historicoMudanca.findMany({
       where: { entidadeId: id, tipo: 'USER_KBS_CHANGE' },
@@ -216,6 +237,7 @@ export const getUserDetails = async (req: Request, res: Response) => {
     return res.json({
       user: { ...user, role },
       kbsFerramentas,
+      acessosExtraordinarios,
       historicoCargos
     });
   } catch (error) {

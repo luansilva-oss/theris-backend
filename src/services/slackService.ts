@@ -701,6 +701,24 @@ function normalizeToolName(s: string): string {
   return (s || '').trim().toLowerCase();
 }
 
+/** Níveis estáticos (fallback quando availableAccessLevels está vazio no catálogo). */
+function getLevelOptionsFromStaticMap(toolName: string): { text: { type: 'plain_text'; text: string }; value: string }[] {
+  const map = TOOLS_AND_LEVELS;
+  const normalized = normalizeToolName(toolName);
+  // 1) Match exato
+  const exact = map[toolName?.trim() ?? ''];
+  if (exact?.length) return exact.map((item) => ({ text: { type: 'plain_text' as const, text: item.label }, value: item.value }));
+  // 2) Match normalizado (ex: "3C Plus" vs "3C PLUS")
+  for (const key of TOOL_KEYS) {
+    if (normalizeToolName(key) === normalized) {
+      const items = map[key];
+      if (items?.length) return items.map((item) => ({ text: { type: 'plain_text' as const, text: item.label }, value: item.value }));
+      break;
+    }
+  }
+  return [];
+}
+
 slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
   await ack();
   const b = body as any;
@@ -831,10 +849,14 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
     });
     const levelsArray = catalogTool?.availableAccessLevels ?? [];
     const descMap = (catalogTool?.accessLevelDescriptions as Record<string, unknown>) ?? null;
-    const levelOptions = levelsArray.map((code) => ({
+    let levelOptions = levelsArray.map((code) => ({
       text: { type: 'plain_text' as const, text: getLevelLabel(code, descMap) },
       value: code
     }));
+    // Fallback: se o catálogo não tiver níveis, usa mapa estático TOOLS_AND_LEVELS (para solicitação extraordinária)
+    if (levelOptions.length === 0 && selectedToolName) {
+      levelOptions = getLevelOptionsFromStaticMap(selectedToolName);
+    }
     if (levelOptions.length >= 1) {
       blocks.push({
         type: 'input',
@@ -947,7 +969,17 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
     detailsWithMeta.requesterEmail = requesterEmail ?? undefined;
     detailsWithMeta.source = 'slack';
 
-    await prisma.request.create({
+    // AEX: fluxo Owner primeiro -> status PENDING_OWNER
+    if (isExtraordinary && (dbType === 'ACCESS_TOOL_EXTRA' || dbType === 'ACCESS_TOOL' || dbType === 'ACESSO_FERRAMENTA' || dbType === 'EXTRAORDINARIO')) {
+      status = 'PENDING_OWNER';
+      currentApproverRole = 'TOOL_OWNER';
+      approverId = null;
+    }
+
+    const toolName = (details as { tool?: string; toolName?: string }).tool || (details as { tool?: string; toolName?: string }).toolName;
+    const accessLevel = (details as { target?: string; targetValue?: string }).target || (details as { target?: string; targetValue?: string }).targetValue;
+
+    const created = await prisma.request.create({
       data: {
         requesterId,
         type: dbType,
@@ -956,9 +988,18 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
         status,
         currentApproverRole,
         approverId,
-        isExtraordinary
+        isExtraordinary,
+        ...(isExtraordinary && toolName && { toolName }),
+        ...(isExtraordinary && accessLevel && { accessLevel })
       }
     });
+
+    // AEX: enviar DMs para Owner/Sub e SI
+    if (isExtraordinary && toolName) {
+      const requester = await prisma.user.findUnique({ where: { id: requesterId }, select: { name: true } });
+      const { sendAexCreationDMs } = await import('./aexOwnerService');
+      sendAexCreationDMs(client, created.id, toolName, accessLevel || '—', requester?.name || 'Solicitante', reason).catch(err => console.error('[AEX] Erro ao enviar DMs:', err));
+    }
 
     // Confirma no chat privado do usuário (Ephemeral = apenas ele vê se for em canal público, ou DM)
     // Usamos chat.postMessage simples aqui
@@ -969,6 +1010,89 @@ async function saveRequest(body: any, client: any, dbType: string, details: any,
     await client.chat.postMessage({ channel: body.user.id, text: "❌ Erro ao processar solicitação. Seu usuário existe no painel web?" });
   }
 }
+
+// ============================================================
+// BLOCK ACTIONS: AEX Owner Approve/Reject
+// ============================================================
+slackApp.action('aex_approve', async ({ ack, body, client }) => {
+  await ack();
+  const b = body as any;
+  const requestId = b.actions?.[0]?.value;
+  if (!requestId) return;
+
+  try {
+    const req = await prisma.request.findUnique({
+      where: { id: requestId },
+      include: { requester: { select: { id: true, name: true, email: true } } }
+    });
+    if (!req || req.status !== 'PENDING_OWNER') return;
+
+    const ownerSlackId = b.user.id;
+    const reqAny = req as { toolName?: string; accessLevel?: string; details?: string };
+    const toolName = reqAny.toolName || (() => { try { const d = JSON.parse(req.details || '{}'); return d.tool || d.toolName || '—'; } catch { return '—'; } })();
+    const accessLevel = reqAny.accessLevel || (() => { try { const d = JSON.parse(req.details || '{}'); return d.target || d.targetValue || '—'; } catch { return '—'; } })();
+
+    await prisma.request.update({
+      where: { id: requestId },
+      data: {
+        status: 'PENDING_SI',
+        currentApproverRole: 'SI_ANALYST',
+        approverId: null,
+        ownerApprovedAt: new Date(),
+        ownerApprovedBy: ownerSlackId,
+        updatedAt: new Date()
+      } as any
+    });
+
+    const { sendAexOwnerApprovedDMs } = await import('./aexOwnerService');
+    await sendAexOwnerApprovedDMs(client, requestId, toolName, accessLevel, req.requester?.name || 'Solicitante', ownerSlackId);
+  } catch (e) {
+    console.error('❌ Erro ao processar aprovação AEX pelo owner:', e);
+  }
+});
+
+slackApp.action('aex_reject', async ({ ack, body, client }) => {
+  await ack();
+  const b = body as any;
+  const requestId = b.actions?.[0]?.value;
+  if (!requestId) return;
+
+  try {
+    const req = await prisma.request.findUnique({
+      where: { id: requestId },
+      include: { requester: { select: { email: true } } }
+    });
+    if (!req || req.status !== 'PENDING_OWNER') return;
+
+    const ownerSlackId = b.user.id;
+    const reqAny = req as { toolName?: string; details?: string };
+    const toolName = reqAny.toolName || (() => { try { const d = JSON.parse(req.details || '{}'); return d.tool || d.toolName || '—'; } catch { return '—'; } })();
+
+    await prisma.request.update({
+      where: { id: requestId },
+      data: {
+        status: 'REJECTED',
+        ownerRejectedAt: new Date(),
+        ownerRejectedBy: ownerSlackId,
+        updatedAt: new Date()
+      } as any
+    });
+
+    const { sendAexRejectedByOwnerDM } = await import('./aexOwnerService');
+    let requesterSlackId: string | null = null;
+    if (req.requester?.email) {
+      try {
+        const info = await client.users.lookupByEmail({ email: req.requester.email });
+        requesterSlackId = info.user?.id ?? null;
+      } catch (_) {}
+    }
+    if (requesterSlackId) {
+      await sendAexRejectedByOwnerDM(client, requesterSlackId, toolName);
+    }
+  } catch (e) {
+    console.error('❌ Erro ao processar rejeição AEX pelo owner:', e);
+  }
+});
 
 // Handlers de Submissão
 slackApp.view('submit_move', async ({ ack, body, view, client }) => {

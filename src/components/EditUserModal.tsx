@@ -18,6 +18,7 @@ interface User {
     systemProfile: string;
     managerId?: string | null;
     roleId?: string | null;
+    isActive?: boolean;
 }
 
 interface Department {
@@ -53,6 +54,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
     const [systemProfile, setSystemProfile] = useState(user.systemProfile || 'VIEWER');
     const [managerId, setManagerId] = useState<string | null>(user.managerId || null);
     const [roleId, setRoleId] = useState<string | null>(user.roleId || null);
+    const [isActive, setIsActive] = useState(user.isActive !== false);
     const [isSaving, setIsSaving] = useState(false);
 
     const [availableUnits, setAvailableUnits] = useState<{ id: string; name: string }[]>([]);
@@ -68,6 +70,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
         setSystemProfile(user.systemProfile || 'VIEWER');
         setManagerId(user.managerId || null);
         setRoleId(user.roleId || null);
+        setIsActive(user.isActive !== false);
         loadStructure();
     }, [user]);
 
@@ -96,7 +99,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                     'Content-Type': 'application/json',
                     'x-requester-id': currentUser.id
                 },
-                body: JSON.stringify({ name, email, jobTitle, departmentId, unitId, systemProfile, managerId, roleId })
+                body: JSON.stringify({ name, email, jobTitle, departmentId, unitId, systemProfile, managerId, roleId, isActive })
             });
 
             if (res.ok) {
@@ -224,6 +227,17 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                             <option key={opt.value} value={opt.value} style={{ background: '#18181b' }}>{opt.label}</option>
                         ))}
                     </select>
+                </div>
+
+                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input
+                        type="checkbox"
+                        id="isActive"
+                        checked={isActive}
+                        onChange={(e) => setIsActive(e.target.checked)}
+                        style={{ width: 18, height: 18, accentColor: '#a78bfa' }}
+                    />
+                    <label htmlFor="isActive" style={{ margin: 0 }}>Colaborador ativo</label>
                 </div>
 
                 <div className="form-group">

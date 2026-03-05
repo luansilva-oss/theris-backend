@@ -51,7 +51,7 @@ interface Props {
     /** Unidades e departamentos para os selects (da estrutura /api/structure). */
     units?: Unit[];
     departments?: Department[];
-    onUpdate: () => void;
+    onUpdate: () => void | Promise<void>;
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
     onOpenAuditHistory?: (entidadeId: string, entidadeTipo: string) => void;
 }
@@ -210,6 +210,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                 }
                 const res = await fetch(`${API_URL}/api/structure/roles`, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         name,
@@ -220,7 +221,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                 });
                 if (res.ok) {
                     showToast('Cargo criado com sucesso!', 'success');
-                    onUpdate();
+                    await Promise.resolve(onUpdate());
                     onClose();
                 } else {
                     const err = await res.json();
@@ -237,12 +238,13 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                 }
                 const res = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
                     method: 'PUT',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 if (res.ok) {
                     showToast('Cargo e kit atualizados!', 'success');
-                    onUpdate();
+                    await Promise.resolve(onUpdate());
                     onClose();
                 } else {
                     const err = await res.json();

@@ -3,8 +3,27 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+const SENSITIVE_KEYS = new Set(['mfaCode', 'mfaExpiresAt', 'lastPasswordChangeAt', 'senha', 'password', 'hash', 'passwordHash', 'token', 'secret']);
+
+function filterSensitive(obj: unknown): unknown {
+    if (obj == null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(filterSensitive);
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+        const lower = k.toLowerCase();
+        if (SENSITIVE_KEYS.has(k) || lower.includes('senha') || lower.includes('password') || lower.includes('hash') || lower.includes('token') || lower.includes('secret')) continue;
+        out[k] = filterSensitive(v);
+    }
+    return out;
+}
+
 /** GET /api/audit-log?entidadeId=xxx&entidadeTipo=Role&tipo=X&limit=20&offset=0&search=text&dataInicio=ISO&dataFim=ISO&autorNome=... */
 export const getAuditLog = async (req: Request, res: Response) => {
+    const userId = (req.headers['x-user-id'] as string)?.trim();
+    if (!userId) return res.status(401).json({ error: 'Usuário não identificado.' });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true } });
+    if (!user || user.systemProfile === 'VIEWER') return res.status(403).json({ error: 'Acesso negado. Perfil VIEWER não pode acessar o histórico de auditoria.' });
+
     const entidadeId = req.query.entidadeId as string | undefined;
     const entidadeTipo = req.query.entidadeTipo as string | undefined;
     const tipo = req.query.tipo as string | undefined;
@@ -30,7 +49,7 @@ export const getAuditLog = async (req: Request, res: Response) => {
             where.autor = { name: { contains: autorNome.trim(), mode: 'insensitive' } };
         }
 
-        const [items, total] = await Promise.all([
+        const [rows, total] = await Promise.all([
             prisma.historicoMudanca.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
@@ -40,6 +59,12 @@ export const getAuditLog = async (req: Request, res: Response) => {
             }),
             prisma.historicoMudanca.count({ where }),
         ]);
+
+        const items = rows.map((r) => ({
+            ...r,
+            dadosAntes: r.dadosAntes ? filterSensitive(r.dadosAntes as object) : null,
+            dadosDepois: r.dadosDepois ? filterSensitive(r.dadosDepois as object) : null,
+        }));
 
         return res.json({ items, total, limit, offset });
     } catch (error) {

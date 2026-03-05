@@ -194,6 +194,14 @@ model Request {
   details             String   // JSON string
   justification       String?
   isExtraordinary     Boolean  @default(false)
+  
+  // AEX: Owner approval flow
+  ownerApprovedAt     DateTime?
+  ownerApprovedBy     String?
+  ownerRejectedAt     DateTime?
+  ownerRejectedBy     String?
+  toolName            String?   // Para AEX — nome da ferramenta
+  accessLevel         String?   // Para AEX — nível solicitado
   extraordinaryDuration Int?     // Ex: 48
   extraordinaryUnit     String?  // Ex: "horas", "dias", "meses"
   

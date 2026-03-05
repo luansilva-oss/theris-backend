@@ -4,7 +4,7 @@ import {
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
   Search, Lock, Layers, ChevronDown, ChevronRight,
   Users, Building, Briefcase, // Ícone para Gestão de Pessoas
-  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare, Filter, X
+  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare,   Filter, X, Download
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
@@ -25,9 +25,10 @@ import { DeleteDepartmentModal } from './components/DeleteDepartmentModal';
 import { EditRoleKitModal } from './components/EditRoleKitModal';
 import { DeleteRoleModal } from './components/DeleteRoleModal';
 import { EntityAuditHistory } from './components/EntityAuditHistory';
+import { ReportExportModal } from './components/ReportExportModal';
 import { AuditLog } from './pages/AuditLog';
 import { CollaboratorDetails } from './pages/CollaboratorDetails';
-import { useLocation, useParams, useNavigate } from 'react-router-dom';
+import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ToastContainer, Toast } from './components/ToastContainer';
 import { CustomConfirmModal } from './components/CustomConfirmModal';
 import { API_URL } from './config';
@@ -134,6 +135,8 @@ const STATUS_LABELS: Record<string, string> = {
   PENDENTE_SUB_OWNER: 'Pendente (sub-responsável)',
   PENDENTE_SI: 'Pendente (SI)',
   PENDENTE_OWNER: 'Pendente (responsável)',
+  PENDING_OWNER: 'Pendente (Owner)',
+  PENDING_SI: 'Pendente (SI)',
   EM_ATENDIMENTO: 'Em atendimento',
   AGENDADO: 'Agendado',
   APROVADO: 'Aprovado',
@@ -290,10 +293,19 @@ export default function App() {
   const [expandedDept, setExpandedDept] = useState<string | null>(null);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
 
-  // FILTROS
-  const [sourceFilter, setSourceFilter] = useState<'ALL' | 'THERIS' | 'INFRA'>('ALL');
+  // FILTROS (Relatório)
+  type ReportCategoryFilter = 'ALL' | 'GESTAO_PESSOAS' | 'GESTAO_ACESSOS' | 'TI_INFRA';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [reportCategoryFilter, setReportCategoryFilter] = useState<ReportCategoryFilter>(() => {
+    const c = searchParams.get('category');
+    if (c === 'GESTAO_PESSOAS' || c === 'GESTAO_ACESSOS' || c === 'TI_INFRA') return c;
+    return 'ALL';
+  });
+  const [reportPeriodStart, setReportPeriodStart] = useState(() => searchParams.get('startDate') || '');
+  const [reportPeriodEnd, setReportPeriodEnd] = useState(() => searchParams.get('endDate') || '');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'APROVADO' | 'REPROVADO' | 'PENDENTE'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [showExportModal, setShowExportModal] = useState(false);
   const REQUEST_TYPE_OPTIONS: { value: string; label: string }[] = [
     { value: 'ACCESS_TOOL', label: 'Kit Padrão / Acesso Ferramenta' },
     { value: 'ACCESS_CHANGE', label: 'Alteração de Acesso' },
@@ -462,6 +474,35 @@ export default function App() {
       if (eid || etipo) setAuditLogFilters(prev => ({ ...prev, entidadeId: eid || prev.entidadeId, entidadeTipo: etipo || prev.entidadeTipo }));
     }
   }, [pathname, location.search]);
+
+  // Sync URL query params → Relatório quando em /history
+  useEffect(() => {
+    if (pathname !== '/history') return;
+    const cat = searchParams.get('category');
+    const start = searchParams.get('startDate') || '';
+    const end = searchParams.get('endDate') || '';
+    if (cat === 'GESTAO_PESSOAS' || cat === 'GESTAO_ACESSOS' || cat === 'TI_INFRA') setReportCategoryFilter(cat);
+    else setReportCategoryFilter('ALL');
+    setReportPeriodStart(start);
+    setReportPeriodEnd(end);
+  }, [pathname, searchParams]);
+
+  const applyReportFilters = () => {
+    const next = new URLSearchParams(searchParams);
+    next.set('category', reportCategoryFilter);
+    if (reportPeriodStart) next.set('startDate', reportPeriodStart);
+    else next.delete('startDate');
+    if (reportPeriodEnd) next.set('endDate', reportPeriodEnd);
+    else next.delete('endDate');
+    setSearchParams(next, { replace: true });
+  };
+
+  // Redirecionar VIEWER que tenta acessar /audit-log diretamente
+  useEffect(() => {
+    if (pathname === '/audit-log' && systemProfile === 'VIEWER') {
+      navigate('/dashboard');
+    }
+  }, [pathname, systemProfile, navigate]);
   useEffect(() => {
     if (selectedTool) localStorage.setItem('theris_selectedToolId', selectedTool.id);
     else if (activeTab === 'TOOLS' && !selectedTool) localStorage.removeItem('theris_selectedToolId');
@@ -527,7 +568,7 @@ export default function App() {
         if (resUsers.ok) setAllUsers(await resUsers.json());
       }
       if (activeTab === 'PEOPLE') {
-        const resDepts = await fetch(`${API_URL}/api/structure`);
+        const resDepts = await fetch(`${API_URL}/api/structure`, { credentials: 'include' });
         if (resDepts.ok) {
           const structData = await resDepts.json();
           const unitList = structData.units || [];
@@ -1093,7 +1134,6 @@ export default function App() {
             <>
               <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { navigate('/'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Meu Painel</div>
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => navigate('/history')}><FileText size={18} /> Relatório</div>
-              <div className={`nav-item ${activeTab === 'AUDIT_LOG' ? 'active' : ''}`} onClick={() => { navigate('/audit-log'); setAuditLogFilters({}); }}><Clock size={18} /> Histórico</div>
               <div className={`nav-item ${activeTab === 'MY_TICKETS' ? 'active' : ''}`} onClick={() => { navigate('/my-tickets'); setSelectedChamadoId(null); setChamadoDetail(null); }}><MessageSquare size={18} /> Chamados relacionados</div>
             </>
           )}
@@ -1125,6 +1165,10 @@ export default function App() {
                 setAuditLogFilters({ entidadeId, entidadeTipo });
                 navigate(`/audit-log?entidadeId=${encodeURIComponent(entidadeId)}&entidadeTipo=${encodeURIComponent(entidadeTipo)}`);
               }}
+              onUpdate={loadData}
+              currentUser={currentUser ? { id: currentUser.id, systemProfile: currentUser.systemProfile } : undefined}
+              allUsers={allUsers}
+              showToast={showToast}
             />
           )}
 
@@ -1793,16 +1837,30 @@ export default function App() {
           {/* AUDITORIA */}
           {!collaboratorId && activeTab === 'HISTORY' && (
             <div className="fade-in">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
                 <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Relatório de Chamados</h2>
-                <div style={{ fontSize: 12, color: '#71717a' }}>
-                  {systemProfile === 'VIEWER' ? 'Seus registros' : 'Total de Registros'}: {
-                    requests.filter(r => {
-                      if (r.status === 'PENDENTE') return false;
-                      if (systemProfile === 'VIEWER') return r?.requester?.id === currentUser?.id;
-                      return true;
-                    }).length
-                  }
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div style={{ fontSize: 12, color: '#71717a' }}>
+                    {systemProfile === 'VIEWER' ? 'Seus registros' : 'Total de Registros'}: {
+                      requests.filter(r => {
+                        if (r.status === 'PENDENTE') return false;
+                        if (systemProfile === 'VIEWER') return r?.requester?.id === currentUser?.id;
+                        return true;
+                      }).length
+                    }
+                  </div>
+                  {systemProfile === 'SUPER_ADMIN' && (
+                    <button
+                      onClick={() => setShowExportModal(true)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                        background: 'rgba(167, 139, 250, 0.2)', border: '1px solid #7c3aed',
+                        color: '#a78bfa', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer'
+                      }}
+                    >
+                      <Download size={14} /> Baixar Relatório
+                    </button>
+                  )}
                 </div>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 15, marginBottom: 20, alignItems: 'center' }}>
@@ -1819,22 +1877,52 @@ export default function App() {
                   />
                 </div>
 
-                {/* FILTRO ORIGEM */}
+                {/* FILTRO CATEGORIA */}
                 <div style={{ display: 'flex', gap: 4, background: '#18181b', borderRadius: 8, padding: 4, border: '1px solid #27272a' }}>
-                  {(['ALL', 'THERIS', 'INFRA'] as const).map(f => (
+                  {(['ALL', 'GESTAO_PESSOAS', 'GESTAO_ACESSOS', 'TI_INFRA'] as const).map(f => (
                     <button
                       key={f}
-                      onClick={() => setSourceFilter(f)}
+                      onClick={() => setReportCategoryFilter(f)}
                       style={{
                         padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', transition: 'all 0.2s',
-                        background: sourceFilter === f ? (f === 'INFRA' ? 'rgba(251, 191, 36, 0.2)' : f === 'THERIS' ? 'rgba(167, 139, 250, 0.2)' : '#27272a') : 'transparent',
-                        color: sourceFilter === f ? (f === 'INFRA' ? '#fbbf24' : f === 'THERIS' ? '#a78bfa' : 'white') : '#71717a',
+                        background: reportCategoryFilter === f ? (f === 'TI_INFRA' ? 'rgba(251, 191, 36, 0.2)' : f === 'GESTAO_ACESSOS' ? 'rgba(34, 197, 94, 0.2)' : f === 'GESTAO_PESSOAS' ? 'rgba(167, 139, 250, 0.2)' : '#27272a') : 'transparent',
+                        color: reportCategoryFilter === f ? (f === 'TI_INFRA' ? '#fbbf24' : f === 'GESTAO_ACESSOS' ? '#22c55e' : f === 'GESTAO_PESSOAS' ? '#a78bfa' : 'white') : '#71717a',
                         cursor: 'pointer'
                       }}
                     >
-                      {f === 'ALL' ? 'Todos' : f === 'THERIS' ? 'Theris' : 'TI / Infra'}
+                      {f === 'ALL' ? 'TODOS' : f === 'GESTAO_PESSOAS' ? 'GESTÃO DE PESSOAS' : f === 'GESTAO_ACESSOS' ? 'GESTÃO DE ACESSOS' : 'TI / INFRA'}
                     </button>
                   ))}
+                </div>
+
+                {/* FILTRO PERÍODO */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer', fontSize: 11, color: '#71717a' }}>
+                    <span style={{ marginBottom: 4 }}>De</span>
+                    <input
+                      type="date"
+                      value={reportPeriodStart}
+                      onChange={e => setReportPeriodStart(e.target.value)}
+                      className="input-base"
+                      style={{ padding: '6px 10px', background: '#18181b', fontSize: 12, cursor: 'pointer', minWidth: 140 }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer', fontSize: 11, color: '#71717a' }}>
+                    <span style={{ marginBottom: 4 }}>Até</span>
+                    <input
+                      type="date"
+                      value={reportPeriodEnd}
+                      onChange={e => setReportPeriodEnd(e.target.value)}
+                      className="input-base"
+                      style={{ padding: '6px 10px', background: '#18181b', fontSize: 12, cursor: 'pointer', minWidth: 140 }}
+                    />
+                  </label>
+                  <button
+                    onClick={applyReportFilters}
+                    style={{ marginTop: 18, padding: '8px 16px', background: '#3f3f46', border: '1px solid #52525b', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Filtrar
+                  </button>
                 </div>
 
                 {/* FILTRO STATUS */}
@@ -1921,13 +2009,26 @@ export default function App() {
                           } else if (r.status !== statusFilter) return false;
                         }
 
-                        // 3. Filtro de Origem
-                        const INFRA_TYPES = ['INFRA_SUPPORT'];
-                        const isInfra = INFRA_TYPES.includes(r.type);
-                        if (sourceFilter === 'THERIS' && isInfra) return false;
-                        if (sourceFilter === 'INFRA' && !isInfra) return false;
+                        // 3. Filtro de Categoria
+                        const GESTAO_PESSOAS_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
+                        const GESTAO_ACESSOS_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+                        const TI_INFRA_TYPES = ['INFRA_SUPPORT'];
+                        if (reportCategoryFilter === 'GESTAO_PESSOAS' && !GESTAO_PESSOAS_TYPES.includes(r.type)) return false;
+                        if (reportCategoryFilter === 'GESTAO_ACESSOS' && !GESTAO_ACESSOS_TYPES.includes(r.type)) return false;
+                        if (reportCategoryFilter === 'TI_INFRA' && !TI_INFRA_TYPES.includes(r.type)) return false;
 
-                        // 4. Busca
+                        // 4. Filtro de Período
+                        const dateVal = new Date(r.updatedAt || r.createdAt).getTime();
+                        if (reportPeriodStart) {
+                          const start = new Date(reportPeriodStart).setHours(0, 0, 0, 0);
+                          if (dateVal < start) return false;
+                        }
+                        if (reportPeriodEnd) {
+                          const end = new Date(reportPeriodEnd + 'T23:59:59').getTime();
+                          if (dateVal > end) return false;
+                        }
+
+                        // 5. Busca
                         if (searchTerm) {
                           const term = searchTerm.toLowerCase();
                           const matchesName = r.requester?.name?.toLowerCase().includes(term);
@@ -2098,9 +2199,21 @@ export default function App() {
                         if (statusFilter === 'PENDENTE' && !r.status.startsWith('PENDENTE')) return false;
                         if (statusFilter !== 'PENDENTE' && r.status !== statusFilter) return false;
                       }
-                      const INFRA_TYPES = ['INFRA_SUPPORT'];
-                      if (sourceFilter === 'THERIS' && INFRA_TYPES.includes(r.type)) return false;
-                      if (sourceFilter === 'INFRA' && !INFRA_TYPES.includes(r.type)) return false;
+                      const GESTAO_PESSOAS_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
+                      const GESTAO_ACESSOS_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+                      const TI_INFRA_TYPES = ['INFRA_SUPPORT'];
+                      if (reportCategoryFilter === 'GESTAO_PESSOAS' && !GESTAO_PESSOAS_TYPES.includes(r.type)) return false;
+                      if (reportCategoryFilter === 'GESTAO_ACESSOS' && !GESTAO_ACESSOS_TYPES.includes(r.type)) return false;
+                      if (reportCategoryFilter === 'TI_INFRA' && !TI_INFRA_TYPES.includes(r.type)) return false;
+                      const dateVal2 = new Date(r.updatedAt || r.createdAt).getTime();
+                      if (reportPeriodStart) {
+                        const start2 = new Date(reportPeriodStart).setHours(0, 0, 0, 0);
+                        if (dateVal2 < start2) return false;
+                      }
+                      if (reportPeriodEnd) {
+                        const end2 = new Date(reportPeriodEnd + 'T23:59:59').getTime();
+                        if (dateVal2 > end2) return false;
+                      }
                       if (searchTerm) {
                         const term = searchTerm.toLowerCase();
                         const match = r.requester?.name?.toLowerCase().includes(term) || r.id.toLowerCase().includes(term) || String((r as any).details || '').toLowerCase().includes(term);
@@ -2116,8 +2229,8 @@ export default function App() {
             </div>
           )}
 
-          {/* HISTÓRICO DE AUDITORIA */}
-          {!collaboratorId && activeTab === 'AUDIT_LOG' && (
+          {/* HISTÓRICO DE AUDITORIA (oculto para VIEWER) */}
+          {!collaboratorId && activeTab === 'AUDIT_LOG' && systemProfile !== 'VIEWER' && (
             <AuditLog
               initialEntidadeId={auditLogFilters.entidadeId}
               initialEntidadeTipo={auditLogFilters.entidadeTipo}
@@ -2743,6 +2856,14 @@ export default function App() {
       />
 
       {/* CUSTOM UI OVERLAYS */}
+      {currentUser && (
+        <ReportExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          onSuccess={() => showToast('Relatório exportado com sucesso!', 'success')}
+          currentUserId={currentUser.id}
+        />
+      )}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
 
       <CustomConfirmModal

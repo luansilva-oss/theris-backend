@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, User as UserIcon, Mail, Briefcase, Building2, Hash, Clock } from 'lucide-react';
+import { ArrowLeft, User as UserIcon, Mail, Briefcase, Building2, Hash, Clock, Pencil } from 'lucide-react';
 import { API_URL } from '../config';
 import { EntityAuditHistory } from '../components/EntityAuditHistory';
+import { EditUserModal } from '../components/EditUserModal';
 
 interface CollaboratorDetailsData {
   user: {
@@ -11,12 +12,14 @@ interface CollaboratorDetailsData {
     email: string;
     jobTitle?: string | null;
     isActive: boolean;
+    systemProfile?: string;
     departmentRef?: { id: string; name: string } | null;
     unitRef?: { id: string; name: string } | null;
     role?: { id: string; name: string; code: string | null } | null;
     manager?: { id: string; name: string } | null;
   };
-  kbsFerramentas: { ferramenta: string; sigla: string; nivel: string; critico: boolean }[];
+  kbsFerramentas: { ferramenta: string; sigla: string; nivel: string; critico: boolean; criticidade?: string }[];
+  acessosExtraordinarios?: { ferramenta: string; sigla: string; nivel: string; critico: boolean; criticidade?: string }[];
   historicoCargos: {
     id: string;
     tipo: string;
@@ -37,6 +40,10 @@ interface Props {
   id: string;
   onBack: () => void;
   onOpenAuditHistory?: (entidadeId: string, entidadeTipo: string) => void;
+  onUpdate?: () => void;
+  currentUser?: { id: string; systemProfile: string };
+  allUsers?: { id: string; name: string; jobTitle?: string; departmentId?: string; unitId?: string; departmentRef?: { id: string; name: string }; unitRef?: { id: string; name: string }; managerId?: string | null; roleId?: string | null }[];
+  showToast?: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
 export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHistory }) => {
@@ -100,7 +107,27 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
     );
   }
 
-  const { user, kbsFerramentas, historicoCargos } = data;
+  const { user, kbsFerramentas, acessosExtraordinarios = [], historicoCargos } = data;
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const canEdit = currentUser && (currentUser.systemProfile === 'SUPER_ADMIN' || currentUser.systemProfile === 'GESTOR' || currentUser.systemProfile === 'ADMIN');
+
+  const loadDetails = () => {
+    fetch(`${API_URL}/api/users/${id}/details`, { credentials: 'include' })
+      .then(r => {
+        if (!r.ok) {
+          if (r.status === 404) throw new Error('Colaborador não encontrado');
+          throw new Error('Erro ao carregar dados');
+        }
+        return r.json();
+      })
+      .then(setData)
+      .catch(e => setError(e.message));
+  };
+
+  const handleEditSave = () => {
+    loadDetails();
+    onUpdate?.();
+  };
   const initial = (user?.name?.charAt(0) || '?').toUpperCase();
 
   return (
@@ -201,6 +228,32 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
               </div>
             )}
           </div>
+
+          {canEdit && isEditModalOpen && (
+            <EditUserModal
+              isOpen={isEditModalOpen}
+              onClose={() => setIsEditModalOpen(false)}
+              user={{
+                id: user!.id,
+                name: user!.name,
+                email: user!.email,
+                jobTitle: user!.jobTitle ?? undefined,
+                departmentId: user!.departmentRef?.id ?? null,
+                unitId: user!.unitRef?.id ?? null,
+                departmentRef: user!.departmentRef ?? null,
+                unitRef: user!.unitRef ?? null,
+                systemProfile: (user as { systemProfile?: string })?.systemProfile || 'VIEWER',
+                managerId: user!.manager?.id ?? null,
+                roleId: user!.role?.id ?? null,
+                isActive: user!.isActive,
+              }}
+              onUpdate={handleEditSave}
+              currentUser={currentUser!}
+              allUsers={allUsers}
+              showToast={showToast}
+              onOpenAuditHistory={onOpenAuditHistory}
+            />
+          )}
         </div>
 
         {/* Coluna direita — Abas */}
@@ -229,34 +282,80 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
 
           <div style={{ padding: 24 }}>
             {activeTab === 'acessos' && (
-              <div>
-                {kbsFerramentas.length === 0 ? (
-                  <div style={{ color: '#71717a', fontSize: 14 }}>Nenhum acesso cadastrado</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {kbsFerramentas.map((f, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 16,
-                          padding: 12,
-                          background: '#09090b',
-                          borderRadius: 8,
-                          border: '1px solid #27272a',
-                        }}
-                      >
-                        <span style={{ flex: 1, color: '#e4e4e7', fontWeight: 500 }}>{f.ferramenta}</span>
-                        <span style={{ color: '#a1a1aa', fontSize: 13 }}>{f.sigla}</span>
-                        <span style={{ color: '#a78bfa', fontSize: 13 }}>{f.nivel}</span>
-                        {f.critico && (
-                          <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>Crítico</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+                {/* Kit Básico */}
+                <section>
+                  <h4 style={{ color: '#e4e4e7', fontSize: 14, fontWeight: 600, margin: '0 0 12px 0' }}>Kit Básico</h4>
+                  {kbsFerramentas.length === 0 ? (
+                    <div style={{ color: '#71717a', fontSize: 14 }}>Nenhum acesso desta categoria.</div>
+                  ) : (
+                    <div style={{ overflowX: 'auto', border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: '#27272a' }}>
+                            <th style={{ padding: '12px 16px', textAlign: 'left', color: '#a1a1aa', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>Ferramenta</th>
+                            <th style={{ padding: '12px 16px', textAlign: 'left', color: '#a1a1aa', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>ID</th>
+                            <th style={{ padding: '12px 16px', textAlign: 'left', color: '#a1a1aa', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>Nível de Acesso</th>
+                            <th style={{ padding: '12px 16px', textAlign: 'left', color: '#a1a1aa', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>Criticidade</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {kbsFerramentas.map((f, idx) => (
+                            <tr key={idx} style={{ borderTop: '1px solid #27272a' }}>
+                              <td style={{ padding: '12px 16px', color: '#e4e4e7', fontWeight: 500 }}>{f.ferramenta}</td>
+                              <td style={{ padding: '12px 16px', color: '#a1a1aa' }}>{f.sigla}</td>
+                              <td style={{ padding: '12px 16px', color: '#a78bfa' }}>{f.nivel}</td>
+                              <td style={{ padding: '12px 16px' }}>
+                                {f.critico || f.criticidade ? (
+                                  <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
+                                    {f.criticidade || 'Crítico'}
+                                  </span>
+                                ) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+
+                {/* Acessos Extraordinários */}
+                <section>
+                  <h4 style={{ color: '#e4e4e7', fontSize: 14, fontWeight: 600, margin: '0 0 12px 0' }}>Acessos Extraordinários</h4>
+                  {acessosExtraordinarios.length === 0 ? (
+                    <div style={{ color: '#71717a', fontSize: 14 }}>Nenhum acesso desta categoria.</div>
+                  ) : (
+                    <div style={{ overflowX: 'auto', border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: '#27272a' }}>
+                            <th style={{ padding: '12px 16px', textAlign: 'left', color: '#a1a1aa', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>Ferramenta</th>
+                            <th style={{ padding: '12px 16px', textAlign: 'left', color: '#a1a1aa', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>ID</th>
+                            <th style={{ padding: '12px 16px', textAlign: 'left', color: '#a1a1aa', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>Nível de Acesso</th>
+                            <th style={{ padding: '12px 16px', textAlign: 'left', color: '#a1a1aa', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>Criticidade</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {acessosExtraordinarios.map((f, idx) => (
+                            <tr key={idx} style={{ borderTop: '1px solid #27272a' }}>
+                              <td style={{ padding: '12px 16px', color: '#e4e4e7', fontWeight: 500 }}>{f.ferramenta}</td>
+                              <td style={{ padding: '12px 16px', color: '#a1a1aa' }}>{f.sigla}</td>
+                              <td style={{ padding: '12px 16px', color: '#a78bfa' }}>{f.nivel}</td>
+                              <td style={{ padding: '12px 16px' }}>
+                                {f.critico || f.criticidade ? (
+                                  <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
+                                    {f.criticidade || 'Crítico'}
+                                  </span>
+                                ) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
               </div>
             )}
 

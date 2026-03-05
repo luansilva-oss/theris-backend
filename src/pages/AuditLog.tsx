@@ -31,10 +31,28 @@ function getEntityLabel(item: AuditItem): string {
   return `${item.entidadeTipo} • ${name}`;
 }
 
+const SENSITIVE_KEYS = new Set([
+  'mfaCode', 'mfaExpiresAt', 'lastPasswordChangeAt',
+  'senha', 'password', 'hash', 'passwordHash', 'token', 'secret'
+]);
+
+function filterSensitive(obj: unknown): unknown {
+  if (obj == null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(filterSensitive);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const lower = k.toLowerCase();
+    if (SENSITIVE_KEYS.has(k) || lower.includes('senha') || lower.includes('password') || lower.includes('hash') || lower.includes('token') || lower.includes('secret')) continue;
+    out[k] = filterSensitive(v);
+  }
+  return out;
+}
+
 function formatJson(obj: unknown): string {
   if (obj == null) return '—';
   try {
-    return JSON.stringify(obj, null, 2);
+    const filtered = filterSensitive(obj);
+    return JSON.stringify(filtered, null, 2);
   } catch {
     return String(obj);
   }
@@ -42,7 +60,14 @@ function formatJson(obj: unknown): string {
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
 }
 
 interface AuditLogProps {
@@ -331,7 +356,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ initialEntidadeId, initialEn
                   <div style={{ color: '#f4f4f5' }}>{selected.autor?.name || 'Sistema'}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 8 }}>Antes</div>
+                  <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Antes</div>
                   <pre style={{
                     background: '#09090b',
                     padding: 12,
@@ -341,10 +366,11 @@ export const AuditLog: React.FC<AuditLogProps> = ({ initialEntidadeId, initialEn
                     overflow: 'auto',
                     margin: 0,
                     border: '1px solid #27272a',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, monospace',
                   }}>{formatJson(selected.dadosAntes)}</pre>
                 </div>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#22c55e', marginBottom: 8 }}>Depois</div>
+                  <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Depois</div>
                   <pre style={{
                     background: '#09090b',
                     padding: 12,
@@ -354,6 +380,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ initialEntidadeId, initialEn
                     overflow: 'auto',
                     margin: 0,
                     border: '1px solid #27272a',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, monospace',
                   }}>{formatJson(selected.dadosDepois)}</pre>
                 </div>
               </div>
