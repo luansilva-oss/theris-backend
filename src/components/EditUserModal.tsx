@@ -93,13 +93,24 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            const payload = {
+                name,
+                email,
+                jobTitle: jobTitle || null,
+                departmentId: departmentId || null,
+                unitId: unitId || null,
+                roleId: roleId || null,
+                managerId: managerId || null,
+                systemProfile,
+                isActive
+            };
             const res = await fetch(`${API_URL}/api/users/${user.id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'x-requester-id': currentUser.id
                 },
-                body: JSON.stringify({ name, email, jobTitle, departmentId, unitId, systemProfile, managerId, roleId, isActive })
+                body: JSON.stringify(payload)
             });
 
             if (res.ok) {
@@ -184,8 +195,12 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                             onChange={(e) => {
                                 const id = e.target.value || null;
                                 setDepartmentId(id);
-                                setRoleId(null);
-                                setJobTitle('');
+                                const newDeptId = id || '';
+                                const currentRoleStillValid = roleId && availableRoles.some(r => r.id === roleId && r.departmentId === newDeptId);
+                                if (!currentRoleStillValid) {
+                                    setRoleId(null);
+                                    setJobTitle('');
+                                }
                             }}
                             style={{ width: '100%', fontSize: 13 }}
                         >

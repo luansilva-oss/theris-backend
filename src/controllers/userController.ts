@@ -306,6 +306,11 @@ export const getMyTools = async (req: Request, res: Response) => {
   }
 };
 
+function toNullIfEmpty(v: unknown): string | null {
+  if (v === '' || v === undefined || v === null) return null;
+  return String(v);
+}
+
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { name, jobTitle, departmentId, unitId: bodyUnitId, systemProfile, managerId, roleId, isActive } = req.body;
@@ -341,17 +346,19 @@ export const updateUser = async (req: Request, res: Response) => {
       }
     });
 
-    const data: any = {
-      name,
-      email,
-      jobTitle,
-      departmentId: departmentId !== undefined ? departmentId : undefined,
-      unitId: bodyUnitId !== undefined ? bodyUnitId : undefined,
-      managerId,
-      systemProfile: (isSuperAdmin || isGestor) ? systemProfile : undefined
+    const data: Record<string, unknown> = {
+      ...(name !== undefined && { name }),
+      ...(email !== undefined && { email }),
+      ...(jobTitle !== undefined && { jobTitle }),
+      ...(departmentId !== undefined && { departmentId: toNullIfEmpty(departmentId) }),
+      ...(bodyUnitId !== undefined && { unitId: toNullIfEmpty(bodyUnitId) }),
+      ...(managerId !== undefined && { managerId: toNullIfEmpty(managerId) }),
+      ...(roleId !== undefined && { roleId: toNullIfEmpty(roleId) }),
+      ...(isActive !== undefined && { isActive: Boolean(isActive) }),
+      ...((isSuperAdmin || isGestor) && systemProfile !== undefined && { systemProfile })
     };
-    if (roleId !== undefined) data.roleId = roleId || null;
-    if (isActive !== undefined) data.isActive = Boolean(isActive);
+
+    console.log('[updateUser] Updating user:', id, 'data:', JSON.stringify(data));
 
     const updatedUser = await prisma.user.update({
       where: { id },
@@ -416,6 +423,7 @@ export const updateUser = async (req: Request, res: Response) => {
       });
     }
 
+    console.log('[updateUser] Updated result:', JSON.stringify({ id: updatedUser.id, departmentId: updatedUser.departmentId, unitId: updatedUser.unitId, roleId: updatedUser.roleId }));
     return res.json(updatedUser);
   } catch (error) {
     console.error("Erro ao atualizar usuário:", error);

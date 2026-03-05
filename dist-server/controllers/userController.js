@@ -341,6 +341,11 @@ const getMyTools = async (req, res) => {
     }
 };
 exports.getMyTools = getMyTools;
+function toNullIfEmpty(v) {
+    if (v === '' || v === undefined || v === null)
+        return null;
+    return String(v);
+}
 const updateUser = async (req, res) => {
     const { id } = req.params;
     const { name, jobTitle, departmentId, unitId: bodyUnitId, systemProfile, managerId, roleId, isActive } = req.body;
@@ -372,18 +377,17 @@ const updateUser = async (req, res) => {
             }
         });
         const data = {
-            name,
-            email,
-            jobTitle,
-            departmentId: departmentId !== undefined ? departmentId : undefined,
-            unitId: bodyUnitId !== undefined ? bodyUnitId : undefined,
-            managerId,
-            systemProfile: (isSuperAdmin || isGestor) ? systemProfile : undefined
+            ...(name !== undefined && { name }),
+            ...(email !== undefined && { email }),
+            ...(jobTitle !== undefined && { jobTitle }),
+            ...(departmentId !== undefined && { departmentId: toNullIfEmpty(departmentId) }),
+            ...(bodyUnitId !== undefined && { unitId: toNullIfEmpty(bodyUnitId) }),
+            ...(managerId !== undefined && { managerId: toNullIfEmpty(managerId) }),
+            ...(roleId !== undefined && { roleId: toNullIfEmpty(roleId) }),
+            ...(isActive !== undefined && { isActive: Boolean(isActive) }),
+            ...((isSuperAdmin || isGestor) && systemProfile !== undefined && { systemProfile })
         };
-        if (roleId !== undefined)
-            data.roleId = roleId || null;
-        if (isActive !== undefined)
-            data.isActive = Boolean(isActive);
+        console.log('[updateUser] Updating user:', id, 'data:', JSON.stringify(data));
         const updatedUser = await prisma.user.update({
             where: { id },
             data,
@@ -442,6 +446,7 @@ const updateUser = async (req, res) => {
                 autorId: requesterId,
             });
         }
+        console.log('[updateUser] Updated result:', JSON.stringify({ id: updatedUser.id, departmentId: updatedUser.departmentId, unitId: updatedUser.unitId, roleId: updatedUser.roleId }));
         return res.json(updatedUser);
     }
     catch (error) {

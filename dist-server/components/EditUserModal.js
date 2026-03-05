@@ -54,13 +54,24 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers,
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            const payload = {
+                name,
+                email,
+                jobTitle: jobTitle || null,
+                departmentId: departmentId || null,
+                unitId: unitId || null,
+                roleId: roleId || null,
+                managerId: managerId || null,
+                systemProfile,
+                isActive
+            };
             const res = await fetch(`${config_1.API_URL}/api/users/${user.id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'x-requester-id': currentUser.id
                 },
-                body: JSON.stringify({ name, email, jobTitle, departmentId, unitId, systemProfile, managerId, roleId, isActive })
+                body: JSON.stringify(payload)
             });
             if (res.ok) {
                 showToast("Dados do colaborador atualizados!", "success");
@@ -98,8 +109,12 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers,
                                     }, style: { width: '100%', fontSize: 13 }, children: [(0, jsx_runtime_1.jsx)("option", { value: "", children: "Selecione..." }), availableUnits.map(u => (0, jsx_runtime_1.jsx)("option", { value: u.id, children: u.name }, u.id))] })] }), (0, jsx_runtime_1.jsxs)("div", { children: [(0, jsx_runtime_1.jsx)("label", { children: "Departamento" }), (0, jsx_runtime_1.jsxs)("select", { className: "form-input", value: departmentId || '', onChange: (e) => {
                                         const id = e.target.value || null;
                                         setDepartmentId(id);
-                                        setRoleId(null);
-                                        setJobTitle('');
+                                        const newDeptId = id || '';
+                                        const currentRoleStillValid = roleId && availableRoles.some(r => r.id === roleId && r.departmentId === newDeptId);
+                                        if (!currentRoleStillValid) {
+                                            setRoleId(null);
+                                            setJobTitle('');
+                                        }
                                     }, style: { width: '100%', fontSize: 13 }, children: [(0, jsx_runtime_1.jsx)("option", { value: "", children: "Selecione..." }), availableDepts
                                             .filter(d => !unitId || d.unitId === unitId)
                                             .map(d => (0, jsx_runtime_1.jsx)("option", { value: d.id, children: d.name }, d.id))] })] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", children: [(0, jsx_runtime_1.jsx)("label", { children: "Cargo" }), (0, jsx_runtime_1.jsxs)("select", { className: "form-input", value: roleId || '', onChange: (e) => {
