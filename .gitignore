@@ -26,3 +26,5 @@ dist/
 *.log
 .DS_Store
 /src/generated/prisma
+.env.swp
+*.swp
