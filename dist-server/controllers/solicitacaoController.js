@@ -337,15 +337,21 @@ async function runChangeRoleAutomation(requestId, request, approverId) {
             targetUser = u;
     }
     if (!targetUser && collaboratorName) {
-        const u = await prisma.user.findFirst({
+        let u = await prisma.user.findFirst({
             where: { name: { equals: collaboratorName, mode: 'insensitive' } },
             select: { id: true, name: true }
         });
+        if (!u) {
+            u = await prisma.user.findFirst({
+                where: { name: { contains: collaboratorName, mode: 'insensitive' } },
+                select: { id: true, name: true }
+            });
+        }
         if (u)
             targetUser = u;
     }
     if (!targetUser) {
-        console.warn(`[Automação CHANGE_ROLE] Chamado ${requestId}: colaborador não identificado (collaboratorId/email/nome).`);
+        console.warn(`[Automação CHANGE_ROLE] Chamado ${requestId}: colaborador não identificado (collaboratorId/email/nome="${collaboratorName}").`);
         return { success: false };
     }
     let roleId = null;
@@ -364,36 +370,58 @@ async function runChangeRoleAutomation(requestId, request, approverId) {
             jobTitle = role.name;
         }
     }
-    if (!departmentId && (future?.dept || futureDepartmentId)) {
-        const deptName = (future?.dept || futureDepartmentId || '').toString().trim();
-        const dept = await prisma.department.findFirst({
+    const deptName = (future?.dept || futureDepartmentId || '').toString().trim();
+    const roleName = (future?.role || '').toString().trim();
+    if (!departmentId && deptName) {
+        let dept = await prisma.department.findFirst({
             where: { name: { equals: deptName, mode: 'insensitive' } },
             include: { unit: true }
         });
+        if (!dept) {
+            dept = await prisma.department.findFirst({
+                where: { name: { contains: deptName, mode: 'insensitive' } },
+                include: { unit: true }
+            });
+        }
         if (dept) {
             departmentId = dept.id;
             unitId = dept.unitId ?? dept.unit?.id ?? null;
         }
     }
-    if (!roleId && future?.role && departmentId) {
-        const roleName = (future.role || '').toString().trim();
+    if (!roleId && roleName && departmentId) {
+        let role = await prisma.role.findFirst({
+            where: { departmentId, name: { equals: roleName, mode: 'insensitive' } }
+        });
+        if (!role) {
+            role = await prisma.role.findFirst({
+                where: { departmentId, name: { contains: roleName, mode: 'insensitive' } }
+            });
+        }
+        if (role) {
+            roleId = role.id;
+            jobTitle = role.name;
+        }
+    }
+    if (!roleId && roleName && !departmentId) {
         const role = await prisma.role.findFirst({
-            where: {
-                departmentId,
-                name: { equals: roleName, mode: 'insensitive' }
-            }
+            where: { name: { contains: roleName, mode: 'insensitive' } },
+            include: { department: true }
         });
         if (role) {
             roleId = role.id;
+            departmentId = role.departmentId;
+            unitId = role.department?.unitId ?? null;
             jobTitle = role.name;
         }
     }
     if (futureUnitId && !unitId)
         unitId = futureUnitId;
     if (!roleId || !departmentId) {
-        console.warn(`[Automação CHANGE_ROLE] Chamado ${requestId}: cargo ou departamento de destino não encontrados (future.role="${future?.role}", future.dept="${future?.dept}").`);
+        console.warn(`[Automação CHANGE_ROLE] Chamado ${requestId}: cargo ou departamento de destino não encontrados (future.role="${roleName}", future.dept="${deptName}").`);
         return { success: false };
     }
+    if (!jobTitle && roleName)
+        jobTitle = roleName;
     const oldUser = await prisma.user.findUnique({
         where: { id: targetUser.id },
         select: { roleId: true, jobTitle: true, departmentId: true, unitId: true }
