@@ -85,13 +85,15 @@ async function main() {
   for (const p of PEOPLE) {
     const existing = await prisma.user.findUnique({ where: { email: p.email } });
     const roleId = roleByDeptNameAndRoleName.get(`${p.department}::${p.jobTitle}`) ?? null;
+    const unitId = unitMap.get(p.unit) ?? null;
+    const departmentId = deptMap.get(deptKey(p.unit, p.department)) ?? null;
     if (existing) {
       await prisma.user.update({
         where: { email: p.email },
         data: {
           name: p.name,
-          unit: p.unit,
-          department: p.department,
+          unitId: unitId ?? undefined,
+          departmentId: departmentId ?? undefined,
           jobTitle: p.jobTitle,
           roleId: roleId ?? undefined,
         },
@@ -102,8 +104,8 @@ async function main() {
         data: {
           name: p.name,
           email: p.email,
-          unit: p.unit,
-          department: p.department,
+          unitId: unitId ?? undefined,
+          departmentId: departmentId ?? undefined,
           jobTitle: p.jobTitle,
           roleId: roleId ?? undefined,
           systemProfile: 'VIEWER',
