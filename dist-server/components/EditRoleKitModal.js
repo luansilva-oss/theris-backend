@@ -148,6 +148,7 @@ const EditRoleKitModal = ({ isOpen, onClose, role, departmentId, units = [], dep
                 }
                 const res = await fetch(`${config_1.API_URL}/api/structure/roles`, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         name,
@@ -158,7 +159,7 @@ const EditRoleKitModal = ({ isOpen, onClose, role, departmentId, units = [], dep
                 });
                 if (res.ok) {
                     showToast('Cargo criado com sucesso!', 'success');
-                    onUpdate();
+                    await Promise.resolve(onUpdate());
                     onClose();
                 }
                 else {
@@ -177,12 +178,13 @@ const EditRoleKitModal = ({ isOpen, onClose, role, departmentId, units = [], dep
                 }
                 const res = await fetch(`${config_1.API_URL}/api/structure/roles/${role.id}`, {
                     method: 'PUT',
+                    credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 if (res.ok) {
                     showToast('Cargo e kit atualizados!', 'success');
-                    onUpdate();
+                    await Promise.resolve(onUpdate());
                     onClose();
                 }
                 else {

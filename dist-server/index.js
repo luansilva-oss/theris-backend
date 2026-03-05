@@ -62,7 +62,16 @@ const prisma = new client_1.PrismaClient();
 // Cron: lembrete de troca de senha a cada 90 dias (DM Slack às 09:00)
 (0, passwordReminderCron_1.startPasswordReminderCron)();
 // --- CORS ---
-app.use((0, cors_1.default)({ origin: '*', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }));
+app.use((0, cors_1.default)({
+    origin: [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'https://theris.grupo-3c.com',
+        'https://theris-backend.onrender.com'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+}));
 // ⚠️ ROTA DO SLACK
 app.use('/api/slack', slackService_1.slackReceiver.router);
 // --- JSON MIDDLEWARE (limite maior para upload base64 de anexos) ---
@@ -130,6 +139,7 @@ app.post('/api/webhooks/convenia', conveniaController_1.handleConveniaWebhook);
 // ============================================================
 // --- WORKFLOW (SOLICITAÇÕES) ---
 // ============================================================
+app.get('/api/requests/export/csv', solicitacaoController_1.exportRequestsCsv);
 app.get('/api/solicitacoes', solicitacaoController_1.getSolicitacoes);
 app.get('/api/solicitacoes/my-tickets', solicitacaoController_1.getMyTickets);
 app.get('/api/solicitacoes/:id', solicitacaoController_1.getSolicitacaoById);

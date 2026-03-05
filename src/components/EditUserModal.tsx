@@ -38,7 +38,7 @@ interface Props {
     user: User;
     onUpdate: () => void;
     currentUser: { id: string, systemProfile: string };
-    allUsers: User[]; // Adicionado para selecionar gestor
+    allUsers: { id: string; name: string; jobTitle?: string }[]; // Lista para selecionar gestor
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
     onOpenAuditHistory?: (entidadeId: string, entidadeTipo: string) => void;
 }

@@ -17,6 +17,7 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers,
     const [systemProfile, setSystemProfile] = (0, react_1.useState)(user.systemProfile || 'VIEWER');
     const [managerId, setManagerId] = (0, react_1.useState)(user.managerId || null);
     const [roleId, setRoleId] = (0, react_1.useState)(user.roleId || null);
+    const [isActive, setIsActive] = (0, react_1.useState)(user.isActive !== false);
     const [isSaving, setIsSaving] = (0, react_1.useState)(false);
     const [availableUnits, setAvailableUnits] = (0, react_1.useState)([]);
     const [availableDepts, setAvailableDepts] = (0, react_1.useState)([]);
@@ -30,6 +31,7 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers,
         setSystemProfile(user.systemProfile || 'VIEWER');
         setManagerId(user.managerId || null);
         setRoleId(user.roleId || null);
+        setIsActive(user.isActive !== false);
         loadStructure();
     }, [user]);
     const loadStructure = async () => {
@@ -58,7 +60,7 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers,
                     'Content-Type': 'application/json',
                     'x-requester-id': currentUser.id
                 },
-                body: JSON.stringify({ name, email, jobTitle, departmentId, unitId, systemProfile, managerId, roleId })
+                body: JSON.stringify({ name, email, jobTitle, departmentId, unitId, systemProfile, managerId, roleId, isActive })
             });
             if (res.ok) {
                 showToast("Dados do colaborador atualizados!", "success");
@@ -107,7 +109,7 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers,
                                 setJobTitle(role?.name ?? '');
                             }, style: { width: '100%', fontSize: 13 }, children: [(0, jsx_runtime_1.jsx)("option", { value: "", children: "Selecione..." }), availableRoles
                                     .filter(r => !departmentId || r.departmentId === departmentId)
-                                    .map(r => (0, jsx_runtime_1.jsx)("option", { value: r.id, children: r.name }, r.id))] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", children: [(0, jsx_runtime_1.jsx)("label", { children: "Perfil de Sistema (Acesso)" }), (0, jsx_runtime_1.jsx)("select", { className: "form-input", value: systemProfile, onChange: (e) => setSystemProfile(e.target.value), children: profileOptions.map(opt => ((0, jsx_runtime_1.jsx)("option", { value: opt.value, style: { background: '#18181b' }, children: opt.label }, opt.value))) })] }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", children: [(0, jsx_runtime_1.jsx)("label", { children: "Gestor Imediato" }), (0, jsx_runtime_1.jsxs)("select", { className: "form-input", value: managerId || '', onChange: (e) => setManagerId(e.target.value || null), style: { width: '100%', fontSize: 13 }, children: [(0, jsx_runtime_1.jsx)("option", { value: "", children: "Sem Gestor (Root)" }), allUsers
+                                    .map(r => (0, jsx_runtime_1.jsx)("option", { value: r.id, children: r.name }, r.id))] })] }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", children: [(0, jsx_runtime_1.jsx)("label", { children: "Perfil de Sistema (Acesso)" }), (0, jsx_runtime_1.jsx)("select", { className: "form-input", value: systemProfile, onChange: (e) => setSystemProfile(e.target.value), children: profileOptions.map(opt => ((0, jsx_runtime_1.jsx)("option", { value: opt.value, style: { background: '#18181b' }, children: opt.label }, opt.value))) })] }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)("input", { type: "checkbox", id: "isActive", checked: isActive, onChange: (e) => setIsActive(e.target.checked), style: { width: 18, height: 18, accentColor: '#a78bfa' } }), (0, jsx_runtime_1.jsx)("label", { htmlFor: "isActive", style: { margin: 0 }, children: "Colaborador ativo" })] }), (0, jsx_runtime_1.jsxs)("div", { className: "form-group", children: [(0, jsx_runtime_1.jsx)("label", { children: "Gestor Imediato" }), (0, jsx_runtime_1.jsxs)("select", { className: "form-input", value: managerId || '', onChange: (e) => setManagerId(e.target.value || null), style: { width: '100%', fontSize: 13 }, children: [(0, jsx_runtime_1.jsx)("option", { value: "", children: "Sem Gestor (Root)" }), allUsers
                                     .filter(u => u.id !== user.id) // Não pode ser gestor de si mesmo
                                     .sort((a, b) => a.name.localeCompare(b.name))
                                     .map(u => ((0, jsx_runtime_1.jsxs)("option", { value: u.id, children: [u.name, " (", u.jobTitle || 'Sem Cargo', ")"] }, u.id)))] })] }), user && ((0, jsx_runtime_1.jsx)(EntityAuditHistory_1.EntityAuditHistory, { entidadeId: user.id, entidadeTipo: "User", limit: 5, onOpenFullHistory: onOpenAuditHistory ? (p) => onOpenAuditHistory(p.entidadeId, p.entidadeTipo) : undefined })), (0, jsx_runtime_1.jsxs)("div", { style: { marginTop: '20px', display: 'flex', gap: '10px' }, children: [(0, jsx_runtime_1.jsx)("button", { className: "btn-verify", style: { margin: 0, flex: 1 }, disabled: isSaving, onClick: handleSave, children: isSaving ? 'Salvando...' : 'Salvar Alterações' }), (0, jsx_runtime_1.jsx)("button", { className: "btn-verify", style: { margin: 0, background: 'transparent', border: '1px solid #374151', color: '#9CA3AF' }, onClick: onClose, children: "Cancelar" })] })] }) }));

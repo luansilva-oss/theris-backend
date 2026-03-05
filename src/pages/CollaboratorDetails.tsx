@@ -42,11 +42,11 @@ interface Props {
   onOpenAuditHistory?: (entidadeId: string, entidadeTipo: string) => void;
   onUpdate?: () => void;
   currentUser?: { id: string; systemProfile: string };
-  allUsers?: { id: string; name: string; jobTitle?: string; departmentId?: string; unitId?: string; departmentRef?: { id: string; name: string }; unitRef?: { id: string; name: string }; managerId?: string | null; roleId?: string | null }[];
+  allUsers?: { id: string; name: string; jobTitle?: string }[];
   showToast?: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
-export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHistory }) => {
+export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHistory, onUpdate, currentUser, allUsers = [], showToast }) => {
   const navigate = useNavigate();
   const handleBack = () => navigate('/people');
   const [data, setData] = useState<CollaboratorDetailsData | null>(null);

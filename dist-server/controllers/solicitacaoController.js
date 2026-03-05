@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createAttachment = exports.createComment = exports.updateSolicitacaoMetadata = exports.getSolicitacaoById = exports.updateSolicitacao = exports.getMyTickets = exports.getSolicitacoes = exports.createSolicitacao = void 0;
+exports.exportRequestsCsv = exports.createAttachment = exports.createComment = exports.updateSolicitacaoMetadata = exports.getSolicitacaoById = exports.updateSolicitacao = exports.getMyTickets = exports.getSolicitacoes = exports.createSolicitacao = void 0;
 const client_1 = require("@prisma/client");
 const cloudinary_1 = require("cloudinary");
 const slackService_1 = require("../services/slackService");
@@ -273,12 +273,14 @@ async function runExtraordinaryAccessAutomation(requestId, request) {
     const duration = request.extraordinaryDuration ?? (d.duration != null ? parseInt(String(d.duration), 10) : null);
     const unit = (request.extraordinaryUnit ?? d.unit);
     const statusValue = (levelRequested && String(levelRequested).trim()) || 'ACTIVE';
+    const levelValue = levelRequested && String(levelRequested).trim() ? levelRequested.trim() : null;
     if (existing) {
         await prisma.access.update({
             where: { id: existing.id },
             data: {
                 status: statusValue,
                 isExtraordinary: isExtra,
+                ...(levelValue != null && { level: levelValue }),
                 ...(duration != null && { duration }),
                 ...(unit != null && { unit })
             }
@@ -291,6 +293,7 @@ async function runExtraordinaryAccessAutomation(requestId, request) {
                 userId: targetUserId,
                 status: statusValue,
                 isExtraordinary: isExtra,
+                ...(levelValue != null && { level: levelValue }),
                 ...(duration != null && { duration }),
                 ...(unit != null && { unit })
             }
@@ -358,8 +361,14 @@ const createSolicitacao = async (req, res) => {
         let approverId = null;
         let currentApproverRole = 'MANAGER';
         let status = 'PENDENTE_GESTOR';
-        // ROTA A: FERRAMENTAS / ACESSOS / EXTRAORDINÁRIO
-        if (['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'].includes(safeType) || isExtraordinary) {
+        // ROTA A: ACESSO EXTRAORDINÁRIO — Owner aprova primeiro (PENDING_OWNER)
+        if (isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) {
+            status = 'PENDING_OWNER';
+            currentApproverRole = 'TOOL_OWNER';
+            approverId = null;
+        }
+        // ROTA A2: Kit padrão / alteração (não extraordinário)
+        else if (['ACCESS_TOOL', 'ACCESS_CHANGE'].includes(safeType)) {
             status = 'PENDENTE_SI';
             currentApproverRole = 'SI_ANALYST';
             approverId = null;
@@ -404,10 +413,8 @@ const createSolicitacao = async (req, res) => {
                 currentApproverRole = 'SI_ANALYST';
             }
         }
-        if (isExtraordinary) {
-            status = 'PENDENTE_SI';
-            currentApproverRole = 'SI_ANALYST';
-        }
+        const toolNameAex = detailsObj?.tool || detailsObj?.toolName;
+        const accessLevelAex = detailsObj?.target || detailsObj?.targetValue;
         const newRequest = await prisma.request.create({
             data: {
                 requesterId: safeRequesterId,
@@ -419,15 +426,28 @@ const createSolicitacao = async (req, res) => {
                 approverId,
                 isExtraordinary: Boolean(isExtraordinary),
                 extraordinaryDuration: detailsObj.duration ? parseInt(detailsObj.duration) : null,
-                extraordinaryUnit: detailsObj.unit || null
+                extraordinaryUnit: detailsObj.unit || null,
+                ...(toolNameAex && { toolName: String(toolNameAex) }),
+                ...(accessLevelAex && { accessLevel: String(accessLevelAex) })
             }
         });
         const { notifyTicketEvent } = await Promise.resolve().then(() => __importStar(require('../services/ticketEventService')));
         notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {}).catch(() => { });
+        if ((isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) && toolNameAex) {
+            const requester = await prisma.user.findUnique({ where: { id: safeRequesterId }, select: { name: true } });
+            const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+            const { sendAexCreationDMs } = await Promise.resolve().then(() => __importStar(require('../services/aexOwnerService')));
+            const app = getSlackApp();
+            if (app?.client) {
+                sendAexCreationDMs(app.client, newRequest.id, String(toolNameAex), String(accessLevelAex || '—'), requester?.name || 'Solicitante', String(justification || '')).catch((err) => console.error('[AEX] Erro ao enviar DMs:', err));
+            }
+        }
         return res.status(201).json(newRequest);
     }
     catch (error) {
-        console.error('Erro ao criar solicitação:', error);
+        console.error('SOLICITACOES ERROR (createSolicitacao):', error);
+        if (error instanceof Error)
+            console.error('Stack:', error.stack);
         return res.status(500).json({ error: 'Erro interno.' });
     }
 };
@@ -496,7 +516,7 @@ const getSolicitacoes = async (req, res) => {
             where,
             orderBy: { createdAt: 'desc' },
             include: {
-                requester: { select: { id: true, name: true, email: true, department: true } },
+                requester: { select: { id: true, name: true, email: true, departmentRef: { select: { id: true, name: true } } } },
                 approver: { select: { id: true, name: true, email: true } },
                 assignee: { select: { id: true, name: true, email: true } }
             }
@@ -504,6 +524,9 @@ const getSolicitacoes = async (req, res) => {
         return res.json(requests);
     }
     catch (error) {
+        console.error('SOLICITACOES ERROR (getSolicitacoes):', error);
+        if (error instanceof Error)
+            console.error('Stack:', error.stack);
         return res.status(500).json({ error: 'Erro ao buscar solicitações' });
     }
 };
@@ -546,7 +569,7 @@ const getMyTickets = async (req, res) => {
             where,
             orderBy: { createdAt: 'desc' },
             include: {
-                requester: { select: { id: true, name: true, email: true, department: true } },
+                requester: { select: { id: true, name: true, email: true, departmentRef: { select: { id: true, name: true } } } },
                 approver: { select: { id: true, name: true, email: true } },
                 assignee: { select: { id: true, name: true, email: true } }
             }
@@ -554,6 +577,9 @@ const getMyTickets = async (req, res) => {
         return res.json(requests);
     }
     catch (error) {
+        console.error('SOLICITACOES ERROR (getMyTickets):', error);
+        if (error instanceof Error)
+            console.error('Stack:', error.stack);
         return res.status(500).json({ error: 'Erro ao buscar seus chamados' });
     }
 };
@@ -700,8 +726,9 @@ const updateSolicitacao = async (req, res) => {
                 updatedAt: new Date()
             }
         });
-        // Notificação Slack
-        if (request.requester.email) {
+        // Notificação Slack (AEX usa mensagem específica após grant)
+        const isAexApproval = action === 'APROVADO' && (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary);
+        if (request.requester.email && !isAexApproval) {
             (0, slackService_1.sendSlackNotification)(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada e executada.', request.type, undefined, request.details);
         }
         // =========================================================
@@ -725,6 +752,47 @@ const updateSolicitacao = async (req, res) => {
             else if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
                 try {
                     await runExtraordinaryAccessAutomation(id, request);
+                    const { registrarMudanca } = await Promise.resolve().then(() => __importStar(require('../lib/auditLog')));
+                    const toolNameAex = request.toolName || (() => { try {
+                        const d = JSON.parse(request.details || '{}');
+                        return d.tool || d.toolName || '—';
+                    }
+                    catch {
+                        return '—';
+                    } })();
+                    const accessLevelAex = request.accessLevel || (() => { try {
+                        const d = JSON.parse(request.details || '{}');
+                        return d.target || d.targetValue || '—';
+                    }
+                    catch {
+                        return '—';
+                    } })();
+                    await registrarMudanca({
+                        tipo: 'AEX_APPROVED',
+                        entidadeTipo: 'Request',
+                        entidadeId: id,
+                        descricao: `Acesso extraordinário concedido: ${request.requester?.name || 'Solicitante'} → ${toolNameAex} (${accessLevelAex})`,
+                        dadosAntes: { status: 'PENDING_SI' },
+                        dadosDepois: { status: 'APROVADO' },
+                        autorId: approverId || undefined
+                    });
+                    if (request.requester?.email) {
+                        const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+                        const { sendAexApprovedBySIDM } = await Promise.resolve().then(() => __importStar(require('../services/aexOwnerService')));
+                        const app = getSlackApp();
+                        if (app?.client) {
+                            try {
+                                const lookup = await app.client.users.lookupByEmail({ email: request.requester.email });
+                                const requesterSlackId = lookup.user?.id;
+                                if (requesterSlackId) {
+                                    await sendAexApprovedBySIDM(app.client, requesterSlackId, toolNameAex, accessLevelAex);
+                                }
+                            }
+                            catch (e) {
+                                console.error('[AEX] Erro ao notificar solicitante da aprovação:', e);
+                            }
+                        }
+                    }
                 }
                 catch (triggerError) {
                     console.error("❌ Erro gatilho automático (acesso extraordinário):", triggerError);
@@ -763,7 +831,9 @@ const updateSolicitacao = async (req, res) => {
         return res.json(updatedRequest);
     }
     catch (error) {
-        console.error(error);
+        console.error('SOLICITACOES ERROR (updateSolicitacao):', error);
+        if (error instanceof Error)
+            console.error('Stack:', error.stack);
         return res.status(500).json({ error: 'Erro ao atualizar solicitação' });
     }
 };
@@ -779,7 +849,7 @@ const getSolicitacaoById = async (req, res) => {
         const request = await prisma.request.findUnique({
             where: { id },
             include: {
-                requester: { select: { id: true, name: true, email: true, department: true } },
+                requester: { select: { id: true, name: true, email: true, departmentRef: { select: { id: true, name: true } } } },
                 approver: { select: { id: true, name: true, email: true } },
                 assignee: { select: { id: true, name: true, email: true } },
                 comments: { orderBy: { createdAt: 'asc' }, include: { author: { select: { id: true, name: true, email: true } } } },
@@ -793,7 +863,9 @@ const getSolicitacaoById = async (req, res) => {
         return res.json(request);
     }
     catch (error) {
-        console.error(error);
+        console.error('SOLICITACOES ERROR (getSolicitacaoById):', error);
+        if (error instanceof Error)
+            console.error('Stack:', error.stack);
         return res.status(500).json({ error: 'Erro ao buscar solicitação' });
     }
 };
@@ -850,6 +922,45 @@ const updateSolicitacaoMetadata = async (req, res) => {
             if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) || existing.isExtraordinary) {
                 try {
                     await runExtraordinaryAccessAutomation(id, existing);
+                    const { registrarMudanca } = await Promise.resolve().then(() => __importStar(require('../lib/auditLog')));
+                    const toolNameAex = existing.toolName || (() => { try {
+                        const d = JSON.parse(existing.details || '{}');
+                        return d.tool || d.toolName || '—';
+                    }
+                    catch {
+                        return '—';
+                    } })();
+                    const accessLevelAex = existing.accessLevel || (() => { try {
+                        const d = JSON.parse(existing.details || '{}');
+                        return d.target || d.targetValue || '—';
+                    }
+                    catch {
+                        return '—';
+                    } })();
+                    await registrarMudanca({
+                        tipo: 'AEX_APPROVED',
+                        entidadeTipo: 'Request',
+                        entidadeId: id,
+                        descricao: `Acesso extraordinário concedido: ${existing.requester?.name || 'Solicitante'} → ${toolNameAex} (${accessLevelAex})`,
+                        dadosAntes: { status: existing.status },
+                        dadosDepois: { status: 'APROVADO' }
+                    });
+                    if (existing.requester?.email) {
+                        const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+                        const { sendAexApprovedBySIDM } = await Promise.resolve().then(() => __importStar(require('../services/aexOwnerService')));
+                        const app = getSlackApp();
+                        if (app?.client) {
+                            try {
+                                const lookup = await app.client.users.lookupByEmail({ email: existing.requester.email });
+                                if (lookup.user?.id) {
+                                    await sendAexApprovedBySIDM(app.client, lookup.user.id, toolNameAex, accessLevelAex);
+                                }
+                            }
+                            catch (e) {
+                                console.error('[AEX] Erro ao notificar solicitante da aprovação (metadata):', e);
+                            }
+                        }
+                    }
                 }
                 catch (extraError) {
                     console.error('[Automação] Erro ao vincular acesso extraordinário (metadata):', extraError);
@@ -859,7 +970,9 @@ const updateSolicitacaoMetadata = async (req, res) => {
         return res.json(updated);
     }
     catch (error) {
-        console.error(error);
+        console.error('SOLICITACOES ERROR (updateSolicitacaoMetadata):', error);
+        if (error instanceof Error)
+            console.error('Stack:', error.stack);
         return res.status(500).json({ error: 'Erro ao atualizar metadados' });
     }
 };
@@ -890,7 +1003,9 @@ const createComment = async (req, res) => {
         return res.status(201).json(comment);
     }
     catch (error) {
-        console.error(error);
+        console.error('SOLICITACOES ERROR (createComment):', error);
+        if (error instanceof Error)
+            console.error('Stack:', error.stack);
         return res.status(500).json({ error: 'Erro ao adicionar comentário' });
     }
 };
@@ -941,8 +1056,162 @@ const createAttachment = async (req, res) => {
         return res.status(201).json(attachment);
     }
     catch (error) {
-        console.error(error);
+        console.error('SOLICITACOES ERROR (createAttachment):', error);
+        if (error instanceof Error)
+            console.error('Stack:', error.stack);
         return res.status(500).json({ error: 'Erro ao adicionar anexo' });
     }
 };
 exports.createAttachment = createAttachment;
+// ============================================================
+// 8. EXPORT CSV (Relatório - SUPER_ADMIN)
+// ============================================================
+const EXPORT_CATEGORY_TYPES = {
+    GESTAO_PESSOAS: ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'],
+    GESTAO_ACESSOS: ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'],
+    TI_INFRA: ['INFRA_SUPPORT']
+};
+const SUBJECT_MAP = {
+    'ACCESS_TOOL': 'Novo Acesso',
+    'ACESSO_FERRAMENTA': 'Novo Acesso',
+    'ACCESS_CHANGE': 'Alteração de Acesso',
+    'EXTRAORDINARIO': 'Acesso Extraordinário',
+    'ACCESS_TOOL_EXTRA': 'Acesso Extraordinário',
+    'DEPUTY_DESIGNATION': 'Designação de Substituto',
+    'CHANGE_ROLE': 'Mudança de Cargo',
+    'PROMOCAO': 'Promoção',
+    'ADMISSAO': 'Admissão / Onboarding',
+    'DEMISSAO': 'Desligamento / Offboarding',
+    'FIRING': 'Desligamento / Offboarding',
+    'INFRA_SUPPORT': 'Suporte de TI / Hardware'
+};
+function getCategoryForType(type) {
+    for (const [cat, types] of Object.entries(EXPORT_CATEGORY_TYPES)) {
+        if (types.includes(type)) {
+            return cat === 'GESTAO_PESSOAS' ? 'Gestão de Pessoas' : cat === 'GESTAO_ACESSOS' ? 'Gestão de Acessos' : 'TI / Infra';
+        }
+    }
+    return 'Geral';
+}
+function formatDetailsForCsv(details, type) {
+    try {
+        const d = typeof details === 'string' ? JSON.parse(details || '{}') : (details || {});
+        const parts = [];
+        if (d.info)
+            parts.push(String(d.info));
+        if (type === 'CHANGE_ROLE' && d.current)
+            parts.push(`Atual: ${d.current.role || ''} / ${d.current.dept || ''}`);
+        if (type === 'CHANGE_ROLE' && d.future)
+            parts.push(`Novo: ${d.future.role || ''} / ${d.future.dept || ''}`);
+        if (d.collaboratorName)
+            parts.push(`Colaborador: ${d.collaboratorName}`);
+        if (d.tool)
+            parts.push(`Ferramenta: ${d.tool}`);
+        if (d.target)
+            parts.push(`Nível: ${d.target}`);
+        return parts.join(' · ') || '-';
+    }
+    catch {
+        return details || '-';
+    }
+}
+function escapeCsvCell(val) {
+    const s = String(val ?? '').replace(/"/g, '""');
+    return s.includes(',') || s.includes('\n') || s.includes('"') ? `"${s}"` : s;
+}
+const exportRequestsCsv = async (req, res) => {
+    const userId = req.headers['x-user-id']?.trim();
+    if (!userId)
+        return res.status(401).json({ error: 'Usuário não identificado.' });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true } });
+    if (!user || user.systemProfile !== 'SUPER_ADMIN')
+        return res.status(403).json({ error: 'Apenas SUPER_ADMIN pode exportar relatórios.' });
+    const startDate = req.query.startDate;
+    const endDate = req.query.endDate;
+    const categories = req.query.categories;
+    const columns = req.query.columns;
+    if (!startDate || !endDate)
+        return res.status(400).json({ error: 'startDate e endDate são obrigatórios.' });
+    const catArr = Array.isArray(categories) ? categories : categories ? [categories] : ['GESTAO_PESSOAS', 'GESTAO_ACESSOS', 'TI_INFRA'];
+    const colArr = Array.isArray(columns) ? columns : columns ? [columns] : ['id', 'categoria', 'assunto', 'status', 'solicitante', 'responsavel', 'data', 'justificativa', 'detalhes', 'observacao'];
+    const typeList = [];
+    for (const c of catArr) {
+        const types = EXPORT_CATEGORY_TYPES[c];
+        if (types)
+            typeList.push(...types);
+    }
+    const where = {
+        createdAt: {
+            gte: new Date(startDate),
+            lte: new Date(endDate)
+        }
+    };
+    if (typeList.length > 0)
+        where.type = { in: [...new Set(typeList)] };
+    const requests = await prisma.request.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: {
+            requester: { select: { name: true } },
+            assignee: { select: { name: true } }
+        }
+    });
+    const COL_LABELS = {
+        id: 'ID do chamado',
+        categoria: 'Categoria',
+        assunto: 'Assunto / Tipo',
+        status: 'Status',
+        solicitante: 'Solicitante',
+        responsavel: 'Responsável',
+        data: 'Data e Hora',
+        justificativa: 'Justificativa',
+        detalhes: 'Detalhes (Slack)',
+        observacao: 'Observação'
+    };
+    const header = colArr.map(c => COL_LABELS[c] || c);
+    const rows = [header];
+    const fmt = (d) => d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+    for (const r of requests) {
+        const category = getCategoryForType(r.type);
+        const subject = SUBJECT_MAP[r.type] || r.type;
+        const detailsStr = formatDetailsForCsv(r.details, r.type);
+        const adminNote = r.adminNote || '';
+        const row = [];
+        for (const c of colArr) {
+            if (c === 'id')
+                row.push(escapeCsvCell('#' + r.id.split('-')[0].toUpperCase()));
+            else if (c === 'categoria')
+                row.push(escapeCsvCell(category));
+            else if (c === 'assunto')
+                row.push(escapeCsvCell(subject));
+            else if (c === 'status')
+                row.push(escapeCsvCell(r.status));
+            else if (c === 'solicitante')
+                row.push(escapeCsvCell(r.requester?.name || '-'));
+            else if (c === 'responsavel')
+                row.push(escapeCsvCell(r.assignee?.name || '-'));
+            else if (c === 'data')
+                row.push(escapeCsvCell(fmt(r.createdAt)));
+            else if (c === 'justificativa')
+                row.push(escapeCsvCell(r.justification || '-'));
+            else if (c === 'detalhes')
+                row.push(escapeCsvCell(detailsStr));
+            else if (c === 'observacao')
+                row.push(escapeCsvCell(adminNote));
+            else
+                row.push('');
+        }
+        rows.push(row);
+    }
+    const csv = rows.map(r => r.join(',')).join('\r\n');
+    const bom = '\uFEFF';
+    const buffer = Buffer.from(bom + csv, 'utf-8');
+    const catLabel = catArr.length >= 3 ? 'todos' : catArr.join('_').toLowerCase();
+    const d1 = new Date(startDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+    const d2 = new Date(endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+    const filename = `relatorio_${catLabel}_${d1}_${d2}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+};
+exports.exportRequestsCsv = exportRequestsCsv;

@@ -3,8 +3,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getAuditLog = void 0;
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
+const SENSITIVE_KEYS = new Set(['mfaCode', 'mfaExpiresAt', 'lastPasswordChangeAt', 'senha', 'password', 'hash', 'passwordHash', 'token', 'secret']);
+function filterSensitive(obj) {
+    if (obj == null || typeof obj !== 'object')
+        return obj;
+    if (Array.isArray(obj))
+        return obj.map(filterSensitive);
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+        const lower = k.toLowerCase();
+        if (SENSITIVE_KEYS.has(k) || lower.includes('senha') || lower.includes('password') || lower.includes('hash') || lower.includes('token') || lower.includes('secret'))
+            continue;
+        out[k] = filterSensitive(v);
+    }
+    return out;
+}
 /** GET /api/audit-log?entidadeId=xxx&entidadeTipo=Role&tipo=X&limit=20&offset=0&search=text&dataInicio=ISO&dataFim=ISO&autorNome=... */
 const getAuditLog = async (req, res) => {
+    const userId = req.headers['x-user-id']?.trim();
+    if (!userId)
+        return res.status(401).json({ error: 'Usuário não identificado.' });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true } });
+    if (!user || user.systemProfile === 'VIEWER')
+        return res.status(403).json({ error: 'Acesso negado. Perfil VIEWER não pode acessar o histórico de auditoria.' });
     const entidadeId = req.query.entidadeId;
     const entidadeTipo = req.query.entidadeTipo;
     const tipo = req.query.tipo;
@@ -34,7 +55,7 @@ const getAuditLog = async (req, res) => {
         if (autorNome && autorNome.trim()) {
             where.autor = { name: { contains: autorNome.trim(), mode: 'insensitive' } };
         }
-        const [items, total] = await Promise.all([
+        const [rows, total] = await Promise.all([
             prisma.historicoMudanca.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
@@ -44,10 +65,17 @@ const getAuditLog = async (req, res) => {
             }),
             prisma.historicoMudanca.count({ where }),
         ]);
+        const items = rows.map((r) => ({
+            ...r,
+            dadosAntes: r.dadosAntes ? filterSensitive(r.dadosAntes) : null,
+            dadosDepois: r.dadosDepois ? filterSensitive(r.dadosDepois) : null,
+        }));
         return res.json({ items, total, limit, offset });
     }
     catch (error) {
         console.error('Erro ao buscar histórico de auditoria:', error);
+        if (error instanceof Error)
+            console.error('Stack:', error.stack);
         return res.status(500).json({ error: 'Erro ao buscar histórico.' });
     }
 };
