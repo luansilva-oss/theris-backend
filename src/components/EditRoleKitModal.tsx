@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 
 import { API_URL } from '../config';
@@ -73,7 +73,17 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
     const selectedDept = departments.find(d => d.id === selectedDepartmentId);
     const unitOfSelectedDept = selectedDept?.unitId ? units.find(u => u.id === selectedDept.unitId) : null;
 
+    const lastInitializedForRef = useRef<string | null>(null);
+
     useEffect(() => {
+        if (!isOpen) {
+            lastInitializedForRef.current = null;
+            return;
+        }
+        const key = isCreateMode ? `create-${departmentId}` : `edit-${role?.id}`;
+        if (lastInitializedForRef.current === key) return;
+        lastInitializedForRef.current = key;
+
         if (isCreateMode) {
             setRoleName('');
             setRoleCode('');
@@ -112,14 +122,7 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                 setToolsAndLevelsMap(levelsMap || {});
             }).catch(e => console.error(e)).finally(() => setLoading(false));
         }
-    }, [role?.id, role?.name, role?.code, role?.departmentId, departmentId, isOpen, isCreateMode, departments]);
-
-    useEffect(() => {
-        if (role) {
-            setRoleName(role.name);
-            setRoleCode(role.code || '');
-        }
-    }, [role?.name, role?.code]);
+    }, [isOpen, role?.id, departmentId, isCreateMode]);
 
     // Ao trocar departamento, atualiza Unidade para a unidade do novo departamento
     useEffect(() => {

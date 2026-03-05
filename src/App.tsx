@@ -617,13 +617,18 @@ export default function App() {
     }
   };
 
+  const anyStructureModalOpen = isEditRoleKitModalOpen || isManageStructureOpen || isEditDeptModalOpen || isDeleteDeptModalOpen || isCreateDepartmentModalOpen || isEditUnitModalOpen || isDeleteRoleModalOpen;
+
   useEffect(() => {
     if (isLoggedIn) {
       loadData();
-      const interval = setInterval(loadData, 10000);
+      const interval = setInterval(() => {
+        if (anyStructureModalOpen) return;
+        loadData();
+      }, 10000);
       return () => clearInterval(interval);
     }
-  }, [isLoggedIn, activeTab]);
+  }, [isLoggedIn, activeTab, anyStructureModalOpen]);
 
   useEffect(() => {
     if (isLoggedIn && (activeTab === 'TICKETS' || activeTab === 'MY_TICKETS')) loadTicketList();

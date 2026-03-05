@@ -21,7 +21,16 @@ const EditRoleKitModal = ({ isOpen, onClose, role, departmentId, units = [], dep
     const [saving, setSaving] = (0, react_1.useState)(false);
     const selectedDept = departments.find(d => d.id === selectedDepartmentId);
     const unitOfSelectedDept = selectedDept?.unitId ? units.find(u => u.id === selectedDept.unitId) : null;
+    const lastInitializedForRef = (0, react_1.useRef)(null);
     (0, react_1.useEffect)(() => {
+        if (!isOpen) {
+            lastInitializedForRef.current = null;
+            return;
+        }
+        const key = isCreateMode ? `create-${departmentId}` : `edit-${role?.id}`;
+        if (lastInitializedForRef.current === key)
+            return;
+        lastInitializedForRef.current = key;
         if (isCreateMode) {
             setRoleName('');
             setRoleCode('');
@@ -61,13 +70,7 @@ const EditRoleKitModal = ({ isOpen, onClose, role, departmentId, units = [], dep
                 setToolsAndLevelsMap(levelsMap || {});
             }).catch(e => console.error(e)).finally(() => setLoading(false));
         }
-    }, [role?.id, role?.name, role?.code, role?.departmentId, departmentId, isOpen, isCreateMode, departments]);
-    (0, react_1.useEffect)(() => {
-        if (role) {
-            setRoleName(role.name);
-            setRoleCode(role.code || '');
-        }
-    }, [role?.name, role?.code]);
+    }, [isOpen, role?.id, departmentId, isCreateMode]);
     // Ao trocar departamento, atualiza Unidade para a unidade do novo departamento
     (0, react_1.useEffect)(() => {
         if (selectedDepartmentId && selectedDept?.unitId && selectedUnitId !== selectedDept.unitId) {
