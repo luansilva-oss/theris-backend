@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, Download } from 'lucide-react';
 import { API_URL } from '../config';
 
@@ -29,6 +29,8 @@ interface Props {
 }
 
 export const ReportExportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess, currentUserId }) => {
+  const deRef = useRef<HTMLInputElement>(null);
+  const ateRef = useRef<HTMLInputElement>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [categories, setCategories] = useState<Record<string, boolean>>({
@@ -121,26 +123,28 @@ export const ReportExportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess,
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 8 }}>Período *</div>
             <div style={{ display: 'flex', gap: 12 }}>
-              <label style={{ flex: 1, cursor: 'pointer' }}>
+              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => deRef.current?.showPicker?.()}>
                 <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>De</div>
                 <input
+                  ref={deRef}
                   type="date"
                   value={startDate}
                   onChange={e => setStartDate(e.target.value)}
                   className="form-input"
                   style={{ width: '100%', cursor: 'pointer' }}
                 />
-              </label>
-              <label style={{ flex: 1, cursor: 'pointer' }}>
+              </div>
+              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => ateRef.current?.showPicker?.()}>
                 <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Até</div>
                 <input
+                  ref={ateRef}
                   type="date"
                   value={endDate}
                   onChange={e => setEndDate(e.target.value)}
                   className="form-input"
                   style={{ width: '100%', cursor: 'pointer' }}
                 />
-              </label>
+              </div>
             </div>
           </div>
           <div>

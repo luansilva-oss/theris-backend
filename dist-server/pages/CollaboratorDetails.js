@@ -19,6 +19,7 @@ const CollaboratorDetails = ({ id, onBack, onOpenAuditHistory, onUpdate, current
     const [loading, setLoading] = (0, react_1.useState)(true);
     const [error, setError] = (0, react_1.useState)(null);
     const [activeTab, setActiveTab] = (0, react_1.useState)('acessos');
+    const [isEditModalOpen, setIsEditModalOpen] = (0, react_1.useState)(false);
     (0, react_1.useEffect)(() => {
         setLoading(true);
         setError(null);
@@ -32,7 +33,7 @@ const CollaboratorDetails = ({ id, onBack, onOpenAuditHistory, onUpdate, current
             return r.json();
         })
             .then(setData)
-            .catch(e => setError(e.message))
+            .catch(e => setError(e instanceof Error ? e.message : 'Erro ao carregar colaborador'))
             .finally(() => setLoading(false));
     }, [id]);
     if (loading) {
@@ -42,7 +43,6 @@ const CollaboratorDetails = ({ id, onBack, onOpenAuditHistory, onUpdate, current
         return ((0, jsx_runtime_1.jsxs)("div", { style: { padding: 24, textAlign: 'center' }, children: [(0, jsx_runtime_1.jsxs)("button", { onClick: handleBack, style: { background: 'transparent', border: 'none', color: '#a78bfa', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 14 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.ArrowLeft, { size: 18 }), " Voltar"] }), (0, jsx_runtime_1.jsx)("div", { style: { color: '#ef4444', fontSize: 16 }, children: error || 'Colaborador não encontrado' })] }));
     }
     const { user, kbsFerramentas, acessosExtraordinarios = [], historicoCargos } = data;
-    const [isEditModalOpen, setIsEditModalOpen] = (0, react_1.useState)(false);
     const canEdit = currentUser && (currentUser.systemProfile === 'SUPER_ADMIN' || currentUser.systemProfile === 'GESTOR' || currentUser.systemProfile === 'ADMIN');
     const loadDetails = () => {
         fetch(`${config_1.API_URL}/api/users/${id}/details`, { credentials: 'include' })
@@ -55,7 +55,7 @@ const CollaboratorDetails = ({ id, onBack, onOpenAuditHistory, onUpdate, current
             return r.json();
         })
             .then(setData)
-            .catch(e => setError(e.message));
+            .catch(e => setError(e instanceof Error ? e.message : 'Erro ao carregar colaborador'));
     };
     const handleEditSave = () => {
         loadDetails();
@@ -101,7 +101,7 @@ const CollaboratorDetails = ({ id, onBack, onOpenAuditHistory, onUpdate, current
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: 6,
-                                    }, children: [user?.isActive && (0, jsx_runtime_1.jsx)("span", { style: { width: 6, height: 6, borderRadius: '50%', background: 'currentColor', animation: 'pulse 1.5s ease-in-out infinite' } }), user?.isActive ? 'Ativo' : 'Inativo'] }) }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', flexDirection: 'column', gap: 12, fontSize: 14, color: '#e4e4e7' }, children: [(0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Briefcase, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsx)("span", { children: user?.role?.name || user?.jobTitle || '—' })] }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Building2, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsxs)("span", { children: ["Depto: ", user?.departmentRef?.name || '—'] })] }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Building2, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsxs)("span", { children: ["Unidade: ", user?.unitRef?.name || '—'] })] }), user?.role?.code && ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Hash, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsx)("span", { children: user.role.code })] })), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Mail, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsx)("a", { href: `mailto:${user?.email}`, style: { color: '#a78bfa', textDecoration: 'none' }, children: user?.email || '—' })] }), user?.manager && ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.User, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsxs)("span", { children: ["Gestor: ", user.manager?.name] })] }))] }), canEdit && isEditModalOpen && ((0, jsx_runtime_1.jsx)(EditUserModal_1.EditUserModal, { isOpen: isEditModalOpen, onClose: () => setIsEditModalOpen(false), user: {
+                                    }, children: [user?.isActive && (0, jsx_runtime_1.jsx)("span", { style: { width: 6, height: 6, borderRadius: '50%', background: 'currentColor', animation: 'pulse 1.5s ease-in-out infinite' } }), user?.isActive ? 'Ativo' : 'Inativo'] }) }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', flexDirection: 'column', gap: 12, fontSize: 14, color: '#e4e4e7' }, children: [(0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Briefcase, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsx)("span", { children: user?.role?.name || user?.jobTitle || '—' })] }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Building2, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsxs)("span", { children: ["Depto: ", user?.departmentRef?.name || '—'] })] }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Building2, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsxs)("span", { children: ["Unidade: ", user?.unitRef?.name || '—'] })] }), user?.role?.code && ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Hash, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsx)("span", { children: user.role.code })] })), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Mail, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsx)("a", { href: `mailto:${user?.email}`, style: { color: '#a78bfa', textDecoration: 'none' }, children: user?.email || '—' })] }), user?.manager && ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 10 }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.User, { size: 16, color: "#71717a", style: { flexShrink: 0 } }), (0, jsx_runtime_1.jsxs)("span", { children: ["Gestor: ", user.manager?.name] })] }))] }), canEdit && isEditModalOpen && currentUser && showToast && ((0, jsx_runtime_1.jsx)(EditUserModal_1.EditUserModal, { isOpen: isEditModalOpen, onClose: () => setIsEditModalOpen(false), user: {
                                     id: user.id,
                                     name: user.name,
                                     email: user.email,

@@ -53,6 +53,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'acessos' | 'historico' | 'timeline'>('acessos');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -66,7 +67,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
         return r.json();
       })
       .then(setData)
-      .catch(e => setError(e.message))
+      .catch(e => setError(e instanceof Error ? e.message : 'Erro ao carregar colaborador'))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -108,7 +109,6 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   }
 
   const { user, kbsFerramentas, acessosExtraordinarios = [], historicoCargos } = data;
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const canEdit = currentUser && (currentUser.systemProfile === 'SUPER_ADMIN' || currentUser.systemProfile === 'GESTOR' || currentUser.systemProfile === 'ADMIN');
 
   const loadDetails = () => {
@@ -121,7 +121,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
         return r.json();
       })
       .then(setData)
-      .catch(e => setError(e.message));
+      .catch(e => setError(e instanceof Error ? e.message : 'Erro ao carregar colaborador'));
   };
 
   const handleEditSave = () => {
@@ -229,7 +229,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
             )}
           </div>
 
-          {canEdit && isEditModalOpen && (
+          {canEdit && isEditModalOpen && currentUser && showToast && (
             <EditUserModal
               isOpen={isEditModalOpen}
               onClose={() => setIsEditModalOpen(false)}

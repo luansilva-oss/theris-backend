@@ -1115,9 +1115,17 @@ function formatDetailsForCsv(details, type) {
         return details || '-';
     }
 }
+/** Remove emojis e caracteres que quebram CSV/Excel */
+function sanitizeForCsv(val) {
+    return String(val ?? '')
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // control chars
+        .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F64F}\u{1F900}-\u{1F9FF}]/gu, ''); // emojis
+}
+/** Escapa célula CSV: ; " \n \r → envolver em aspas, " → "" (padrão Excel Brasil) */
 function escapeCsvCell(val) {
-    const s = String(val ?? '').replace(/"/g, '""');
-    return s.includes(',') || s.includes('\n') || s.includes('"') ? `"${s}"` : s;
+    const s = sanitizeForCsv(val).replace(/"/g, '""');
+    const needsQuotes = /[;"\r\n]/.test(s);
+    return needsQuotes ? `"${s}"` : s;
 }
 const exportRequestsCsv = async (req, res) => {
     const userId = req.headers['x-user-id']?.trim();
@@ -1168,7 +1176,7 @@ const exportRequestsCsv = async (req, res) => {
         detalhes: 'Detalhes (Slack)',
         observacao: 'Observação'
     };
-    const header = colArr.map(c => COL_LABELS[c] || c);
+    const header = colArr.map(c => escapeCsvCell(COL_LABELS[c] || c));
     const rows = [header];
     const fmt = (d) => d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
     for (const r of requests) {
@@ -1203,7 +1211,8 @@ const exportRequestsCsv = async (req, res) => {
         }
         rows.push(row);
     }
-    const csv = rows.map(r => r.join(',')).join('\r\n');
+    const SEP = ';'; // separador padrão Brasil (Excel/LibreOffice)
+    const csv = rows.map(r => r.join(SEP)).join('\r\n');
     const bom = '\uFEFF';
     const buffer = Buffer.from(bom + csv, 'utf-8');
     const catLabel = catArr.length >= 3 ? 'todos' : catArr.join('_').toLowerCase();
