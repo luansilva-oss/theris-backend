@@ -77,7 +77,19 @@ const CollaboratorDetails = ({ id, onBack, onOpenAuditHistory, onUpdate, current
                             border: '1px solid #27272a',
                             position: 'sticky',
                             top: 24,
-                        }, children: [(0, jsx_runtime_1.jsx)("div", { style: {
+                        }, children: [canEdit && ((0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }, children: (0, jsx_runtime_1.jsxs)("button", { onClick: () => setIsEditModalOpen(true), style: {
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 6,
+                                        padding: '6px 12px',
+                                        background: 'rgba(167, 139, 250, 0.15)',
+                                        border: '1px solid #7c3aed',
+                                        color: '#a78bfa',
+                                        borderRadius: 8,
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                    }, children: [(0, jsx_runtime_1.jsx)(lucide_react_1.Pencil, { size: 14 }), " Editar"] }) })), (0, jsx_runtime_1.jsx)("div", { style: {
                                     width: 72,
                                     height: 72,
                                     borderRadius: '50%',

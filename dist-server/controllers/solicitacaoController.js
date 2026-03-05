@@ -1093,7 +1093,7 @@ function getCategoryForType(type) {
     }
     return 'Geral';
 }
-function formatDetailsForCsv(details, type) {
+function formatDetailsForCsv(details, type, actionDate) {
     try {
         const d = typeof details === 'string' ? JSON.parse(details || '{}') : (details || {});
         const parts = [];
@@ -1109,6 +1109,10 @@ function formatDetailsForCsv(details, type) {
             parts.push(`Ferramenta: ${d.tool}`);
         if (d.target)
             parts.push(`Nível: ${d.target}`);
+        if (actionDate) {
+            const dt = typeof actionDate === 'string' ? new Date(actionDate) : actionDate;
+            parts.push(`Data de Ação: ${dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`);
+        }
         return parts.join(' · ') || '-';
     }
     catch {
@@ -1186,7 +1190,7 @@ const exportRequestsCsv = async (req, res) => {
     for (const r of requests) {
         const category = getCategoryForType(r.type);
         const subject = SUBJECT_MAP[r.type] || r.type;
-        const detailsStr = formatDetailsForCsv(r.details, r.type);
+        const detailsStr = formatDetailsForCsv(r.details, r.type, r.actionDate);
         const adminNote = r.adminNote || '';
         const row = [];
         for (const c of colArr) {

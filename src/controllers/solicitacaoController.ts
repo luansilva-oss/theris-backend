@@ -1057,7 +1057,7 @@ function getCategoryForType(type: string): string {
   return 'Geral';
 }
 
-function formatDetailsForCsv(details: string | null, type: string): string {
+function formatDetailsForCsv(details: string | null, type: string, actionDate?: Date | string | null): string {
   try {
     const d = typeof details === 'string' ? JSON.parse(details || '{}') : (details || {});
     const parts: string[] = [];
@@ -1067,6 +1067,10 @@ function formatDetailsForCsv(details: string | null, type: string): string {
     if (d.collaboratorName) parts.push(`Colaborador: ${d.collaboratorName}`);
     if (d.tool) parts.push(`Ferramenta: ${d.tool}`);
     if (d.target) parts.push(`Nível: ${d.target}`);
+    if (actionDate) {
+      const dt = typeof actionDate === 'string' ? new Date(actionDate) : actionDate;
+      parts.push(`Data de Ação: ${dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`);
+    }
     return parts.join(' · ') || '-';
   } catch {
     return details || '-';
@@ -1152,7 +1156,7 @@ export const exportRequestsCsv = async (req: Request, res: Response) => {
   for (const r of requests) {
     const category = getCategoryForType(r.type);
     const subject = SUBJECT_MAP[r.type] || r.type;
-    const detailsStr = formatDetailsForCsv(r.details, r.type);
+    const detailsStr = formatDetailsForCsv(r.details, r.type, (r as { actionDate?: Date | string | null }).actionDate);
     const adminNote = (r as { adminNote?: string }).adminNote || '';
 
     const row: string[] = [];

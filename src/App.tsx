@@ -116,6 +116,7 @@ interface Request {
   type: string;
   adminNote?: string;
   scheduledAt?: string | null;
+  actionDate?: string | null;
   comments?: RequestComment[];
   attachments?: RequestAttachment[];
 }
@@ -2101,6 +2102,7 @@ export default function App() {
                           if (d.requestTypeLabel || d.requestType) parts.push(`Tipo: ${d.requestTypeLabel || d.requestType}`);
                           if (d.description) parts.push(`Descrição: ${d.description}`);
                           if (d.urgencyLabel || d.urgency) parts.push(`Urgência: ${d.urgencyLabel || d.urgency}`);
+                          if ((r as { actionDate?: string }).actionDate) parts.push(`Data de Ação: ${new Date((r as { actionDate: string }).actionDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`);
                           return parts.length ? parts.join(' · ') : '-';
                         };
 
@@ -2265,6 +2267,7 @@ export default function App() {
                               let d: Record<string, unknown> = {};
                               try { d = typeof chamadoDetail.details === 'string' ? JSON.parse(chamadoDetail.details || '{}') : (chamadoDetail.details || {}); } catch {}
                               const lines: { label: string; value: string }[] = [];
+                              if (chamadoDetail.actionDate) lines.push({ label: 'Data de Ação', value: new Date(chamadoDetail.actionDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) });
                               if (chamadoDetail.justification) lines.push({ label: 'Justificativa', value: chamadoDetail.justification });
                               if (d.tool) lines.push({ label: 'Ferramenta', value: String(d.tool) });
                               if (d.target || d.targetValue) lines.push({ label: 'Nível solicitado', value: String(d.target || d.targetValue || '—') });
@@ -2369,6 +2372,12 @@ export default function App() {
                           <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Data e hora de abertura</div>
                           <div style={{ color: '#e4e4e7' }}>{new Date(chamadoDetail.createdAt).toLocaleString('pt-BR')}</div>
                         </div>
+                        {chamadoDetail.actionDate && (
+                          <div className="card-base" style={{ padding: 20 }}>
+                            <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Data de Ação</div>
+                            <div style={{ color: '#e4e4e7' }}>{new Date(chamadoDetail.actionDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+                          </div>
+                        )}
                         <div className="card-base" style={{ padding: 20 }}>
                           <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Tipo / Categoria</div>
                           <div style={{ color: '#e4e4e7' }}>{(getRequestCardContent(chamadoDetail).category)} · {chamadoDetail.type}</div>

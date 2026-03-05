@@ -480,6 +480,7 @@ slackApp.action('btn_move', async ({ ack, body, client }) => {
                 { type: 'section', text: { type: 'mrkdwn', text: '*Situação Nova*' } },
                 { type: 'input', block_id: 'blk_role_fut', label: { type: 'plain_text', text: 'Novo Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
                 { type: 'input', block_id: 'blk_dept_fut', label: { type: 'plain_text', text: 'Novo Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+                { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de Ação' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
                 { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Motivo' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
             ]
         }, body);
@@ -541,6 +542,7 @@ slackApp.action('btn_fire', async ({ ack, body, client }) => {
                 { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
                 { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
                 { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+                { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de Ação' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
                 { type: 'input', block_id: 'blk_reason', optional: true, label: { type: 'plain_text', text: 'Motivo' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
             ]
         }, body);
@@ -929,7 +931,7 @@ function isRhBypassRequester(name) {
     const n = (name || '').trim();
     return n === RH_BYPASS_REQUESTER_NAME || n.toLowerCase().includes('renata czapiewski');
 }
-async function saveRequest(body, client, dbType, details, reason, msgSuccess, isExtraordinary = false) {
+async function saveRequest(body, client, dbType, details, reason, msgSuccess, isExtraordinary = false, actionDate) {
     try {
         const slackId = body.user.id;
         let requesterId = '';
@@ -1007,7 +1009,8 @@ async function saveRequest(body, client, dbType, details, reason, msgSuccess, is
                 approverId,
                 isExtraordinary,
                 ...(isExtraordinary && toolName && { toolName }),
-                ...(isExtraordinary && accessLevel && { accessLevel })
+                ...(isExtraordinary && accessLevel && { accessLevel }),
+                ...(actionDate && { actionDate: new Date(actionDate) })
             }
         });
         // AEX: enviar DMs para Owner/Sub e SI
@@ -1128,14 +1131,16 @@ slackApp.view('submit_move', async ({ ack, body, view, client }) => {
     await ack();
     const v = view.state.values;
     const name = v.blk_name.inp.value;
+    const actionDate = v.data_acao?.picker?.selected_date ?? null;
     const details = {
         info: `Movimentação: ${name}`,
         collaboratorName: name,
         current: { role: v.blk_role_curr.inp.value, dept: v.blk_dept_curr.inp.value },
         future: { role: v.blk_role_fut.inp.value, dept: v.blk_dept_fut.inp.value },
-        reason: v.blk_reason.inp.value ?? ''
+        reason: v.blk_reason.inp.value ?? '',
+        ...(actionDate && { actionDate })
     };
-    await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value, `✅ Solicitação de movimentação para *${name}* criada com sucesso.`);
+    await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value, `✅ Solicitação de movimentação para *${name}* criada com sucesso.`, false, actionDate);
 });
 slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
     await ack();
@@ -1160,14 +1165,16 @@ slackApp.view('submit_fire', async ({ ack, body, view, client }) => {
     const v = view.state.values;
     const name = v.blk_name.inp.value;
     const reason = v.blk_reason.inp.value ?? '';
+    const actionDate = v.data_acao?.picker?.selected_date ?? null;
     const details = {
         info: `Desligamento: ${name}`,
         collaboratorName: name,
         role: v.blk_role.inp.value,
         dept: v.blk_dept.inp.value,
-        reason
+        reason,
+        ...(actionDate && { actionDate })
     };
-    await saveRequest(body, client, 'FIRING', details, reason, `⚠️ Desligamento de *${name}* registrado. Processo de offboarding iniciado.`);
+    await saveRequest(body, client, 'FIRING', details, reason, `⚠️ Desligamento de *${name}* registrado. Processo de offboarding iniciado.`, false, actionDate);
 });
 slackApp.view('submit_tool_access', async ({ ack, body, view, client }) => {
     await ack();

@@ -160,6 +160,28 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
             top: 24,
           }}
         >
+          {canEdit && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  background: 'rgba(167, 139, 250, 0.15)',
+                  border: '1px solid #7c3aed',
+                  color: '#a78bfa',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <Pencil size={14} /> Editar
+              </button>
+            </div>
+          )}
           <div
             style={{
               width: 72,

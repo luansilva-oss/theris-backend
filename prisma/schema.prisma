@@ -188,6 +188,7 @@ model Request {
   type                String
   status              String   @default("PENDENTE_GESTOR")
   scheduledAt         DateTime?  // Para status Agendado (Service Desk)
+  actionDate          DateTime?  // Data de Ação (ex: /pessoas Movimentação, Desligamento)
   
   currentApproverRole String? 
   
