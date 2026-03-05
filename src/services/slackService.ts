@@ -1431,3 +1431,23 @@ export const sendSlackNotification = async (
     console.error('❌ Erro ao enviar notificação Slack:', error);
   }
 };
+
+/** DM específica quando movimentação (CHANGE_ROLE) é aprovada e aplicada no banco. */
+export const sendChangeRoleApprovedDM = async (requesterEmail: string, collaboratorName: string) => {
+  if (!slackApp) return;
+  try {
+    const lookup = await slackApp.client.users.lookupByEmail({ email: requesterEmail });
+    const slackUserId = lookup.user?.id;
+    if (!slackUserId) {
+      console.warn(`⚠️ sendChangeRoleApprovedDM: usuário Slack não encontrado para ${requesterEmail}`);
+      return;
+    }
+    await slackApp.client.chat.postMessage({
+      channel: slackUserId,
+      text: `✅ A movimentação de ${collaboratorName} foi aprovada e já está refletida no sistema.`
+    });
+    console.log(`🔔 DM movimentação aprovada enviada para ${requesterEmail}`);
+  } catch (e) {
+    console.error('❌ Erro ao enviar DM de movimentação aprovada:', e);
+  }
+};

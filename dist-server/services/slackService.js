@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendSlackNotification = exports.getSlackApp = exports.getToolsAndLevelsMap = exports.slackReceiver = void 0;
+exports.sendChangeRoleApprovedDM = exports.sendSlackNotification = exports.getSlackApp = exports.getToolsAndLevelsMap = exports.slackReceiver = void 0;
 const bolt_1 = require("@slack/bolt");
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
@@ -1440,3 +1440,25 @@ const sendSlackNotification = async (email, status, adminNote, requestType, owne
     }
 };
 exports.sendSlackNotification = sendSlackNotification;
+/** DM específica quando movimentação (CHANGE_ROLE) é aprovada e aplicada no banco. */
+const sendChangeRoleApprovedDM = async (requesterEmail, collaboratorName) => {
+    if (!slackApp)
+        return;
+    try {
+        const lookup = await slackApp.client.users.lookupByEmail({ email: requesterEmail });
+        const slackUserId = lookup.user?.id;
+        if (!slackUserId) {
+            console.warn(`⚠️ sendChangeRoleApprovedDM: usuário Slack não encontrado para ${requesterEmail}`);
+            return;
+        }
+        await slackApp.client.chat.postMessage({
+            channel: slackUserId,
+            text: `✅ A movimentação de ${collaboratorName} foi aprovada e já está refletida no sistema.`
+        });
+        console.log(`🔔 DM movimentação aprovada enviada para ${requesterEmail}`);
+    }
+    catch (e) {
+        console.error('❌ Erro ao enviar DM de movimentação aprovada:', e);
+    }
+};
+exports.sendChangeRoleApprovedDM = sendChangeRoleApprovedDM;
