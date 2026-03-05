@@ -64,7 +64,7 @@ const EditUserModal = ({ isOpen, onClose, user, onUpdate, currentUser, allUsers,
             });
             if (res.ok) {
                 showToast("Dados do colaborador atualizados!", "success");
-                onUpdate();
+                await (onUpdate?.() ?? Promise.resolve());
                 onClose();
             }
             else {

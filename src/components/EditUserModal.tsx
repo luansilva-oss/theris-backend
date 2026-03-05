@@ -36,7 +36,7 @@ interface Props {
     isOpen: boolean;
     onClose: () => void;
     user: User;
-    onUpdate: () => void;
+    onUpdate: () => void | Promise<void>;
     currentUser: { id: string, systemProfile: string };
     allUsers: { id: string; name: string; jobTitle?: string }[]; // Lista para selecionar gestor
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
@@ -104,7 +104,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
 
             if (res.ok) {
                 showToast("Dados do colaborador atualizados!", "success");
-                onUpdate();
+                await (onUpdate?.() ?? Promise.resolve());
                 onClose();
             } else {
                 const err = await res.json();

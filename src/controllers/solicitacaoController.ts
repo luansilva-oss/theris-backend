@@ -1080,11 +1080,16 @@ function sanitizeForCsv(val: string): string {
     .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F64F}\u{1F900}-\u{1F9FF}]/gu, ''); // emojis
 }
 
-/** Escapa célula CSV: ; " \n \r → envolver em aspas, " → "" (padrão Excel Brasil) */
+/** Escapa célula CSV (padrão Excel Brasil): ; " → aspas, quebras de linha → espaço */
 function escapeCsvCell(val: string): string {
-  const s = sanitizeForCsv(val).replace(/"/g, '""');
-  const needsQuotes = /[;"\r\n]/.test(s);
-  return needsQuotes ? `"${s}"` : s;
+  if (val == null || val === '') return '';
+  const str = sanitizeForCsv(
+    String(val).replace(/\n/g, ' ').replace(/\r/g, '')
+  );
+  if (str.includes(';') || str.includes('"')) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
 }
 
 export const exportRequestsCsv = async (req: Request, res: Response) => {

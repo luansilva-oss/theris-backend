@@ -111,7 +111,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   const { user, kbsFerramentas, acessosExtraordinarios = [], historicoCargos } = data;
   const canEdit = currentUser && (currentUser.systemProfile === 'SUPER_ADMIN' || currentUser.systemProfile === 'GESTOR' || currentUser.systemProfile === 'ADMIN');
 
-  const loadDetails = () => {
+  const loadDetails = () =>
     fetch(`${API_URL}/api/users/${id}/details`, { credentials: 'include' })
       .then(r => {
         if (!r.ok) {
@@ -122,11 +122,10 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
       })
       .then(setData)
       .catch(e => setError(e instanceof Error ? e.message : 'Erro ao carregar colaborador'));
-  };
 
-  const handleEditSave = () => {
-    loadDetails();
-    onUpdate?.();
+  const handleEditSave = async () => {
+    await (onUpdate?.() ?? Promise.resolve());
+    await loadDetails();
   };
   const initial = (user?.name?.charAt(0) || '?').toUpperCase();
 

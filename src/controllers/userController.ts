@@ -332,7 +332,14 @@ export const updateUser = async (req: Request, res: Response) => {
       }
     }
 
-    const oldUser = await prisma.user.findUnique({ where: { id }, select: { name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true } });
+    const oldUser = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true,
+        departmentRef: { select: { name: true } },
+        unitRef: { select: { name: true } }
+      }
+    });
 
     const data: any = {
       name,
@@ -374,6 +381,24 @@ export const updateUser = async (req: Request, res: Response) => {
         descricao: `Colaborador "${updatedUser.name}" teve cargo/departamento/unidade alterado.`,
         dadosAntes: { roleId: oldUser?.roleId, jobTitle: oldUser?.jobTitle, departmentId: oldUser?.departmentId, unitId: oldUser?.unitId },
         dadosDepois: { roleId: updatedUser.roleId, jobTitle: updatedUser.jobTitle, departmentId: updatedUser.departmentId, unitId: updatedUser.unitId, departmentName: updatedWithRelations?.departmentRef?.name, unitName: updatedWithRelations?.unitRef?.name },
+        autorId: requesterId,
+      });
+      // USER_UPDATED: registro legível para auditoria (departamento, unidade, cargo)
+      await registrarMudanca({
+        tipo: 'USER_UPDATED',
+        entidadeTipo: 'User',
+        entidadeId: id,
+        descricao: `Colaborador "${updatedUser.name}" atualizado.`,
+        dadosAntes: {
+          departamento: (oldUser as { departmentRef?: { name: string } })?.departmentRef?.name ?? null,
+          unidade: (oldUser as { unitRef?: { name: string } })?.unitRef?.name ?? null,
+          cargo: oldUser?.jobTitle ?? null,
+        },
+        dadosDepois: {
+          departamento: updatedWithRelations?.departmentRef?.name ?? null,
+          unidade: updatedWithRelations?.unitRef?.name ?? null,
+          cargo: updatedUser.jobTitle ?? null,
+        },
         autorId: requesterId,
       });
     }

@@ -363,7 +363,14 @@ const updateUser = async (req, res) => {
                 return res.status(403).json({ error: "Gestores não podem conceder perfis administrativos superiores." });
             }
         }
-        const oldUser = await prisma.user.findUnique({ where: { id }, select: { name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true } });
+        const oldUser = await prisma.user.findUnique({
+            where: { id },
+            select: {
+                name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true,
+                departmentRef: { select: { name: true } },
+                unitRef: { select: { name: true } }
+            }
+        });
         const data = {
             name,
             email,
@@ -402,6 +409,24 @@ const updateUser = async (req, res) => {
                 descricao: `Colaborador "${updatedUser.name}" teve cargo/departamento/unidade alterado.`,
                 dadosAntes: { roleId: oldUser?.roleId, jobTitle: oldUser?.jobTitle, departmentId: oldUser?.departmentId, unitId: oldUser?.unitId },
                 dadosDepois: { roleId: updatedUser.roleId, jobTitle: updatedUser.jobTitle, departmentId: updatedUser.departmentId, unitId: updatedUser.unitId, departmentName: updatedWithRelations?.departmentRef?.name, unitName: updatedWithRelations?.unitRef?.name },
+                autorId: requesterId,
+            });
+            // USER_UPDATED: registro legível para auditoria (departamento, unidade, cargo)
+            await (0, auditLog_1.registrarMudanca)({
+                tipo: 'USER_UPDATED',
+                entidadeTipo: 'User',
+                entidadeId: id,
+                descricao: `Colaborador "${updatedUser.name}" atualizado.`,
+                dadosAntes: {
+                    departamento: oldUser?.departmentRef?.name ?? null,
+                    unidade: oldUser?.unitRef?.name ?? null,
+                    cargo: oldUser?.jobTitle ?? null,
+                },
+                dadosDepois: {
+                    departamento: updatedWithRelations?.departmentRef?.name ?? null,
+                    unidade: updatedWithRelations?.unitRef?.name ?? null,
+                    cargo: updatedUser.jobTitle ?? null,
+                },
                 autorId: requesterId,
             });
         }
