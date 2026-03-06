@@ -1086,52 +1086,92 @@ async function saveRequest(
 // ============================================================
 // BLOCK ACTIONS: AEX Owner Approve/Reject
 // APENAS cliques explícitos nos botões disparam mudança de status.
-// action_id específico (v2) para evitar colisão com outros eventos.
+// Validações rígidas para evitar disparos indevidos (ex: retry, message event).
+// action_id: aex_owner_approve_v2 | aex_owner_reject_v2
 // value: approve_<requestId> | reject_<requestId>
 // ============================================================
 slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_owner_decision' }, async ({ ack, body, client }) => {
   const b = body as any;
-  const payloadType = b.type; // block_actions para cliques em botões
-  const action = b.actions?.[0];
-  const rawValue = action?.value ?? '';
-  const actionId = action?.action_id ?? '';
 
-  console.log('[AEX] Event type:', payloadType || 'unknown', '| Action:', actionId, '| Value:', rawValue?.slice?.(0, 30));
+  // DEBUG: identificar qual evento disparou (remover após diagnóstico)
+  console.log('[AEX DEBUG] Payload completo:', JSON.stringify({ type: b.type, actions: b.actions?.map((a: any) => ({ action_id: a.action_id, value: a.value })), user: b.user?.id }, null, 2));
 
-  if (payloadType && payloadType !== 'block_actions') {
-    console.warn('[AEX] Ignorando payload que não é block_actions:', payloadType);
+  // 1. Validar tipo do payload — só processar block_actions (não event_callback, shortcut, etc.)
+  if (b.type !== 'block_actions') {
+    console.warn('[AEX] Ignorando payload que não é block_actions:', b.type);
     await ack();
     return;
   }
+
+  // 2. Validar actions
+  const actions = b.actions;
+  if (!Array.isArray(actions) || actions.length === 0) {
+    console.warn('[AEX] Ignorando: actions ausente ou vazio');
+    await ack();
+    return;
+  }
+
+  const action = actions[0];
+  const actionId = action?.action_id ?? '';
+  const rawValue = typeof action?.value === 'string' ? action.value : '';
+
+  // 3. Validar action_id exato
+  const validActionIds = ['aex_owner_approve_v2', 'aex_owner_reject_v2'];
+  if (!validActionIds.includes(actionId)) {
+    console.warn('[AEX] Ignorando: action_id inválido:', actionId);
+    await ack();
+    return;
+  }
+
+  // 4. Validar value (approve_xxx ou reject_xxx)
+  if (!rawValue.startsWith('approve_') && !rawValue.startsWith('reject_')) {
+    console.warn('[AEX] Ignorando: value inválido (deve começar com approve_ ou reject_):', rawValue?.slice(0, 50));
+    await ack();
+    return;
+  }
+
+  const requestId = rawValue.startsWith('approve_')
+    ? rawValue.replace(/^approve_/, '')
+    : rawValue.replace(/^reject_/, '');
+  const isApprove = rawValue.startsWith('approve_');
+
+  if (!requestId) {
+    console.warn('[AEX] requestId vazio após parse');
+    await ack();
+    return;
+  }
+
   await ack();
 
-  let requestId: string | null = null;
-  let isApprove = false;
-  if (typeof rawValue === 'string') {
-    if (rawValue.startsWith('approve_')) {
-      requestId = rawValue.replace(/^approve_/, '');
-      isApprove = true;
-    } else if (rawValue.startsWith('reject_')) {
-      requestId = rawValue.replace(/^reject_/, '');
-      isApprove = false;
-    } else {
-      requestId = rawValue;
-      isApprove = actionId === 'aex_owner_approve_v2';
-    }
+  // 5. Verificar status do chamado ANTES de processar — evita reprocessar ou eventos fora de ordem
+  let req: any;
+  try {
+    req = await prisma.request.findUnique({
+      where: { id: requestId },
+      include: { requester: { select: { id: true, name: true, email: true } } }
+    });
+  } catch (e) {
+    console.error('[AEX] Erro ao buscar request:', e);
+    return;
   }
-  if (!requestId) {
-    console.warn('[AEX] requestId ausente no payload');
+
+  if (!req) {
+    console.warn('[AEX] Chamado não encontrado:', requestId);
+    return;
+  }
+
+  if (req.status !== 'PENDING_OWNER') {
+    console.log('[AEX] Ignorando: chamado não está em PENDING_OWNER, status atual:', req.status);
+    return;
+  }
+
+  const ownerSlackId = b.user?.id;
+  if (!ownerSlackId) {
+    console.warn('[AEX] Ignorando: user.id ausente no payload');
     return;
   }
 
   try {
-    const req = await prisma.request.findUnique({
-      where: { id: requestId },
-      include: { requester: { select: { id: true, name: true, email: true } } }
-    });
-    if (!req || req.status !== 'PENDING_OWNER') return;
-
-    const ownerSlackId = b.user.id;
     const reqAny = req as { toolName?: string; accessLevel?: string; details?: string };
     const toolName = reqAny.toolName || (() => { try { const d = JSON.parse(req.details || '{}'); return d.tool || d.toolName || '—'; } catch { return '—'; } })();
     const accessLevel = reqAny.accessLevel || (() => { try { const d = JSON.parse(req.details || '{}'); return d.target || d.targetValue || '—'; } catch { return '—'; } })();
