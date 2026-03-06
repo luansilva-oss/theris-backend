@@ -54,10 +54,9 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'acessos' | 'historico' | 'timeline'>('acessos');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [historicoRefreshKey, setHistoricoRefreshKey] = useState(0);
 
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
+  const fetchDetails = () =>
     fetch(`${API_URL}/api/users/${id}/details`, { credentials: 'include' })
       .then(r => {
         if (!r.ok) {
@@ -67,9 +66,20 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
         return r.json();
       })
       .then(setData)
-      .catch(e => setError(e instanceof Error ? e.message : 'Erro ao carregar colaborador'))
-      .finally(() => setLoading(false));
+      .catch(e => setError(e instanceof Error ? e.message : 'Erro ao carregar colaborador'));
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetchDetails().finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (!id || !data) return;
+    if (activeTab === 'historico' || activeTab === 'timeline') {
+      fetchDetails();
+    }
+  }, [activeTab, id]);
 
   if (loading) {
     return (
@@ -111,21 +121,12 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   const { user, kbsFerramentas, acessosExtraordinarios = [], historicoCargos } = data;
   const canEdit = currentUser && (currentUser.systemProfile === 'SUPER_ADMIN' || currentUser.systemProfile === 'GESTOR' || currentUser.systemProfile === 'ADMIN');
 
-  const loadDetails = () =>
-    fetch(`${API_URL}/api/users/${id}/details`, { credentials: 'include' })
-      .then(r => {
-        if (!r.ok) {
-          if (r.status === 404) throw new Error('Colaborador não encontrado');
-          throw new Error('Erro ao carregar dados');
-        }
-        return r.json();
-      })
-      .then(setData)
-      .catch(e => setError(e instanceof Error ? e.message : 'Erro ao carregar colaborador'));
+  const loadDetails = () => fetchDetails().catch(() => {});
 
   const handleEditSave = async () => {
     await (onUpdate?.() ?? Promise.resolve());
     await loadDetails();
+    setHistoricoRefreshKey(k => k + 1);
   };
   const initial = (user?.name?.charAt(0) || '?').toUpperCase();
 
@@ -235,7 +236,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
             {user?.role?.code && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Hash size={16} color="#71717a" style={{ flexShrink: 0 }} />
-                <span>{user.role.code}</span>
+                <span>{(user.role.code || '').split(/\s+e\s+/)[0]?.trim() || user.role.code}</span>
               </div>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -382,6 +383,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
 
             {activeTab === 'historico' && (
               <EntityAuditHistory
+                key={`audit-${user?.id}-${historicoRefreshKey}`}
                 entidadeId={user?.id || ''}
                 entidadeTipo="User"
                 limit={10}

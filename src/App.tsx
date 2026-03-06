@@ -1191,27 +1191,54 @@ export default function App() {
                 <div style={{ fontSize: '12px', textTransform: 'uppercase', color: '#a1a1aa' }}>{new Date().toLocaleDateString('pt-BR', { month: 'short' })}</div>
               </div>
 
-              {/* Viewer: meu perfil (gestor, cargo, departamento, kit básico) */}
+              {/* Viewer: meu perfil (card completo, igual CollaboratorDetails, sem botão Editar) */}
               {systemProfile === 'VIEWER' && currentUser && (
                 <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
                   <h3 style={{ color: '#a78bfa', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Users size={18} /> Meu perfil
                   </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
-                    <div>
-                      <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Gestor direto</div>
-                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.manager?.name || '—'}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+                      <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg, #6d28d9 0%, #4c1d95 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: 'white' }}>
+                        {(currentUser.name || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 18, fontWeight: 600, color: 'white', marginBottom: 4 }}>{currentUser.name || '—'}</div>
+                        <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: (currentUser as { isActive?: boolean }).isActive !== false ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: (currentUser as { isActive?: boolean }).isActive !== false ? '#22c55e' : '#ef4444' }}>
+                          {(currentUser as { isActive?: boolean }).isActive !== false ? 'Ativo' : 'Inativo'}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Cargo</div>
-                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.jobTitle || '—'}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Departamento</div>
-                      <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{userDeptName(currentUser) || '—'}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Cargo</div>
+                        <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{(currentUser as { role?: { name: string } }).role?.name || currentUser.jobTitle || '—'}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Departamento</div>
+                        <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{userDeptName(currentUser) || '—'}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Unidade</div>
+                        <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{(currentUser as { unitRef?: { name: string } }).unitRef?.name || '—'}</div>
+                      </div>
+                      {(currentUser as { role?: { code: string | null } }).role?.code && (
+                        <div>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>KBS code</div>
+                          <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{((currentUser as { role?: { code: string } }).role?.code || '').split(/\s+e\s+/)[0]?.trim() || (currentUser as { role?: { code: string } }).role?.code}</div>
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>E-mail</div>
+                        <a href={`mailto:${currentUser.email}`} style={{ color: '#a78bfa', textDecoration: 'none' }}>{currentUser.email || '—'}</a>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Gestor direto</div>
+                        <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.manager?.name || '—'}</div>
+                      </div>
                     </div>
                   </div>
-                  </div>
+                </div>
               )}
 
               {/* Viewer: Meu Kit Básico (fonte única: GET /api/users/me/tools) */}
@@ -1231,14 +1258,22 @@ export default function App() {
                         <thead>
                           <tr style={{ borderBottom: '1px solid #27272a', textAlign: 'left' }}>
                             <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Ferramenta</th>
-                            <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Nível de acesso</th>
+                            <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Nível de Acesso</th>
+                            <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Criticidade</th>
                           </tr>
                         </thead>
                         <tbody>
                           {viewerKitTools.map((row) => (
                             <tr key={row.id} style={{ borderBottom: '1px solid #1f1f22' }}>
                               <td style={{ padding: '14px 16px', color: '#e4e4e7', fontWeight: 500 }}>{row.toolName}</td>
-                              <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{(row as any).levelLabel ?? row.accessLevelDesc}</td>
+                              <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{(row as { levelLabel?: string }).levelLabel ?? row.accessLevelDesc}</td>
+                              <td style={{ padding: '14px 16px' }}>
+                                {(row as { criticality?: string }).criticality ? (
+                                  <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
+                                    {(row as { criticality?: string }).criticality}
+                                  </span>
+                                ) : '—'}
+                              </td>
                             </tr>
                           ))}
                         </tbody>

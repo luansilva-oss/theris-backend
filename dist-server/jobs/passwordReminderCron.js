@@ -5,8 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.startPasswordReminderCron = startPasswordReminderCron;
 /**
- * Cron job: todos os dias às 09:00, busca usuários que atingiram 90 dias
- * desde lastPasswordChangeAt e envia DM no Slack lembrando de trocar senhas.
+ * Cron job: todos os dias às 09:00, busca usuários ativos com roleId cujo lastPasswordChangeAt
+ * seja null ou >= 90 dias atrás e envia DM personalizada com ferramentas do KBS do cargo.
  */
 const node_cron_1 = __importDefault(require("node-cron"));
 const client_1 = require("@prisma/client");
@@ -25,17 +25,14 @@ function startPasswordReminderCron() {
             const users = await prisma.user.findMany({
                 where: {
                     isActive: true,
+                    roleId: { not: null },
                     OR: [
                         { lastPasswordChangeAt: { lte: thresholdDate } },
                         { lastPasswordChangeAt: null },
                     ],
                     email: { not: null },
                 },
-                include: {
-                    accesses: {
-                        include: { tool: true },
-                    },
-                },
+                select: { id: true, email: true, name: true, roleId: true }
             });
             if (users.length === 0) {
                 console.log('   Nenhum usuário no ciclo de 90 dias.');
@@ -43,7 +40,15 @@ function startPasswordReminderCron() {
             }
             console.log(`   ${users.length} usuário(s) para notificar.`);
             for (const user of users) {
-                const toolNames = [...new Set(user.accesses.map(a => a.tool?.name).filter(Boolean))];
+                let allToolNames = [];
+                if (user.roleId) {
+                    const role = await prisma.role.findUnique({
+                        where: { id: user.roleId },
+                        include: { kitItems: { select: { toolName: true } } }
+                    });
+                    allToolNames = role?.kitItems?.map(k => k.toolName).filter(Boolean) ?? [];
+                }
+                const toolNames = [...new Set(allToolNames.filter((t) => (0, passwordReminderSlack_1.isToolAllowed)(t)))];
                 const result = await (0, passwordReminderSlack_1.sendPasswordReminderDM)({
                     userEmail: user.email,
                     userName: user.name,

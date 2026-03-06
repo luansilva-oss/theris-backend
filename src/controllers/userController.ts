@@ -45,7 +45,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
   }
 };
 
-/** Perfil do usuário logado (Dashboard 'Meu perfil'): retorna usuário com manager para exibir Gestor Direto. */
+/** Perfil do usuário logado (Dashboard 'Meu perfil'): retorna usuário com manager, role (KBS code), etc. */
 export const getMe = async (req: Request, res: Response) => {
   const userId = (req.headers['x-user-id'] as string)?.trim();
   if (!userId) return res.status(401).json({ error: 'Usuário não identificado. Envie o header x-user-id.' });
@@ -57,6 +57,7 @@ export const getMe = async (req: Request, res: Response) => {
         name: true,
         email: true,
         jobTitle: true,
+        isActive: true,
         departmentId: true,
         unitId: true,
         departmentRef: { select: { id: true, name: true } },
@@ -68,7 +69,12 @@ export const getMe = async (req: Request, res: Response) => {
       }
     });
     if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
-    return res.json(user);
+    let role: { id: string; name: string; code: string | null } | null = null;
+    if (user.roleId) {
+      const r = await prisma.role.findUnique({ where: { id: user.roleId }, select: { id: true, name: true, code: true } });
+      if (r) role = r;
+    }
+    return res.json({ ...user, role });
   } catch (error) {
     console.error('Erro ao buscar perfil (getMe):', error);
     return res.status(500).json({ error: 'Erro ao buscar perfil.' });
@@ -185,7 +191,11 @@ export const getUserDetails = async (req: Request, res: Response) => {
         where: { id: user.roleId },
         include: { kitItems: true }
       });
-      if (r) role = r;
+      if (r) {
+        const code = r.code || null;
+        const singleCode = code && code.includes(' e ') ? code.split(/\s+e\s+/)[0]?.trim() || code : code;
+        role = { ...r, code: singleCode };
+      }
     }
 
     const { getToolsAndLevelsMap } = await import('../services/slackService');
@@ -260,24 +270,26 @@ export const getMyTools = async (req: Request, res: Response) => {
       select: { roleId: true }
     });
 
-    let kitTools: { id: string; toolName: string; toolCode: string; accessLevelDesc: string; levelLabel: string }[] = [];
+    let kitTools: { id: string; toolName: string; toolCode: string; accessLevelDesc: string; levelLabel: string; criticality?: string }[] = [];
     if (user?.roleId) {
       const role = await prisma.role.findUnique({
         where: { id: user.roleId },
         include: { kitItems: true }
       });
       const items = role?.kitItems ?? [];
-      kitTools = items.map((k: { id: string; toolName: string; toolCode: string; accessLevelDesc: string | null }) => {
+      kitTools = items.map((k: { id: string; toolName: string; toolCode: string; accessLevelDesc: string | null; criticality?: string | null; isCritical?: boolean }) => {
         const code = k.accessLevelDesc ?? k.toolCode ?? '';
         const toolKey = (k.toolName || '').trim();
         const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
         const levelLabel = (levelsForTool?.find((l: { value: string }) => l.value === code)?.label ?? code) || '—';
+        const criticality = k.criticality?.trim() || (k.isCritical ? 'Crítico' : undefined);
         return {
           id: k.id,
           toolName: k.toolName,
           toolCode: k.toolCode,
           accessLevelDesc: code || '—',
-          levelLabel
+          levelLabel,
+          criticality
         };
       });
     }
@@ -340,11 +352,35 @@ export const updateUser = async (req: Request, res: Response) => {
     const oldUser = await prisma.user.findUnique({
       where: { id },
       select: {
-        name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true,
+        name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true, managerId: true,
         departmentRef: { select: { name: true } },
         unitRef: { select: { name: true } }
       }
     });
+
+    const newDeptId = departmentId !== undefined ? toNullIfEmpty(departmentId) : oldUser?.departmentId;
+    const deptChanged = newDeptId && newDeptId !== oldUser?.departmentId;
+    let resolvedManagerId: string | null | undefined = managerId !== undefined ? toNullIfEmpty(managerId) : undefined;
+    if (managerId === undefined && deptChanged && newDeptId) {
+      let lider = await prisma.user.findFirst({
+        where: { departmentId: newDeptId, isActive: true, jobTitle: { contains: 'Líder', mode: 'insensitive' } },
+        select: { id: true }
+      });
+      if (!lider) {
+        const rolesInDept = await prisma.role.findMany({
+          where: { departmentId: newDeptId, code: { not: null } },
+          select: { id: true, code: true }
+        });
+        const roleKbs1 = rolesInDept.find(r => r.code && /^KBS-[A-Z]{2}-1$/i.test(r.code));
+        if (roleKbs1) {
+          lider = await prisma.user.findFirst({
+            where: { roleId: roleKbs1.id, departmentId: newDeptId, isActive: true },
+            select: { id: true }
+          });
+        }
+      }
+      if (lider) resolvedManagerId = lider.id;
+    }
 
     const data: Record<string, unknown> = {
       ...(name !== undefined && { name }),
@@ -352,7 +388,7 @@ export const updateUser = async (req: Request, res: Response) => {
       ...(jobTitle !== undefined && { jobTitle }),
       ...(departmentId !== undefined && { departmentId: toNullIfEmpty(departmentId) }),
       ...(bodyUnitId !== undefined && { unitId: toNullIfEmpty(bodyUnitId) }),
-      ...(managerId !== undefined && { managerId: toNullIfEmpty(managerId) }),
+      ...(resolvedManagerId !== undefined && { managerId: resolvedManagerId }),
       ...(roleId !== undefined && { roleId: toNullIfEmpty(roleId) }),
       ...(isActive !== undefined && { isActive: Boolean(isActive) }),
       ...((isSuperAdmin || isGestor) && systemProfile !== undefined && { systemProfile })

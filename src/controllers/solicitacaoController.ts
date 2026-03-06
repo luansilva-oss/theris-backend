@@ -408,7 +408,7 @@ async function runChangeRoleAutomation(
 
   const oldUser = await prisma.user.findUnique({
     where: { id: targetUser.id },
-    select: { roleId: true, jobTitle: true, departmentId: true, unitId: true }
+    select: { roleId: true, jobTitle: true, departmentId: true, unitId: true, managerId: true }
   });
   const dadosAntes = {
     roleId: oldUser?.roleId,
@@ -417,14 +417,45 @@ async function runChangeRoleAutomation(
     unitId: oldUser?.unitId
   };
 
+  const deptChanged = departmentId !== oldUser?.departmentId;
+  let newManagerId: string | null | undefined = undefined;
+  if (deptChanged && departmentId) {
+    let lider = await prisma.user.findFirst({
+      where: {
+        departmentId,
+        isActive: true,
+        jobTitle: { contains: 'Líder', mode: 'insensitive' }
+      },
+      select: { id: true }
+    });
+    if (!lider) {
+      const rolesInDept = await prisma.role.findMany({
+        where: { departmentId, code: { not: null } },
+        select: { id: true, code: true }
+      });
+      const roleKbs1 = rolesInDept.find(r => r.code && /^KBS-[A-Z]{2}-1$/i.test(r.code));
+      if (roleKbs1) {
+        lider = await prisma.user.findFirst({
+          where: { roleId: roleKbs1.id, departmentId, isActive: true },
+          select: { id: true }
+        });
+      }
+    }
+    if (lider) newManagerId = lider.id;
+    else console.warn(`[Automação CHANGE_ROLE] Chamado ${requestId}: não foi possível identificar líder do departamento ${departmentId}. Gestor mantido.`);
+  }
+
+  const updateData: Record<string, unknown> = {
+    roleId,
+    departmentId,
+    unitId,
+    jobTitle: jobTitle || undefined
+  };
+  if (newManagerId !== undefined) updateData.managerId = newManagerId;
+
   await prisma.user.update({
     where: { id: targetUser.id },
-    data: {
-      roleId,
-      departmentId,
-      unitId,
-      jobTitle: jobTitle || undefined
-    }
+    data: updateData
   });
 
   const { registrarMudanca } = await import('../lib/auditLog');

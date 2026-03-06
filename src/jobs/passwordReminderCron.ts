@@ -1,10 +1,10 @@
 /**
- * Cron job: todos os dias às 09:00, busca usuários que atingiram 90 dias
- * desde lastPasswordChangeAt e envia DM no Slack lembrando de trocar senhas.
+ * Cron job: todos os dias às 09:00, busca usuários ativos com roleId cujo lastPasswordChangeAt
+ * seja null ou >= 90 dias atrás e envia DM personalizada com ferramentas do KBS do cargo.
  */
 import cron from 'node-cron';
 import { PrismaClient } from '@prisma/client';
-import { sendPasswordReminderDM } from '../services/passwordReminderSlack';
+import { sendPasswordReminderDM, isToolAllowed } from '../services/passwordReminderSlack';
 
 const prisma = new PrismaClient();
 
@@ -23,17 +23,14 @@ export function startPasswordReminderCron() {
       const users = await prisma.user.findMany({
         where: {
           isActive: true,
+          roleId: { not: null },
           OR: [
             { lastPasswordChangeAt: { lte: thresholdDate } },
             { lastPasswordChangeAt: null },
           ],
           email: { not: null },
         },
-        include: {
-          accesses: {
-            include: { tool: true },
-          },
-        },
+        select: { id: true, email: true, name: true, roleId: true }
       });
 
       if (users.length === 0) {
@@ -43,7 +40,15 @@ export function startPasswordReminderCron() {
 
       console.log(`   ${users.length} usuário(s) para notificar.`);
       for (const user of users) {
-        const toolNames = [...new Set(user.accesses.map(a => a.tool?.name).filter(Boolean))] as string[];
+        let allToolNames: string[] = [];
+        if (user.roleId) {
+          const role = await prisma.role.findUnique({
+            where: { id: user.roleId },
+            include: { kitItems: { select: { toolName: true } } }
+          });
+          allToolNames = role?.kitItems?.map(k => k.toolName).filter(Boolean) ?? [];
+        }
+        const toolNames = [...new Set(allToolNames.filter((t: string) => isToolAllowed(t)))] as string[];
         const result = await sendPasswordReminderDM({
           userEmail: user.email,
           userName: user.name,

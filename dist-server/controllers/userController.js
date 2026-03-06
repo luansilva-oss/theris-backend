@@ -77,7 +77,7 @@ const getAllUsers = async (req, res) => {
     }
 };
 exports.getAllUsers = getAllUsers;
-/** Perfil do usuário logado (Dashboard 'Meu perfil'): retorna usuário com manager para exibir Gestor Direto. */
+/** Perfil do usuário logado (Dashboard 'Meu perfil'): retorna usuário com manager, role (KBS code), etc. */
 const getMe = async (req, res) => {
     const userId = req.headers['x-user-id']?.trim();
     if (!userId)
@@ -90,6 +90,7 @@ const getMe = async (req, res) => {
                 name: true,
                 email: true,
                 jobTitle: true,
+                isActive: true,
                 departmentId: true,
                 unitId: true,
                 departmentRef: { select: { id: true, name: true } },
@@ -102,7 +103,13 @@ const getMe = async (req, res) => {
         });
         if (!user)
             return res.status(404).json({ error: 'Usuário não encontrado.' });
-        return res.json(user);
+        let role = null;
+        if (user.roleId) {
+            const r = await prisma.role.findUnique({ where: { id: user.roleId }, select: { id: true, name: true, code: true } });
+            if (r)
+                role = r;
+        }
+        return res.json({ ...user, role });
     }
     catch (error) {
         console.error('Erro ao buscar perfil (getMe):', error);
@@ -226,8 +233,11 @@ const getUserDetails = async (req, res) => {
                 where: { id: user.roleId },
                 include: { kitItems: true }
             });
-            if (r)
-                role = r;
+            if (r) {
+                const code = r.code || null;
+                const singleCode = code && code.includes(' e ') ? code.split(/\s+e\s+/)[0]?.trim() || code : code;
+                role = { ...r, code: singleCode };
+            }
         }
         const { getToolsAndLevelsMap } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
         const toolsAndLevels = getToolsAndLevelsMap();
@@ -308,12 +318,14 @@ const getMyTools = async (req, res) => {
                 const toolKey = (k.toolName || '').trim();
                 const levelsForTool = toolKey ? (toolsAndLevels[toolKey] ?? Object.entries(toolsAndLevels).find(([key]) => key.trim().toLowerCase() === toolKey.toLowerCase())?.[1]) : undefined;
                 const levelLabel = (levelsForTool?.find((l) => l.value === code)?.label ?? code) || '—';
+                const criticality = k.criticality?.trim() || (k.isCritical ? 'Crítico' : undefined);
                 return {
                     id: k.id,
                     toolName: k.toolName,
                     toolCode: k.toolCode,
                     accessLevelDesc: code || '—',
-                    levelLabel
+                    levelLabel,
+                    criticality
                 };
             });
         }
@@ -371,18 +383,42 @@ const updateUser = async (req, res) => {
         const oldUser = await prisma.user.findUnique({
             where: { id },
             select: {
-                name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true,
+                name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true, managerId: true,
                 departmentRef: { select: { name: true } },
                 unitRef: { select: { name: true } }
             }
         });
+        const newDeptId = departmentId !== undefined ? toNullIfEmpty(departmentId) : oldUser?.departmentId;
+        const deptChanged = newDeptId && newDeptId !== oldUser?.departmentId;
+        let resolvedManagerId = managerId !== undefined ? toNullIfEmpty(managerId) : undefined;
+        if (managerId === undefined && deptChanged && newDeptId) {
+            let lider = await prisma.user.findFirst({
+                where: { departmentId: newDeptId, isActive: true, jobTitle: { contains: 'Líder', mode: 'insensitive' } },
+                select: { id: true }
+            });
+            if (!lider) {
+                const rolesInDept = await prisma.role.findMany({
+                    where: { departmentId: newDeptId, code: { not: null } },
+                    select: { id: true, code: true }
+                });
+                const roleKbs1 = rolesInDept.find(r => r.code && /^KBS-[A-Z]{2}-1$/i.test(r.code));
+                if (roleKbs1) {
+                    lider = await prisma.user.findFirst({
+                        where: { roleId: roleKbs1.id, departmentId: newDeptId, isActive: true },
+                        select: { id: true }
+                    });
+                }
+            }
+            if (lider)
+                resolvedManagerId = lider.id;
+        }
         const data = {
             ...(name !== undefined && { name }),
             ...(email !== undefined && { email }),
             ...(jobTitle !== undefined && { jobTitle }),
             ...(departmentId !== undefined && { departmentId: toNullIfEmpty(departmentId) }),
             ...(bodyUnitId !== undefined && { unitId: toNullIfEmpty(bodyUnitId) }),
-            ...(managerId !== undefined && { managerId: toNullIfEmpty(managerId) }),
+            ...(resolvedManagerId !== undefined && { managerId: resolvedManagerId }),
             ...(roleId !== undefined && { roleId: toNullIfEmpty(roleId) }),
             ...(isActive !== undefined && { isActive: Boolean(isActive) }),
             ...((isSuperAdmin || isGestor) && systemProfile !== undefined && { systemProfile })
