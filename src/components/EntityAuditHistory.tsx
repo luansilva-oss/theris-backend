@@ -20,6 +20,9 @@ interface EntityAuditHistoryProps {
 }
 
 function getBadgeColor(tipo: string): string {
+  if (tipo === 'AEX_CREATED') return '#3b82f6';
+  if (['AEX_OWNER_APPROVED', 'AEX_SI_APPROVED', 'AEX_APPROVED'].includes(tipo)) return '#22c55e';
+  if (['AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED'].includes(tipo)) return '#ef4444';
   if (tipo.startsWith('ROLE_')) return '#3b82f6';
   if (tipo.startsWith('USER_')) return '#8b5cf6';
   if (tipo.startsWith('DEPARTMENT_')) return '#eab308';

@@ -202,6 +202,8 @@ model Request {
   ownerApprovedByName String?   // Nome do Owner que aprovou (para exibição)
   ownerRejectedAt     DateTime?
   ownerRejectedBy     String?
+  siApprovedBy        String?   // AEX: Slack ID de quem aprovou como SI (painel)
+  siApprovedAt        DateTime? // AEX: data da aprovação pelo SI
   toolName            String?   // Para AEX — nome da ferramenta
   accessLevel         String?   // Para AEX — nível solicitado
   extraordinaryDuration Int?     // Ex: 48

@@ -176,6 +176,90 @@ Aguardando aprovação do owner. Você será notificado quando o owner decidir p
   }
 }
 
+/** NOTIF 1 — DM para o solicitante ao criar o chamado */
+export async function sendAexRequesterCreatedDM(
+  client: { chat: { postMessage: (opts: any) => Promise<any> } },
+  requesterSlackId: string,
+  requestId: string,
+  toolName: string,
+  accessLevel: string
+): Promise<void> {
+  const shortId = requestId.slice(0, 8);
+  try {
+    await client.chat.postMessage({
+      channel: requesterSlackId,
+      text: `📋 *Chamado criado com sucesso!*
+
+Seu pedido de acesso extraordinário foi registrado.
+
+*Ferramenta:* ${toolName}
+*Nível solicitado:* ${accessLevel}
+*ID do chamado:* #${shortId}
+
+A solicitação foi enviada para aprovação do responsável pela ferramenta. Você será notificado a cada atualização.`
+    });
+  } catch (e) {
+    console.error('[AEX] Erro ao notificar solicitante (criação):', e);
+  }
+}
+
+/** NOTIF 2A — DM para o solicitante quando Owner aprova (PENDING_SI) */
+export async function sendAexRequesterOwnerApprovedDM(
+  client: { chat: { postMessage: (opts: any) => Promise<any> } },
+  requesterSlackId: string,
+  requestId: string,
+  toolName: string,
+  accessLevel: string
+): Promise<void> {
+  const shortId = requestId.slice(0, 8);
+  try {
+    await client.chat.postMessage({
+      channel: requesterSlackId,
+      text: `✅ *Etapa 1 concluída — Owner aprovou!*
+
+O responsável pela ferramenta aprovou sua solicitação.
+
+*Ferramenta:* ${toolName}
+*Nível:* ${accessLevel}
+*Chamado:* #${shortId}
+
+Agora aguarda aprovação final do time de Segurança da Informação. Você será notificado quando concluído.`
+    });
+  } catch (e) {
+    console.error('[AEX] Erro ao notificar solicitante (owner aprovou):', e);
+  }
+}
+
+/** NOTIF 2B — DM para solicitante quando SI aprova primeiro (fluxo PENDENTE_OWNER após SI) */
+export async function sendAexRequesterSIApprovedFirstDM(
+  client: { chat: { postMessage: (opts: any) => Promise<any> } },
+  requesterSlackId: string,
+  requestId: string,
+  toolName: string,
+  accessLevel: string,
+  ownerName: string,
+  subOwnerName?: string
+): Promise<void> {
+  const shortId = requestId.slice(0, 8);
+  const subLine = subOwnerName ? `\n*Sub-owner:* ${subOwnerName}` : '';
+  try {
+    await client.chat.postMessage({
+      channel: requesterSlackId,
+      text: `✅ *Etapa 1 concluída — Time de SI aprovou!*
+
+O time de Segurança da Informação aprovou sua solicitação.
+
+*Ferramenta:* ${toolName} — *Owner:* ${ownerName}${subLine}
+*Nível:* ${accessLevel}
+*Chamado:* #${shortId}
+
+Aguardando aprovação do responsável pela ferramenta.`
+    });
+  } catch (e) {
+    console.error('[AEX] Erro ao notificar solicitante (SI aprovou primeiro):', e);
+  }
+}
+
 /** Envia DM para Owner confirmando aprovação e para SI com link do painel.
  * Se o Owner for do time de SI, inclui aviso: aprovação final deve ser feita por outro integrante. */
 export async function sendAexOwnerApprovedDMs(
@@ -229,33 +313,75 @@ Acesse o painel para a aprovação final: ${ticketsUrl}`;
   }
 }
 
-/** Envia DM para solicitante informando rejeição pelo owner */
+/** NOTIF REJEIÇÃO — DM para solicitante quando Owner reprova */
 export async function sendAexRejectedByOwnerDM(
   client: { chat: { postMessage: (opts: any) => Promise<any> } },
   requesterSlackId: string,
+  requestId: string,
   toolName: string
 ): Promise<void> {
+  const shortId = requestId.slice(0, 8);
   try {
     await client.chat.postMessage({
       channel: requesterSlackId,
-      text: `❌ Sua solicitação de acesso extraordinário para ${toolName} foi reprovada pelo responsável da ferramenta.`
+      text: `❌ *Solicitação reprovada*
+
+Sua solicitação de acesso extraordinário foi reprovada.
+
+*Ferramenta:* ${toolName}
+*Chamado:* #${shortId}
+*Reprovado por:* Owner/Responsável pela ferramenta`
     });
   } catch (e) {
     console.error('[AEX] Erro ao notificar solicitante da rejeição:', e);
   }
 }
 
-/** Envia DM para solicitante informando aprovação final pelo SI */
-export async function sendAexApprovedBySIDM(
+/** NOTIF REJEIÇÃO — DM para solicitante quando SI reprova */
+export async function sendAexRejectedBySIDM(
   client: { chat: { postMessage: (opts: any) => Promise<any> } },
   requesterSlackId: string,
-  toolName: string,
-  accessLevel: string
+  requestId: string,
+  toolName: string
 ): Promise<void> {
+  const shortId = requestId.slice(0, 8);
   try {
     await client.chat.postMessage({
       channel: requesterSlackId,
-      text: `✅ Seu acesso extraordinário para ${toolName} - ${accessLevel} foi aprovado! O acesso já está ativo no sistema.`
+      text: `❌ *Solicitação reprovada*
+
+Sua solicitação de acesso extraordinário foi reprovada.
+
+*Ferramenta:* ${toolName}
+*Chamado:* #${shortId}
+*Reprovado por:* Time de SI`
+    });
+  } catch (e) {
+    console.error('[AEX] Erro ao notificar solicitante da rejeição pelo SI:', e);
+  }
+}
+
+/** NOTIF 3 — DM para solicitante quando ambos aprovaram (APPROVED) */
+export async function sendAexApprovedBySIDM(
+  client: { chat: { postMessage: (opts: any) => Promise<any> } },
+  requesterSlackId: string,
+  requestId: string,
+  toolName: string,
+  accessLevel: string
+): Promise<void> {
+  const shortId = requestId.slice(0, 8);
+  try {
+    await client.chat.postMessage({
+      channel: requesterSlackId,
+      text: `🎉 *Acesso liberado!*
+
+Sua solicitação foi totalmente aprovada.
+
+*Ferramenta:* ${toolName}
+*Nível de acesso:* ${accessLevel}
+*Chamado:* #${shortId}
+
+O acesso já está ativo no sistema.`
     });
   } catch (e) {
     console.error('[AEX] Erro ao notificar solicitante da aprovação:', e);

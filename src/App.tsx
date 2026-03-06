@@ -704,9 +704,42 @@ export default function App() {
         const updated = await res.json();
         setChamadoDetail(prev => prev ? { ...prev, ...updated } : updated);
         loadTicketList();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 403 && (err.error === 'PARTIAL_APPROVAL' || err.error === 'SAME_APPROVER')) {
+          showToast(err.message || 'Aprovação dupla necessária.', 'warning');
+        } else {
+          showToast('Erro ao atualizar.', 'error');
+        }
       }
     } catch (e) {
       showToast('Erro ao atualizar.', 'error');
+    }
+  };
+
+  const handleChamadoApprove = async (action: 'APROVAR' | 'REPROVADO') => {
+    if (!selectedChamadoId || !chamadoDetail || !currentUser?.id) return;
+    try {
+      const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: action,
+          approverId: currentUser.id,
+          adminNote: action === 'APROVAR' ? 'Aprovado pelo painel.' : 'Reprovado pelo painel.'
+        })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setChamadoDetail(prev => prev ? { ...prev, ...updated } : updated);
+        loadTicketList();
+        showToast(action === 'APROVAR' ? 'Chamado aprovado.' : 'Chamado reprovado.', 'success');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.message || err.error || 'Erro ao processar.', 'error');
+      }
+    } catch (e) {
+      showToast('Erro ao processar aprovação.', 'error');
     }
   };
 
@@ -918,10 +951,11 @@ export default function App() {
         loadData();
         setModalOpen(false);
         setModalTargetId(null);
+        if (selectedChamadoId === modalTargetId) loadChamadoDetail?.();
         showToast(`Solicitação ${modalAction === 'aprovar' ? 'aprovada' : modalAction === 'pendente' ? 'marcada como pendente' : 'reprovada'} com sucesso!`, "success");
       } else {
         const data = await res.json();
-        showToast(data.error || "Erro ao processar solicitação.", "error");
+        showToast(data.message || data.error || "Erro ao processar solicitação.", "error");
       }
     } catch (e) {
       showToast("Erro de conexão ao processar solicitação.", "error");
@@ -2303,6 +2337,42 @@ export default function App() {
                           Histórico do chamado
                         </div>
                         <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {(() => {
+                            const isAex = ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(chamadoDetail.type) || chamadoDetail.isExtraordinary;
+                            const ownerApprovedBy = (chamadoDetail as { ownerApprovedBy?: string }).ownerApprovedBy;
+                            const siApprovedBy = (chamadoDetail as { siApprovedBy?: string }).siApprovedBy;
+                            if (!isAex || chamadoDetail.status === 'APROVADO' || chamadoDetail.status === 'REPROVADO') return null;
+                            if (chamadoDetail.status === 'PENDING_OWNER' && !ownerApprovedBy && !siApprovedBy) {
+                              return (
+                                <div style={{ background: 'rgba(167, 139, 250, 0.15)', borderRadius: 12, padding: 16, border: '1px solid rgba(167, 139, 250, 0.4)' }}>
+                                  <span style={{ color: '#a78bfa', fontSize: 14 }}>🔒 Este chamado requer aprovação dupla: Owner/Sub-owner da ferramenta + Time de SI. Aguardando aprovação do Owner.</span>
+                                </div>
+                              );
+                            }
+                            if (chamadoDetail.status === 'PENDING_SI' && ownerApprovedBy) {
+                              return (
+                                <div style={{ background: 'rgba(34, 197, 94, 0.1)', borderRadius: 12, padding: 16, border: '1px solid rgba(34, 197, 94, 0.4)' }}>
+                                  <span style={{ color: '#22c55e', fontSize: 14 }}>✅ Owner aprovou. Aguardando aprovação final do Time de SI.</span>
+                                </div>
+                              );
+                            }
+                            if (chamadoDetail.status === 'PENDENTE_OWNER' && siApprovedBy) {
+                              return (
+                                <div style={{ background: 'rgba(34, 197, 94, 0.1)', borderRadius: 12, padding: 16, border: '1px solid rgba(34, 197, 94, 0.4)' }}>
+                                  <span style={{ color: '#22c55e', fontSize: 14 }}>✅ Time de SI aprovou. Aguardando aprovação do Owner/Sub-owner.</span>
+                                </div>
+                              );
+                            }
+                            if ((ownerApprovedBy || siApprovedBy) && !(ownerApprovedBy && siApprovedBy)) {
+                              return (
+                                <div style={{ background: 'rgba(39, 39, 42, 0.6)', borderRadius: 12, padding: 20, display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #3f3f46' }}>
+                                  <Lock size={24} color="#71717a" />
+                                  <span style={{ color: '#a1a1aa', fontSize: 14 }}>🔒 Não é possível encerrar este chamado ainda. Ambas as partes precisam aprovar antes do fechamento. Aguardando: {ownerApprovedBy ? 'Time de SI' : 'Owner'}</span>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                           <div style={{ padding: 12, background: '#18181b', borderRadius: 8, borderLeft: '3px solid #7c3aed' }}>
                             <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Abertura · {new Date(chamadoDetail.createdAt).toLocaleString('pt-BR')}</div>
                             <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2454,23 +2524,40 @@ export default function App() {
                           <div style={{ color: '#e4e4e7' }}>{chamadoDetail.requester?.name}</div>
                           <div style={{ fontSize: 12, color: '#a1a1aa' }}>{chamadoDetail.requester?.email}</div>
                         </div>
-                        <div className="card-base" style={{ padding: 20 }}>
-                          <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Status</label>
-                          {(activeTab === 'MY_TICKETS') ? (
-                            <div style={{ color: '#e4e4e7', fontSize: 13 }}>{getStatusLabel(chamadoDetail.status)}</div>
-                          ) : (
-                            <select
-                              className="input-base"
-                              style={{ width: '100%', background: '#18181b', fontSize: 12 }}
-                              value={chamadoDetail.status}
-                              onChange={e => handleChamadoMetadataChange('status', e.target.value)}
-                            >
-                              {Object.entries(STATUS_LABELS).map(([val, label]) => (
-                                <option key={val} value={val}>{label}</option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
+                        {(() => {
+                          const isAex = ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(chamadoDetail.type) || chamadoDetail.isExtraordinary;
+                          const showAexApproveButtons = isAex && chamadoDetail.status === 'PENDING_SI' && (chamadoDetail as { ownerApprovedBy?: string }).ownerApprovedBy && activeTab !== 'MY_TICKETS' && ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(systemProfile);
+                          return (
+                            <>
+                              {showAexApproveButtons && (
+                                <div className="card-base" style={{ padding: 20 }}>
+                                  <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Ação AEX</label>
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <button type="button" className="btn-mini approve" style={{ flex: 1 }} onClick={() => handleChamadoApprove('APROVAR')}>Aprovar</button>
+                                    <button type="button" className="btn-mini" style={{ flex: 1, background: '#dc2626', color: 'white' }} onClick={() => handleChamadoApprove('REPROVADO')}>Reprovar</button>
+                                  </div>
+                                </div>
+                              )}
+                              <div className="card-base" style={{ padding: 20 }}>
+                                <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Status</label>
+                                {(activeTab === 'MY_TICKETS') ? (
+                                  <div style={{ color: '#e4e4e7', fontSize: 13 }}>{getStatusLabel(chamadoDetail.status)}</div>
+                                ) : (
+                                  <select
+                                    className="input-base"
+                                    style={{ width: '100%', background: '#18181b', fontSize: 12 }}
+                                    value={chamadoDetail.status}
+                                    onChange={e => handleChamadoMetadataChange('status', e.target.value)}
+                                  >
+                                    {Object.entries(STATUS_LABELS).map(([val, label]) => (
+                                      <option key={val} value={val}>{label}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                            </>
+                          );
+                        })()}
                         {chamadoDetail.status === 'AGENDADO' && (
                           <div className="card-base" style={{ padding: 20 }}>
                             <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 8 }}>Data agendada</label>

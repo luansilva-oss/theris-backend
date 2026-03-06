@@ -1044,12 +1044,33 @@ async function saveRequest(
       }
     });
 
-    // AEX: enviar DMs para Owner/Sub e SI
     if (isExtraordinary && toolName) {
-      const requester = await prisma.user.findUnique({ where: { id: requesterId }, select: { name: true } });
-      const { sendAexCreationDMs } = await import('./aexOwnerService');
+      const { registrarMudanca } = await import('../lib/auditLog');
+      const period = accessPeriodRaw || (accessPeriodDays != null ? `${accessPeriodDays} dias` : null) || undefined;
+      await registrarMudanca({
+        tipo: 'AEX_CREATED',
+        entidadeTipo: 'Request',
+        entidadeId: created.id,
+        descricao: 'Solicitação de Acesso Extraordinário criada',
+        dadosDepois: { ferramenta: toolName, nivel: accessLevel, periodo: period, justificativa: reason || undefined },
+        autorId: requesterId
+      });
+    }
+
+    // AEX: enviar DMs para Owner/Sub, SI e solicitante
+    if (isExtraordinary && toolName) {
+      const requester = await prisma.user.findUnique({ where: { id: requesterId }, select: { name: true, email: true } });
+      const { sendAexCreationDMs, sendAexRequesterCreatedDM } = await import('./aexOwnerService');
       const period = accessPeriodRaw || (accessPeriodDays != null ? `${accessPeriodDays} dias` : '—');
       sendAexCreationDMs(client, created.id, toolName, accessLevel || '—', requester?.name || 'Solicitante', reason, { period }).catch(err => console.error('[AEX] Erro ao enviar DMs:', err));
+      if (requester?.email) {
+        try {
+          const lookup = await client.users.lookupByEmail({ email: requester.email });
+          if (lookup.user?.id) {
+            await sendAexRequesterCreatedDM(client, lookup.user.id, created.id, toolName, accessLevel || '—');
+          }
+        } catch (_) {}
+      }
     }
 
     // Confirma no chat privado do usuário (Ephemeral = apenas ele vê se for em canal público, ou DM)
@@ -1115,6 +1136,16 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
     const toolName = reqAny.toolName || (() => { try { const d = JSON.parse(req.details || '{}'); return d.tool || d.toolName || '—'; } catch { return '—'; } })();
     const accessLevel = reqAny.accessLevel || (() => { try { const d = JSON.parse(req.details || '{}'); return d.target || d.targetValue || '—'; } catch { return '—'; } })();
 
+    let ownerUserId: string | undefined;
+    try {
+      const ownerInfo = await client.users.info({ user: ownerSlackId });
+      const ownerEmail = ownerInfo.user?.profile?.email;
+      if (ownerEmail) {
+        const ownerDb = await prisma.user.findUnique({ where: { email: ownerEmail }, select: { id: true } });
+        if (ownerDb) ownerUserId = ownerDb.id;
+      }
+    } catch (_) {}
+
     if (isApprove) {
       let ownerName: string | null = null;
       try {
@@ -1135,8 +1166,29 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
         } as any
       });
 
-      const { sendAexOwnerApprovedDMs } = await import('./aexOwnerService');
+      const { registrarMudanca } = await import('../lib/auditLog');
+      await registrarMudanca({
+        tipo: 'AEX_OWNER_APPROVED',
+        entidadeTipo: 'Request',
+        entidadeId: requestId,
+        descricao: 'Owner/Sub-owner aprovou a solicitação AEX',
+        dadosAntes: { status: 'PENDING_OWNER' },
+        dadosDepois: { status: 'PENDING_SI', ownerApprovedBy: ownerSlackId },
+        autorId: ownerUserId
+      });
+
+      const { sendAexOwnerApprovedDMs, sendAexRequesterOwnerApprovedDM } = await import('./aexOwnerService');
       await sendAexOwnerApprovedDMs(client, requestId, toolName, accessLevel, req.requester?.name || 'Solicitante', ownerSlackId, ownerName ?? undefined);
+      let requesterSlackIdForNotif: string | null = null;
+      if (req.requester?.email) {
+        try {
+          const info = await client.users.lookupByEmail({ email: req.requester.email });
+          requesterSlackIdForNotif = info.user?.id ?? null;
+        } catch (_) {}
+      }
+      if (requesterSlackIdForNotif) {
+        await sendAexRequesterOwnerApprovedDM(client, requesterSlackIdForNotif, requestId, toolName, accessLevel);
+      }
     } else {
       await prisma.request.update({
         where: { id: requestId },
@@ -1148,6 +1200,17 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
         } as any
       });
 
+      const { registrarMudanca } = await import('../lib/auditLog');
+      await registrarMudanca({
+        tipo: 'AEX_OWNER_REJECTED',
+        entidadeTipo: 'Request',
+        entidadeId: requestId,
+        descricao: 'Owner/Sub-owner reprovou a solicitação AEX',
+        dadosAntes: { status: 'PENDING_OWNER' },
+        dadosDepois: { status: 'REJECTED', ownerRejectedBy: ownerSlackId },
+        autorId: ownerUserId
+      });
+
       const { sendAexRejectedByOwnerDM } = await import('./aexOwnerService');
       let requesterSlackId: string | null = null;
       if (req.requester?.email) {
@@ -1157,7 +1220,7 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
         } catch (_) {}
       }
       if (requesterSlackId) {
-        await sendAexRejectedByOwnerDM(client, requesterSlackId, toolName);
+        await sendAexRejectedByOwnerDM(client, requesterSlackId, requestId, toolName);
       }
     }
   } catch (e) {
@@ -1335,6 +1398,27 @@ slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
     }
 
     if (accessPeriodDays !== null && accessPeriodDays > 90) {
+      let autoRejectRequesterId: string | undefined;
+      try {
+        const info = await (client as any).users.info({ user: body.user.id });
+        const email = info.user?.profile?.email;
+        if (email) {
+          const userDb = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+          if (userDb) autoRejectRequesterId = userDb.id;
+        }
+      } catch (_) {}
+
+      const { registrarMudanca } = await import('../lib/auditLog');
+      const periodoSolicitado = accessPeriodRaw || `${periodoNum} ${periodoUnit}`;
+      await registrarMudanca({
+        tipo: 'AEX_AUTO_REJECTED',
+        entidadeTipo: 'User',
+        entidadeId: autoRejectRequesterId || body.user.id,
+        descricao: 'Solicitação AEX reprovada automaticamente: período superior a 90 dias',
+        dadosDepois: { periodoSolicitado, limite: '90 dias' },
+        autorId: autoRejectRequesterId
+      });
+
       const unitLabel = periodoUnit === 'horas' ? 'horas' : periodoUnit === 'dias' ? 'dias' : 'meses';
       const rejectMsg = `❌ *Solicitação Reprovada Automaticamente*
 

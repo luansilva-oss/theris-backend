@@ -15,10 +15,17 @@ interface AuditItem {
   createdAt: string;
 }
 
-const TIPO_OPTIONS = ['Todos', 'ROLE_CREATED', 'ROLE_DELETED', 'ROLE_DEPARTMENT_CHANGE', 'USER_KBS_CHANGE', 'USER_STATUS_CHANGE'];
-const ENTIDADE_OPTIONS = ['Role', 'User', 'Department', 'Unit'];
+const TIPO_OPTIONS = [
+  'Todos',
+  'ROLE_CREATED', 'ROLE_DELETED', 'ROLE_DEPARTMENT_CHANGE', 'USER_KBS_CHANGE', 'USER_STATUS_CHANGE',
+  'AEX_CREATED', 'AEX_OWNER_APPROVED', 'AEX_OWNER_REJECTED', 'AEX_SI_APPROVED', 'AEX_SI_REJECTED', 'AEX_APPROVED', 'AEX_AUTO_REJECTED',
+];
+const ENTIDADE_OPTIONS = ['Role', 'User', 'Department', 'Unit', 'Request'];
 
 function getBadgeColor(tipo: string): string {
+  if (tipo === 'AEX_CREATED') return '#3b82f6';
+  if (['AEX_OWNER_APPROVED', 'AEX_SI_APPROVED', 'AEX_APPROVED'].includes(tipo)) return '#22c55e';
+  if (['AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED'].includes(tipo)) return '#ef4444';
   if (tipo.startsWith('ROLE_')) return '#3b82f6';
   if (tipo.startsWith('USER_')) return '#8b5cf6';
   if (tipo.startsWith('DEPARTMENT_')) return '#eab308';
@@ -27,7 +34,9 @@ function getBadgeColor(tipo: string): string {
 }
 
 function getEntityLabel(item: AuditItem): string {
-  const name = (item.dadosDepois as any)?.name ?? (item.dadosAntes as any)?.name ?? item.entidadeId.slice(0, 8);
+  const d = item.dadosDepois as any;
+  const a = item.dadosAntes as any;
+  const name = d?.name ?? a?.name ?? d?.ferramenta ?? d?.toolName ?? item.entidadeId.slice(0, 8);
   return `${item.entidadeTipo} • ${name}`;
 }
 

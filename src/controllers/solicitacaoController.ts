@@ -607,19 +607,40 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       }
     });
 
+    if ((isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) && toolNameAex) {
+      const { registrarMudanca } = await import('../lib/auditLog');
+      const period = detailsObj.accessPeriodRaw || (detailsObj.duration != null && detailsObj.unit ? `${detailsObj.duration} ${detailsObj.unit}` : null) || null;
+      await registrarMudanca({
+        tipo: 'AEX_CREATED',
+        entidadeTipo: 'Request',
+        entidadeId: newRequest.id,
+        descricao: 'Solicitação de Acesso Extraordinário criada',
+        dadosDepois: { ferramenta: toolNameAex, nivel: accessLevelAex, periodo: period || undefined, justificativa: justification || undefined },
+        autorId: safeRequesterId
+      });
+    }
+
     const { notifyTicketEvent } = await import('../services/ticketEventService');
     notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {}).catch(() => {});
 
     if ((isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) && toolNameAex) {
-      const requester = await prisma.user.findUnique({ where: { id: safeRequesterId }, select: { name: true } });
+      const requester = await prisma.user.findUnique({ where: { id: safeRequesterId }, select: { name: true, email: true } });
       const { getSlackApp } = await import('../services/slackService');
-      const { sendAexCreationDMs } = await import('../services/aexOwnerService');
+      const { sendAexCreationDMs, sendAexRequesterCreatedDM } = await import('../services/aexOwnerService');
       const app = getSlackApp();
       if (app?.client) {
         const dur = detailsObj.duration != null ? String(detailsObj.duration) : null;
         const unit = detailsObj.unit || '';
         const period = detailsObj.accessPeriodRaw || (dur && unit ? `${dur} ${unit}` : null) || '—';
         sendAexCreationDMs(app.client, newRequest.id, String(toolNameAex), String(accessLevelAex || '—'), requester?.name || 'Solicitante', String(justification || ''), { period }).catch((err: unknown) => console.error('[AEX] Erro ao enviar DMs:', err));
+        if (requester?.email) {
+          try {
+            const lookup = await app.client.users.lookupByEmail({ email: requester.email });
+            if (lookup.user?.id) {
+              await sendAexRequesterCreatedDM(app.client, lookup.user.id, newRequest.id, String(toolNameAex), String(accessLevelAex || '—'));
+            }
+          } catch (_) {}
+        }
       }
     }
 
@@ -837,30 +858,42 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       }
     }
 
-    // AEX: bloquear auto-aprovação — quem aprovou como Owner não pode aprovar como SI
+    // AEX: controle de fechamento — ambas as partes devem aprovar, e quem aprovou não pode fechar
+    const isAex = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary);
     const ownerApprovedBy = (request as { ownerApprovedBy?: string }).ownerApprovedBy;
-    const isAexPendingSI = request.status === 'PENDING_SI' && (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary);
-    if (action === 'APROVADO' && isAexPendingSI && ownerApprovedBy && approverId) {
-      try {
-        const approverUser = await prisma.user.findUnique({
-          where: { id: approverId },
-          select: { email: true }
+    const siApprovedBy = (request as { siApprovedBy?: string }).siApprovedBy;
+    const isAexPendingSI = request.status === 'PENDING_SI' && isAex;
+
+    if (action === 'APROVADO' && isAex) {
+      if (!ownerApprovedBy) {
+        return res.status(403).json({
+          error: 'PARTIAL_APPROVAL',
+          message: 'Este chamado requer aprovação das duas partes. Aguardando aprovação pendente para encerrar.'
         });
-        if (approverUser?.email) {
-          const { getSlackApp } = await import('../services/slackService');
-          const app = getSlackApp();
-          if (app?.client) {
-            const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
-            const approverSlackId = lookup.user?.id;
-            if (approverSlackId && approverSlackId === ownerApprovedBy) {
-              return res.status(403).json({
-                error: 'Você já aprovou esta solicitação como Owner/sub-owner. Outro integrante do time de SI deve fazer a aprovação final.'
-              });
+      }
+      if (isAexPendingSI && approverId) {
+        try {
+          const approverUser = await prisma.user.findUnique({
+            where: { id: approverId },
+            select: { email: true }
+          });
+          if (approverUser?.email) {
+            const { getSlackApp } = await import('../services/slackService');
+            const app = getSlackApp();
+            if (app?.client) {
+              const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+              const approverSlackId = lookup.user?.id;
+              if (approverSlackId && approverSlackId === ownerApprovedBy) {
+                return res.status(403).json({
+                  error: 'SAME_APPROVER',
+                  message: 'Você já aprovou este chamado na etapa anterior. O fechamento deve ser feito pela outra parte.'
+                });
+              }
             }
           }
+        } catch (e) {
+          console.error('[AEX] Erro ao verificar ownerApprovedBy:', e);
         }
-      } catch (e) {
-        console.error('[AEX] Erro ao verificar ownerApprovedBy:', e);
       }
     }
 
@@ -876,24 +909,54 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         }
       });
 
+      if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
+        const { registrarMudanca } = await import('../lib/auditLog');
+        await registrarMudanca({
+          tipo: 'AEX_SI_REJECTED',
+          entidadeTipo: 'Request',
+          entidadeId: id,
+          descricao: 'Time de SI reprovou a solicitação AEX',
+          dadosAntes: { status: request.status },
+          dadosDepois: { status: 'REJECTED', siRejectedBy: approverId },
+          autorId: approverId ?? undefined
+        });
+      }
+
       if (request.requester.email) {
-        // Para rejeição de Acesso, busca o nome do Owner da ferramenta
-        let ownerName: string | undefined;
-        const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
-        if (ACCESS_TYPES.includes(request.type)) {
+        const toolNameAex = (request as { toolName?: string }).toolName || (() => { try { const d = JSON.parse(request.details || '{}'); return d.tool || d.toolName || '—'; } catch { return '—'; } })();
+        if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
           try {
-            const det = JSON.parse(request.details || '{}');
-            const toolName = det.tool || det.toolName || (det.info ? det.info.split(': ')[1] : null);
-            if (toolName) {
-              const tool = await prisma.tool.findFirst({
-                where: { name: { contains: toolName, mode: 'insensitive' } },
-                include: { owner: true, subOwner: true }
-              });
-              ownerName = tool?.owner?.name || tool?.subOwner?.name || undefined;
+            const { getSlackApp } = await import('../services/slackService');
+            const { sendAexRejectedBySIDM } = await import('../services/aexOwnerService');
+            const app = getSlackApp();
+            if (app?.client) {
+              const lookup = await app.client.users.lookupByEmail({ email: request.requester.email });
+              if (lookup.user?.id) {
+                await sendAexRejectedBySIDM(app.client, lookup.user.id, id, toolNameAex);
+              }
             }
-          } catch (_) { }
+          } catch (e) {
+            console.error('[AEX] Erro ao notificar rejeição SI:', e);
+            sendSlackNotification(request.requester.email, 'REPROVADO', adminNote || 'Reprovado.', request.type, undefined, request.details);
+          }
+        } else {
+          let ownerName: string | undefined;
+          const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA'];
+          if (ACCESS_TYPES.includes(request.type)) {
+            try {
+              const det = JSON.parse(request.details || '{}');
+              const toolName = det.tool || det.toolName || (det.info ? det.info.split(': ')[1] : null);
+              if (toolName) {
+                const tool = await prisma.tool.findFirst({
+                  where: { name: { contains: toolName, mode: 'insensitive' } },
+                  include: { owner: true, subOwner: true }
+                });
+                ownerName = tool?.owner?.name || tool?.subOwner?.name || undefined;
+              }
+            } catch (_) { }
+          }
+          sendSlackNotification(request.requester.email, 'REPROVADO', adminNote || 'Reprovado pelo administrador.', request.type, ownerName, request.details);
         }
-        sendSlackNotification(request.requester.email, 'REPROVADO', adminNote || 'Reprovado pelo administrador.', request.type, ownerName, request.details);
       }
       return res.json(updated);
     }
@@ -945,21 +1008,70 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       }
     }
 
-    // APROVAÇÃO FINAL
+    // APROVAÇÃO FINAL — para AEX, registrar siApprovedBy
     const updatedDetails = {
       ...JSON.parse(request.details || '{}'),
       adminNote: adminNote || 'Aprovação final concedida.'
     };
 
+    if (isAex && isAexPendingSI) {
+      const { registrarMudanca } = await import('../lib/auditLog');
+      let siApprovedBySlack: string | undefined;
+      if (approverId) {
+        try {
+          const approverUser = await prisma.user.findUnique({ where: { id: approverId }, select: { email: true } });
+          if (approverUser?.email) {
+            const { getSlackApp } = await import('../services/slackService');
+            const app = getSlackApp();
+            if (app?.client) {
+              const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+              siApprovedBySlack = lookup.user?.id;
+            }
+          }
+        } catch (_) {}
+      }
+      await registrarMudanca({
+        tipo: 'AEX_SI_APPROVED',
+        entidadeTipo: 'Request',
+        entidadeId: id,
+        descricao: 'Time de SI aprovou a solicitação AEX',
+        dadosAntes: { status: 'PENDING_SI' },
+        dadosDepois: { status: 'APPROVED', siApprovedBy: siApprovedBySlack },
+        autorId: approverId ?? undefined
+      });
+    }
+
+    const updateData: any = {
+      status: 'APROVADO',
+      adminNote: adminNote || 'Aprovado.',
+      approverId: approverId,
+      details: JSON.stringify(updatedDetails),
+      updatedAt: new Date()
+    };
+    if (isAex && isAexPendingSI && approverId) {
+      try {
+        const approverUser = await prisma.user.findUnique({
+          where: { id: approverId },
+          select: { email: true }
+        });
+        if (approverUser?.email) {
+          const { getSlackApp } = await import('../services/slackService');
+          const app = getSlackApp();
+          if (app?.client) {
+            const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+            const approverSlackId = lookup.user?.id;
+            if (approverSlackId) {
+              updateData.siApprovedBy = approverSlackId;
+              updateData.siApprovedAt = new Date();
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     const updatedRequest = await prisma.request.update({
       where: { id },
-      data: {
-        status: 'APROVADO',
-        adminNote: adminNote || 'Aprovado.',
-        approverId: approverId,
-        details: JSON.stringify(updatedDetails),
-        updatedAt: new Date()
-      }
+      data: updateData
     });
 
     // Notificação Slack (AEX e CHANGE_ROLE usam mensagem específica após execução)
@@ -995,13 +1107,21 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           const { registrarMudanca } = await import('../lib/auditLog');
           const toolNameAex = (request as { toolName?: string }).toolName || (() => { try { const d = JSON.parse(request.details || '{}'); return d.tool || d.toolName || '—'; } catch { return '—'; } })();
           const accessLevelAex = (request as { accessLevel?: string }).accessLevel || (() => { try { const d = JSON.parse(request.details || '{}'); return d.target || d.targetValue || '—'; } catch { return '—'; } })();
+          const reqAny = request as { ownerApprovedBy?: string; siApprovedBy?: string; accessPeriodRaw?: string; extraordinaryDuration?: number; extraordinaryUnit?: string };
+          const periodo = reqAny.accessPeriodRaw || (reqAny.extraordinaryDuration != null && reqAny.extraordinaryUnit ? `${reqAny.extraordinaryDuration} ${reqAny.extraordinaryUnit}` : undefined);
           await registrarMudanca({
             tipo: 'AEX_APPROVED',
-            entidadeTipo: 'Request',
-            entidadeId: id,
-            descricao: `Acesso extraordinário concedido: ${request.requester?.name || 'Solicitante'} → ${toolNameAex} (${accessLevelAex})`,
-            dadosAntes: { status: 'PENDING_SI' },
-            dadosDepois: { status: 'APROVADO' },
+            entidadeTipo: 'User',
+            entidadeId: request.requesterId || id,
+            descricao: `Acesso extraordinário concedido: ${toolNameAex} - ${accessLevelAex}`,
+            dadosDepois: {
+              ferramenta: toolNameAex,
+              nivel: accessLevelAex,
+              periodo,
+              ownerApprovedBy: reqAny.ownerApprovedBy,
+              siApprovedBy: (updatedRequest as { siApprovedBy?: string }).siApprovedBy,
+              requestId: id
+            },
             autorId: approverId || undefined
           });
           if (request.requester?.email) {
@@ -1013,7 +1133,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
                 const lookup = await app.client.users.lookupByEmail({ email: request.requester.email });
                 const requesterSlackId = lookup.user?.id;
                 if (requesterSlackId) {
-                  await sendAexApprovedBySIDM(app.client, requesterSlackId, toolNameAex, accessLevelAex);
+                  await sendAexApprovedBySIDM(app.client, requesterSlackId, id, toolNameAex, accessLevelAex);
                 }
               } catch (e) {
                 console.error('[AEX] Erro ao notificar solicitante da aprovação:', e);
@@ -1130,6 +1250,19 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     const existing = await prisma.request.findUnique({ where: { id }, include: { requester: true, assignee: true } });
     if (!existing) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
+    const isAex = existing.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) && existing.isExtraordinary);
+    const ownerApprovedBy = (existing as { ownerApprovedBy?: string }).ownerApprovedBy;
+    const siApprovedBy = (existing as { siApprovedBy?: string }).siApprovedBy;
+
+    if (status !== undefined && String(status) === 'APROVADO' && isAex) {
+      if (!ownerApprovedBy || !siApprovedBy) {
+        return res.status(403).json({
+          error: 'PARTIAL_APPROVAL',
+          message: 'Este chamado requer aprovação das duas partes. Use o botão Aprovar no fluxo de aprovação, não altere o status diretamente.'
+        });
+      }
+    }
+
     const data = {};
     if (status !== undefined) (data as any).status = String(status);
     if (assigneeId !== undefined) (data as any).assigneeId = assigneeId || null;
@@ -1182,13 +1315,21 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           const { registrarMudanca } = await import('../lib/auditLog');
           const toolNameAex = (existing as { toolName?: string }).toolName || (() => { try { const d = JSON.parse(existing.details || '{}'); return d.tool || d.toolName || '—'; } catch { return '—'; } })();
           const accessLevelAex = (existing as { accessLevel?: string }).accessLevel || (() => { try { const d = JSON.parse(existing.details || '{}'); return d.target || d.targetValue || '—'; } catch { return '—'; } })();
+          const exAny = existing as { ownerApprovedBy?: string; siApprovedBy?: string; accessPeriodRaw?: string; extraordinaryDuration?: number; extraordinaryUnit?: string };
+          const periodo = exAny.accessPeriodRaw || (exAny.extraordinaryDuration != null && exAny.extraordinaryUnit ? `${exAny.extraordinaryDuration} ${exAny.extraordinaryUnit}` : undefined);
           await registrarMudanca({
             tipo: 'AEX_APPROVED',
-            entidadeTipo: 'Request',
-            entidadeId: id,
-            descricao: `Acesso extraordinário concedido: ${existing.requester?.name || 'Solicitante'} → ${toolNameAex} (${accessLevelAex})`,
-            dadosAntes: { status: existing.status },
-            dadosDepois: { status: 'APROVADO' }
+            entidadeTipo: 'User',
+            entidadeId: existing.requesterId || id,
+            descricao: `Acesso extraordinário concedido: ${toolNameAex} - ${accessLevelAex}`,
+            dadosDepois: {
+              ferramenta: toolNameAex,
+              nivel: accessLevelAex,
+              periodo,
+              ownerApprovedBy: exAny.ownerApprovedBy,
+              siApprovedBy: exAny.siApprovedBy,
+              requestId: id
+            },
           });
           if (existing.requester?.email) {
             const { getSlackApp } = await import('../services/slackService');
@@ -1198,7 +1339,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
               try {
                 const lookup = await app.client.users.lookupByEmail({ email: existing.requester.email });
                 if (lookup.user?.id) {
-                  await sendAexApprovedBySIDM(app.client, lookup.user.id, toolNameAex, accessLevelAex);
+                  await sendAexApprovedBySIDM(app.client, lookup.user.id, id, toolNameAex, accessLevelAex);
                 }
               } catch (e) {
                 console.error('[AEX] Erro ao notificar solicitante da aprovação (metadata):', e);
