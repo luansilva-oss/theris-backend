@@ -537,8 +537,10 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     let approverId = null;
     let currentApproverRole = 'MANAGER';
     let status = 'PENDENTE_GESTOR';
+    const toolNameAex = detailsObj?.tool || detailsObj?.toolName;
+    const accessLevelAex = detailsObj?.target || detailsObj?.targetValue;
 
-    // ROTA A: ACESSO EXTRAORDINÁRIO — Owner aprova primeiro (PENDING_OWNER)
+    // ROTA A: ACESSO EXTRAORDINÁRIO — sempre 2 etapas: Owner aprova → SI aprova
     if (isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) {
       status = 'PENDING_OWNER';
       currentApproverRole = 'TOOL_OWNER';
@@ -588,9 +590,6 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       }
     }
 
-    const toolNameAex = detailsObj?.tool || detailsObj?.toolName;
-    const accessLevelAex = detailsObj?.target || detailsObj?.targetValue;
-
     const newRequest = await prisma.request.create({
       data: {
         requesterId: safeRequesterId,
@@ -617,7 +616,10 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       const { sendAexCreationDMs } = await import('../services/aexOwnerService');
       const app = getSlackApp();
       if (app?.client) {
-        sendAexCreationDMs(app.client, newRequest.id, String(toolNameAex), String(accessLevelAex || '—'), requester?.name || 'Solicitante', String(justification || '')).catch((err: unknown) => console.error('[AEX] Erro ao enviar DMs:', err));
+        const dur = detailsObj.duration != null ? String(detailsObj.duration) : null;
+        const unit = detailsObj.unit || '';
+        const period = detailsObj.accessPeriodRaw || (dur && unit ? `${dur} ${unit}` : null) || '—';
+        sendAexCreationDMs(app.client, newRequest.id, String(toolNameAex), String(accessLevelAex || '—'), requester?.name || 'Solicitante', String(justification || ''), { period }).catch((err: unknown) => console.error('[AEX] Erro ao enviar DMs:', err));
       }
     }
 
@@ -814,6 +816,33 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         return res.status(403).json({
           error: 'Apenas aprovadores autorizados de SI (Luan Matheus, Allan Von Stain ou Vladimir Sesar) podem aprovar esta solicitação.'
         });
+      }
+    }
+
+    // AEX: bloquear auto-aprovação — quem aprovou como Owner não pode aprovar como SI
+    const ownerApprovedBy = (request as { ownerApprovedBy?: string }).ownerApprovedBy;
+    const isAexPendingSI = request.status === 'PENDING_SI' && (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary);
+    if (action === 'APROVADO' && isAexPendingSI && ownerApprovedBy && approverId) {
+      try {
+        const approverUser = await prisma.user.findUnique({
+          where: { id: approverId },
+          select: { email: true }
+        });
+        if (approverUser?.email) {
+          const { getSlackApp } = await import('../services/slackService');
+          const app = getSlackApp();
+          if (app?.client) {
+            const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+            const approverSlackId = lookup.user?.id;
+            if (approverSlackId && approverSlackId === ownerApprovedBy) {
+              return res.status(403).json({
+                error: 'Você já aprovou esta solicitação como Owner/sub-owner. Outro integrante do time de SI deve fazer a aprovação final.'
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[AEX] Erro ao verificar ownerApprovedBy:', e);
       }
     }
 
@@ -1055,7 +1084,17 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
     });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
     if (viewerContext && userId && request.requesterId !== userId) return res.status(403).json({ error: 'Acesso negado a este chamado.' });
-    return res.json(request);
+
+    // AEX PENDING_SI: indicar se Owner é do time de SI (para exibir aviso no painel)
+    let ownerIsSIMember = false;
+    if (request.status === 'PENDING_SI' && ((request as { toolName?: string }).toolName || EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary)) {
+      const toolName = (request as { toolName?: string }).toolName;
+      if (toolName) {
+        const { isOwnerSIMember } = await import('../services/aexOwnerService');
+        ownerIsSIMember = await isOwnerSIMember(toolName);
+      }
+    }
+    return res.json({ ...request, ownerIsSIMember });
   } catch (error) {
     console.error('SOLICITACOES ERROR (getSolicitacaoById):', error);
     if (error instanceof Error) console.error('Stack:', error.stack);
@@ -1280,7 +1319,7 @@ function getCategoryForType(type: string): string {
   return 'Geral';
 }
 
-function formatDetailsForCsv(details: string | null, type: string, actionDate?: Date | string | null): string {
+function formatDetailsForCsv(details: string | null, type: string, actionDate?: Date | string | null, accessPeriodRaw?: string | null): string {
   try {
     const d = typeof details === 'string' ? JSON.parse(details || '{}') : (details || {});
     const parts: string[] = [];
@@ -1290,6 +1329,7 @@ function formatDetailsForCsv(details: string | null, type: string, actionDate?: 
     if (d.collaboratorName) parts.push(`Colaborador: ${d.collaboratorName}`);
     if (d.tool) parts.push(`Ferramenta: ${d.tool}`);
     if (d.target) parts.push(`Nível: ${d.target}`);
+    if (accessPeriodRaw) parts.push(`Período: ${accessPeriodRaw}`);
     if (actionDate) {
       const dt = typeof actionDate === 'string' ? new Date(actionDate) : actionDate;
       parts.push(`Data de Ação: ${dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`);
@@ -1379,7 +1419,7 @@ export const exportRequestsCsv = async (req: Request, res: Response) => {
   for (const r of requests) {
     const category = getCategoryForType(r.type);
     const subject = SUBJECT_MAP[r.type] || r.type;
-    const detailsStr = formatDetailsForCsv(r.details, r.type, (r as { actionDate?: Date | string | null }).actionDate);
+    const detailsStr = formatDetailsForCsv(r.details, r.type, (r as { actionDate?: Date | string | null }).actionDate, (r as { accessPeriodRaw?: string | null }).accessPeriodRaw);
     const adminNote = (r as { adminNote?: string }).adminNote || '';
 
     const row: string[] = [];

@@ -198,14 +198,17 @@ model Request {
   
   // AEX: Owner approval flow
   ownerApprovedAt     DateTime?
-  ownerApprovedBy     String?
+  ownerApprovedBy     String?   // Slack ID de quem aprovou como Owner
+  ownerApprovedByName String?   // Nome do Owner que aprovou (para exibição)
   ownerRejectedAt     DateTime?
   ownerRejectedBy     String?
   toolName            String?   // Para AEX — nome da ferramenta
   accessLevel         String?   // Para AEX — nível solicitado
   extraordinaryDuration Int?     // Ex: 48
   extraordinaryUnit     String?  // Ex: "horas", "dias", "meses"
-  
+  accessPeriodDays      Int?     // Período em dias convertido (AEX /acessos)
+  accessPeriodRaw       String?  // Ex: "30 dias", "2 meses"
+
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

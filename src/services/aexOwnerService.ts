@@ -98,16 +98,31 @@ export async function getSISlackIds(): Promise<string[]> {
   return ids;
 }
 
+/** Verifica se o slackId pertence ao time de SI (Luan, Vladimir ou Allan) */
+export async function isSIMember(slackId: string): Promise<boolean> {
+  if (!slackId) return false;
+  const siIds = await getSISlackIds();
+  return siIds.includes(slackId);
+}
+
+/** Verifica se Owner ou Sub-Owner da ferramenta pertence ao time de SI */
+export async function isOwnerSIMember(toolName: string): Promise<boolean> {
+  const ownerIds = await getOwnerSlackIdsForTool(toolName);
+  const siIds = await getSISlackIds();
+  return ownerIds.some((id) => siIds.includes(id));
+}
+
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.VITE_API_URL || 'https://theris.grupo-3c.com';
 
-/** Envia DMs para Owner/Sub e SI quando uma solicitação AEX é criada */
+/** Envia DMs para Owner/Sub e SI quando uma solicitação AEX é criada (sempre fluxo de 2 etapas) */
 export async function sendAexCreationDMs(
   client: { chat: { postMessage: (opts: any) => Promise<any> } },
   requestId: string,
   toolName: string,
   accessLevel: string,
   requesterName: string,
-  justification: string
+  justification: string,
+  opts?: { period?: string }
 ): Promise<void> {
   const shortId = requestId.slice(0, 8);
   const ownerIds = await getOwnerSlackIdsForTool(toolName);
@@ -128,8 +143,8 @@ Por favor, avalie a solicitação #${shortId}:`;
       type: 'actions',
       block_id: 'aex_owner_decision',
       elements: [
-        { type: 'button', text: { type: 'plain_text', text: '✅ Aprovar', emoji: true }, action_id: 'aex_approve', value: requestId, style: 'primary' },
-        { type: 'button', text: { type: 'plain_text', text: '❌ Reprovar', emoji: true }, action_id: 'aex_reject', value: requestId }
+        { type: 'button', text: { type: 'plain_text', text: '✅ Aprovar', emoji: true }, action_id: 'aex_approve', value: `approve_${requestId}`, style: 'primary' },
+        { type: 'button', text: { type: 'plain_text', text: '❌ Reprovar', emoji: true }, action_id: 'aex_reject', value: `reject_${requestId}` }
       ]
     }
   ];
@@ -161,14 +176,16 @@ Aguardando aprovação do owner. Você será notificado quando o owner decidir p
   }
 }
 
-/** Envia DM para Owner confirmando aprovação e para SI com link do painel */
+/** Envia DM para Owner confirmando aprovação e para SI com link do painel.
+ * Se o Owner for do time de SI, inclui aviso: aprovação final deve ser feita por outro integrante. */
 export async function sendAexOwnerApprovedDMs(
   client: { chat: { postMessage: (opts: any) => Promise<any> } },
   requestId: string,
   toolName: string,
   accessLevel: string,
   requesterName: string,
-  ownerSlackId: string
+  ownerSlackId: string,
+  ownerName?: string
 ): Promise<void> {
   const shortId = requestId.slice(0, 8);
   const ticketsUrl = `${FRONTEND_URL}/tickets`;
@@ -183,11 +200,23 @@ export async function sendAexOwnerApprovedDMs(
   }
 
   const siIds = await getSISlackIds();
-  const siMessage = `✅ *Owner aprovou o Acesso Extraordinário #${shortId}*
+  const ownerIsSI = await isSIMember(ownerSlackId);
+  const ownerDisplayName = ownerName || 'Owner';
+
+  let siMessage = `✅ *Owner aprovou o Acesso Extraordinário #${shortId}*
 
 *Solicitante:* ${requesterName}
 *Ferramenta:* ${toolName}
-*Nível:* ${accessLevel}
+*Nível:* ${accessLevel}`;
+
+  if (ownerIsSI) {
+    siMessage += `
+
+⚠️ Atenção: o Owner (${ownerDisplayName}) é do time de SI.
+A aprovação final deve ser feita por Luan, Vladimir ou Allan — exceto ${ownerDisplayName}.`;
+  }
+
+  siMessage += `
 
 Acesse o painel para a aprovação final: ${ticketsUrl}`;
 

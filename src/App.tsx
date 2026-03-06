@@ -234,7 +234,8 @@ function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 
     } else {
       if (d.target) lines.push({ label: 'Nível desejado', value: d.target as string });
       if (d.beneficiary) lines.push({ label: 'Beneficiário', value: d.beneficiary as string });
-      if (d.duration != null && d.unit) lines.push({ label: 'Duração', value: `${d.duration} ${d.unit}` });
+      const period = (r as { accessPeriodRaw?: string }).accessPeriodRaw ?? (d.duration != null && d.unit ? `${d.duration} ${d.unit}` : null);
+      if (period) lines.push({ label: 'Período', value: period });
     }
     if (r.justification) lines.push({ label: 'Justificativa', value: r.justification });
     return { category: 'Acessos', categoryColor: '#a78bfa', title, lines };
@@ -1399,7 +1400,7 @@ export default function App() {
                 </div>
               )}
 
-              <div className="card-base cell-feed">
+              <div className={`card-base ${systemProfile === 'VIEWER' ? '' : 'cell-feed'}`} style={systemProfile === 'VIEWER' ? { gridColumn: '1 / -1' } : undefined}>
                 <div className="card-header"><span className="card-title">Feed Recente</span></div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {requests
@@ -2302,7 +2303,21 @@ export default function App() {
                         <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                           <div style={{ padding: 12, background: '#18181b', borderRadius: 8, borderLeft: '3px solid #7c3aed' }}>
                             <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Abertura · {new Date(chamadoDetail.createdAt).toLocaleString('pt-BR')}</div>
-                            <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 8 }}>Solicitação criada · {chamadoDetail.type}</div>
+                            <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              Solicitação criada · {chamadoDetail.type}
+                            </div>
+                            {chamadoDetail.status === 'PENDING_SI' && ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(chamadoDetail.type) && (chamadoDetail as { ownerApprovedByName?: string }).ownerApprovedByName && (
+                              <>
+                                <div style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 4 }}>
+                                  Aprovado pelo Owner: {(chamadoDetail as { ownerApprovedByName: string }).ownerApprovedByName}
+                                </div>
+                                {(chamadoDetail as { ownerIsSIMember?: boolean }).ownerIsSIMember && (
+                                  <div style={{ fontSize: 12, color: '#fbbf24', marginBottom: 8, background: 'rgba(251, 191, 36, 0.1)', padding: '8px 12px', borderRadius: 8 }}>
+                                    ⚠️ O Owner desta ferramenta é do time de SI. A aprovação final deve ser feita por outro integrante do time.
+                                  </div>
+                                )}
+                              </>
+                            )}
                             {(() => {
                               let d: Record<string, unknown> = {};
                               try { d = typeof chamadoDetail.details === 'string' ? JSON.parse(chamadoDetail.details || '{}') : (chamadoDetail.details || {}); } catch {}
@@ -2311,6 +2326,7 @@ export default function App() {
                               if (chamadoDetail.justification) lines.push({ label: 'Justificativa', value: chamadoDetail.justification });
                               if (d.tool) lines.push({ label: 'Ferramenta', value: String(d.tool) });
                               if (d.target || d.targetValue) lines.push({ label: 'Nível solicitado', value: String(d.target || d.targetValue || '—') });
+                              if ((chamadoDetail as { accessPeriodRaw?: string }).accessPeriodRaw) lines.push({ label: 'Período', value: (chamadoDetail as { accessPeriodRaw: string }).accessPeriodRaw });
                               if (d.urgencyLabel || d.urgency) lines.push({ label: 'Urgência', value: String(d.urgencyLabel || d.urgency) });
                               if (d.requestTypeLabel || d.requestType) lines.push({ label: 'Tipo de solicitação', value: String(d.requestTypeLabel || d.requestType || '—') });
                               if (d.description) lines.push({ label: 'Descrição / Problema', value: String(d.description) });
