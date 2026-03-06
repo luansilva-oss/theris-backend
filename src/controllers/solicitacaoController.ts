@@ -1232,7 +1232,43 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
         ownerIsSIMember = await isOwnerSIMember(toolName);
       }
     }
-    return res.json({ ...request, ownerIsSIMember });
+
+    // AEX: canAddSolution — bloqueio de "Adicionar uma solução" até aprovação dupla completa
+    let canAddSolution = true;
+    let solutionBlockReason: string | null = null;
+    const isAexDetail = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary);
+    if (isAexDetail && request.status !== 'APROVADO' && request.status !== 'REPROVADO') {
+      if (request.status === 'PENDING_OWNER') {
+        canAddSolution = false;
+        solutionBlockReason = 'Não é possível adicionar uma solução ainda. Aguardando aprovação do Owner/Sub-owner da ferramenta antes que o Time de SI possa encerrar este chamado.';
+      } else if (request.status === 'PENDING_SI') {
+        const ownerApprovedBy = (request as { ownerApprovedBy?: string }).ownerApprovedBy;
+        if (ownerApprovedBy && userId) {
+          const viewer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+          const isSI = viewer?.email && SI_BYPASS_APPROVER_EMAILS.includes(viewer.email.toLowerCase());
+          let isOwner = false;
+          if (viewer?.email) {
+            try {
+              const { getSlackApp } = await import('../services/slackService');
+              const app = getSlackApp();
+              if (app?.client) {
+                const lookup = await app.client.users.lookupByEmail({ email: viewer.email });
+                if (lookup.user?.id === ownerApprovedBy) isOwner = true;
+              }
+            } catch (_) {}
+          }
+          if (isOwner) {
+            canAddSolution = false;
+            solutionBlockReason = 'Você já aprovou como Owner/Sub-owner. A solução final deve ser adicionada pelo Time de Segurança da Informação.';
+          } else if (!isSI) {
+            canAddSolution = false;
+            solutionBlockReason = 'A solução final deve ser adicionada pelo Time de Segurança da Informação.';
+          }
+        }
+      }
+    }
+
+    return res.json({ ...request, ownerIsSIMember, canAddSolution, solutionBlockReason });
   } catch (error) {
     console.error('SOLICITACOES ERROR (getSolicitacaoById):', error);
     if (error instanceof Error) console.error('Stack:', error.stack);
@@ -1246,27 +1282,55 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
 export const updateSolicitacaoMetadata = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { status, assigneeId, scheduledAt } = req.body;
+  const userId = (req.headers['x-user-id'] as string)?.trim();
   try {
     const existing = await prisma.request.findUnique({ where: { id }, include: { requester: true, assignee: true } });
     if (!existing) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
     const isAex = existing.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) && existing.isExtraordinary);
     const ownerApprovedBy = (existing as { ownerApprovedBy?: string }).ownerApprovedBy;
-    const siApprovedBy = (existing as { siApprovedBy?: string }).siApprovedBy;
+    let siApprovedBy = (existing as { siApprovedBy?: string }).siApprovedBy;
 
     if (status !== undefined && String(status) === 'APROVADO' && isAex) {
-      if (!ownerApprovedBy || !siApprovedBy) {
+      if (!ownerApprovedBy) {
         return res.status(403).json({
           error: 'PARTIAL_APPROVAL',
-          message: 'Este chamado requer aprovação das duas partes. Use o botão Aprovar no fluxo de aprovação, não altere o status diretamente.'
+          message: 'Este chamado requer aprovação das duas partes. Aguardando aprovação do Owner.'
         });
+      }
+      if (!siApprovedBy) {
+        // Permitir que SI defina APROVADO ao adicionar solução — preencher siApprovedBy
+        if (!userId) {
+          return res.status(401).json({ error: 'Usuário não identificado.' });
+        }
+        const approverUser = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+        const isSI = approverUser?.email && SI_BYPASS_APPROVER_EMAILS.includes(approverUser.email.toLowerCase());
+        if (!isSI) {
+          return res.status(403).json({
+            error: 'PARTIAL_APPROVAL',
+            message: 'Este chamado requer aprovação das duas partes. Use o botão Aprovar no fluxo de aprovação.'
+          });
+        }
+        try {
+          const { getSlackApp } = await import('../services/slackService');
+          const app = getSlackApp();
+          if (app?.client && approverUser?.email) {
+            const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+            siApprovedBy = lookup.user?.id ?? undefined;
+          }
+        } catch (_) {}
       }
     }
 
-    const data = {};
-    if (status !== undefined) (data as any).status = String(status);
-    if (assigneeId !== undefined) (data as any).assigneeId = assigneeId || null;
-    if (scheduledAt !== undefined) (data as any).scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+    const data: Record<string, unknown> = {};
+    if (status !== undefined) data.status = String(status);
+    if (assigneeId !== undefined) data.assigneeId = assigneeId || null;
+    if (scheduledAt !== undefined) data.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+    // Ao SI adicionar solução em AEX PENDING_SI: preencher siApprovedBy/siApprovedAt (acima já validado)
+    if (status === 'APROVADO' && isAex && siApprovedBy && !(existing as { siApprovedBy?: string }).siApprovedBy) {
+      (data as any).siApprovedBy = siApprovedBy;
+      (data as any).siApprovedAt = new Date();
+    }
 
     const updated = await prisma.request.update({
       where: { id },
@@ -1366,15 +1430,65 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
 export const createComment = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { body, kind } = req.body;
+  const authorId = (req.headers['x-user-id'] as string)?.trim() || req.body.authorId || null;
   if (!body || !String(body).trim()) return res.status(400).json({ error: 'Conteúdo do comentário é obrigatório' });
   try {
     const request = await prisma.request.findUnique({ where: { id } });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
+    // AEX: bloquear solução enquanto aprovação dupla não estiver completa
+    const isAex = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary);
+    if (isAex && (kind === 'SOLUTION' || kind === 'solution')) {
+      const status = request.status;
+      const ownerApprovedBy = (request as { ownerApprovedBy?: string }).ownerApprovedBy;
+
+      if (status === 'PENDING_OWNER') {
+        return res.status(403).json({
+          error: 'AEX_SOLUTION_BLOCKED',
+          message: 'Não é possível adicionar uma solução ainda. Aguardando aprovação do Owner/Sub-owner da ferramenta antes que o Time de SI possa encerrar este chamado.'
+        });
+      }
+
+      if (status === 'PENDING_SI' && ownerApprovedBy) {
+        if (!authorId) {
+          return res.status(401).json({ error: 'Usuário não identificado.' });
+        }
+        const author = await prisma.user.findUnique({ where: { id: authorId }, select: { email: true } });
+        const isSI = author?.email && SI_BYPASS_APPROVER_EMAILS.includes(author.email.toLowerCase());
+
+        // Verificar se o autor é o Owner (já aprovou) — não pode fechar
+        let isOwner = false;
+        if (author?.email) {
+          try {
+            const { getSlackApp } = await import('../services/slackService');
+            const app = getSlackApp();
+            if (app?.client) {
+              const lookup = await app.client.users.lookupByEmail({ email: author.email });
+              const authorSlackId = lookup.user?.id;
+              if (authorSlackId === ownerApprovedBy) isOwner = true;
+            }
+          } catch (_) {}
+        }
+
+        if (isOwner) {
+          return res.status(403).json({
+            error: 'AEX_SOLUTION_BLOCKED',
+            message: 'Você já aprovou como Owner/Sub-owner. A solução final deve ser adicionada pelo Time de Segurança da Informação.'
+          });
+        }
+        if (!isSI) {
+          return res.status(403).json({
+            error: 'AEX_SOLUTION_BLOCKED',
+            message: 'A solução final deve ser adicionada pelo Time de Segurança da Informação.'
+          });
+        }
+      }
+    }
+
     const comment = await prisma.requestComment.create({
       data: {
         requestId: id,
-        authorId: req.body.authorId || null,
+        authorId,
         body: String(body).trim(),
         kind: kind === 'SOLUTION' || kind === 'SCHEDULED_TASK' ? kind : 'COMMENT'
       },

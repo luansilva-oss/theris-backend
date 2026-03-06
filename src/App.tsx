@@ -670,10 +670,8 @@ export default function App() {
     try {
       const isViewerContext = activeTab === 'MY_TICKETS';
       const headers: HeadersInit = {};
-      if (isViewerContext && currentUser?.id) {
-        headers['x-context'] = 'my-tickets';
-        headers['x-user-id'] = currentUser.id;
-      }
+      if (currentUser?.id) headers['x-user-id'] = currentUser.id;
+      if (isViewerContext) headers['x-context'] = 'my-tickets';
       const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}`, { headers });
       if (res.ok) setChamadoDetail(await res.json());
       else setChamadoDetail(null);
@@ -751,6 +749,12 @@ export default function App() {
       showToast('Informe a data e hora da tarefa agendada.', 'warning');
       return;
     }
+    // AEX: bloqueio de solução até aprovação dupla completa
+    if (kind === 'SOLUTION' && chamadoDetail && (chamadoDetail as { canAddSolution?: boolean }).canAddSolution === false) {
+      const msg = (chamadoDetail as { solutionBlockReason?: string }).solutionBlockReason || 'Não é possível adicionar solução neste momento.';
+      showToast(`🔒 ${msg}`, 'warning');
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/comments`, {
         method: 'POST',
@@ -793,7 +797,14 @@ export default function App() {
         } else {
           showToast('Comentário adicionado.', 'success');
         }
-      } else showToast('Erro ao adicionar comentário.', 'error');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 403 && err.error === 'AEX_SOLUTION_BLOCKED') {
+          showToast(`🔒 ${err.message || 'Não é possível adicionar solução neste momento.'}`, 'warning');
+        } else {
+          showToast('Erro ao adicionar comentário.', 'error');
+        }
+      }
     } catch {
       showToast('Erro de conexão.', 'error');
     }
@@ -2457,6 +2468,11 @@ export default function App() {
                                     <option value="SOLUTION">Adicionar uma solução</option>
                                     <option value="SCHEDULED_TASK">Criar uma tarefa agendada</option>
                                   </select>
+                                  {chamadoCommentKind === 'SOLUTION' && (chamadoDetail as { canAddSolution?: boolean }).canAddSolution === false && (chamadoDetail as { solutionBlockReason?: string }).solutionBlockReason && (
+                                    <div style={{ background: 'rgba(167, 139, 250, 0.15)', borderRadius: 12, padding: 16, marginBottom: 12, border: '1px solid rgba(167, 139, 250, 0.4)' }}>
+                                      <span style={{ color: '#a78bfa', fontSize: 14 }}>🔒 {(chamadoDetail as { solutionBlockReason: string }).solutionBlockReason}</span>
+                                    </div>
+                                  )}
                                   {chamadoCommentKind === 'SCHEDULED_TASK' && (
                                     <div style={{ marginBottom: 8 }}>
                                       <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Data e horário planejado</label>
@@ -2472,6 +2488,9 @@ export default function App() {
                                   )}
                                 </>
                               )}
+                              {(() => {
+                                const solutionBlocked = chamadoCommentKind === 'SOLUTION' && (chamadoDetail as { canAddSolution?: boolean })?.canAddSolution === false;
+                                return (
                               <div style={{ display: 'flex', gap: 8 }}>
                                 <input
                                   type="text"
@@ -2482,8 +2501,10 @@ export default function App() {
                                   onChange={e => setChamadoCommentInput(e.target.value)}
                                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleAddComment()}
                                 />
-                                <button type="button" className="btn-mini" style={{ background: '#7c3aed' }} onClick={handleAddComment}>Enviar</button>
+                                <button type="button" className="btn-mini" style={{ background: solutionBlocked ? '#4c1d95' : '#7c3aed', opacity: solutionBlocked ? 0.6 : 1, cursor: solutionBlocked ? 'not-allowed' : 'pointer' }} onClick={handleAddComment} disabled={solutionBlocked}>Enviar</button>
                               </div>
+                                );
+                              })()}
                               <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                 <input type="file" ref={chamadoFileInputRef} style={{ display: 'none' }} onChange={handleChamadoAddAttachment} />
                                 <button type="button" className="btn-mini" style={{ background: '#27272a', color: '#e4e4e7' }} onClick={() => chamadoFileInputRef.current?.click()} disabled={chamadoAttachmentUploading}>
