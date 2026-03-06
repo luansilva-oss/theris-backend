@@ -143,8 +143,8 @@ Por favor, avalie a solicitação #${shortId}:`;
       type: 'actions',
       block_id: 'aex_owner_decision',
       elements: [
-        { type: 'button', text: { type: 'plain_text', text: '✅ Aprovar', emoji: true }, action_id: 'aex_approve', value: `approve_${requestId}`, style: 'primary' },
-        { type: 'button', text: { type: 'plain_text', text: '❌ Reprovar', emoji: true }, action_id: 'aex_reject', value: `reject_${requestId}` }
+        { type: 'button', text: { type: 'plain_text', text: '✅ Aprovar', emoji: true }, action_id: 'aex_owner_approve_v2', value: `approve_${requestId}`, style: 'primary' },
+        { type: 'button', text: { type: 'plain_text', text: '❌ Reprovar', emoji: true }, action_id: 'aex_owner_reject_v2', value: `reject_${requestId}` }
       ]
     }
   ];

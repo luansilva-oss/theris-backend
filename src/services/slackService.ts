@@ -1064,19 +1064,25 @@ async function saveRequest(
 
 // ============================================================
 // BLOCK ACTIONS: AEX Owner Approve/Reject
-// Handler único por block_id para garantir roteamento correto.
+// APENAS cliques explícitos nos botões disparam mudança de status.
+// action_id específico (v2) para evitar colisão com outros eventos.
 // value: approve_<requestId> | reject_<requestId>
 // ============================================================
-slackApp.action({ action_id: /^aex_(approve|reject)$/, block_id: 'aex_owner_decision' }, async ({ ack, body, client }) => {
-  await ack();
+slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_owner_decision' }, async ({ ack, body, client }) => {
   const b = body as any;
+  const payloadType = b.type; // block_actions para cliques em botões
   const action = b.actions?.[0];
   const rawValue = action?.value ?? '';
   const actionId = action?.action_id ?? '';
 
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('[AEX] Interaction payload:', JSON.stringify({ action_id: actionId, value: rawValue }));
+  console.log('[AEX] Event type:', payloadType || 'unknown', '| Action:', actionId, '| Value:', rawValue?.slice?.(0, 30));
+
+  if (payloadType && payloadType !== 'block_actions') {
+    console.warn('[AEX] Ignorando payload que não é block_actions:', payloadType);
+    await ack();
+    return;
   }
+  await ack();
 
   let requestId: string | null = null;
   let isApprove = false;
@@ -1089,10 +1095,13 @@ slackApp.action({ action_id: /^aex_(approve|reject)$/, block_id: 'aex_owner_deci
       isApprove = false;
     } else {
       requestId = rawValue;
-      isApprove = actionId === 'aex_approve';
+      isApprove = actionId === 'aex_owner_approve_v2';
     }
   }
-  if (!requestId) return;
+  if (!requestId) {
+    console.warn('[AEX] requestId ausente no payload');
+    return;
+  }
 
   try {
     const req = await prisma.request.findUnique({

@@ -449,7 +449,9 @@ export default function App() {
   // Stats
   const stats = {
     pending: requests.filter(r => {
-      if (!r?.status?.includes('PENDENTE')) return false;
+      const s = r?.status || '';
+      const isPending = s.startsWith('PENDENTE') || s === 'PENDING_OWNER' || s === 'PENDING_SI' || s === 'EM_ATENDIMENTO' || s === 'AGENDADO';
+      if (!isPending) return false;
       if (systemProfile === 'VIEWER') return r?.requester?.id === currentUser?.id;
       return true;
     }).length,
@@ -1356,7 +1358,7 @@ export default function App() {
                   </div>
                   <div className="action-tiles-wrap">
                     {(() => {
-                      const isPendingStatus = (s: string) => (s && (s.startsWith('PENDENTE') || s === 'EM_ATENDIMENTO' || s === 'AGENDADO'));
+                      const isPendingStatus = (s: string) => (s && (s.startsWith('PENDENTE') || s === 'PENDING_OWNER' || s === 'PENDING_SI' || s === 'EM_ATENDIMENTO' || s === 'AGENDADO'));
                       const pendingForMe = requests.filter(r => {
                         if (!isPendingStatus(r.status)) return false;
                         if (systemProfile === 'SUPER_ADMIN' || systemProfile === 'ADMIN') return true;

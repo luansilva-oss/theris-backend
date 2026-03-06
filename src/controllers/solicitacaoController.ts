@@ -646,6 +646,7 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
     } = req.query as Record<string, string | undefined>;
 
     const where: any = {};
+    const andClauses: any[] = [];
 
     // Privacidade VIEWER: retornar apenas chamados onde o usuário é solicitante, responsável ou aprovador
     const userId = (req.headers['x-user-id'] as string)?.trim();
@@ -655,21 +656,31 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
         select: { systemProfile: true }
       });
       if (currentUser?.systemProfile === 'VIEWER') {
-        where.OR = [
-          { requesterId: userId },
-          { assigneeId: userId },
-          { approverId: userId }
-        ];
+        andClauses.push({
+          OR: [
+            { requesterId: userId },
+            { assigneeId: userId },
+            { approverId: userId }
+          ]
+        });
       }
     }
 
     if (status && status !== 'ALL') {
       if (status === 'PENDENTE') {
-        where.status = { startsWith: 'PENDENTE' };
+        andClauses.push({
+          OR: [
+            { status: { startsWith: 'PENDENTE' } },
+            { status: 'PENDING_OWNER' },
+            { status: 'PENDING_SI' }
+          ]
+        });
       } else {
         where.status = status;
       }
     }
+
+    if (andClauses.length > 0) where.AND = andClauses;
 
     if (assigneeId) {
       where.assigneeId = assigneeId;
@@ -729,8 +740,15 @@ export const getMyTickets = async (req: Request, res: Response) => {
     const where: any = { requesterId: userId.trim() };
 
     if (status && status !== 'ALL') {
-      if (status === 'PENDENTE') where.status = { startsWith: 'PENDENTE' };
-      else where.status = status;
+      if (status === 'PENDENTE') {
+        where.OR = [
+          { status: { startsWith: 'PENDENTE' } },
+          { status: 'PENDING_OWNER' },
+          { status: 'PENDING_SI' }
+        ];
+      } else {
+        where.status = status;
+      }
     }
     if (startDate || endDate) {
       where.createdAt = {};
