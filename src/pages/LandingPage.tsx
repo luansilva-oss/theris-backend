@@ -1,18 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bird, Lock, Users, FileCheck, ArrowRight, ExternalLink, FileText } from 'lucide-react';
+import { Lock, Users, FileText, ArrowRight, ExternalLink } from 'lucide-react';
 import './LandingPage.css';
 
-const PRIMARY = '#0EA5E9';
-const PRIMARY_DARK = '#0284C7';
-const PRIMARY_LIGHT = '#38BDF8';
-const BG_DARK = '#0F172A';
-const BG_CARD = '#1E293B';
+const DOC_URL = 'https://docs.google.com/document/d/1AY1-VBGEXMwO4aFTMEMFloM6jNPZGoSaeuId5xPUTBI/edit?tab=t.0';
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const [navbarScrolled, setNavbarScrolled] = useState(false);
-  const sectionRefs = useRef<HTMLElement[]>([]);
+  const sectionRefs = useRef<(HTMLElement | null)[]>([]);
   const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -20,6 +16,7 @@ export default function LandingPage() {
     document.body.style.overflow = 'auto';
     return () => { document.body.style.overflow = prev; };
   }, []);
+
   useEffect(() => {
     const onScroll = () => setNavbarScrolled(window.scrollY > 40);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -45,83 +42,85 @@ export default function LandingPage() {
   }, []);
 
   const setSectionRef = (i: number) => (el: HTMLElement | null) => {
-    sectionRefs.current[i] = el!;
+    sectionRefs.current[i] = el;
+  };
+
+  const scrollTo = (id: string) => {
+    const el = document.getElementById(id);
+    el?.scrollIntoView({ behavior: 'smooth' });
   };
 
   return (
     <div className="landing-page">
-      {/* NAVBAR */}
+      {/* NAVBAR — full width, fixa */}
       <nav className={`landing-nav ${navbarScrolled ? 'landing-nav--scrolled' : ''}`}>
         <div className="landing-nav-inner">
-          <div className="landing-logo">
+          <a href="#" className="landing-logo" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
             <img src="/favicon.png" alt="Theris" className="landing-logo-img" />
             <span>Theris OS</span>
+          </a>
+          <div className="landing-nav-links">
+            <button type="button" className="landing-nav-link" onClick={() => scrollTo('funcionalidades')}>Funcionalidades</button>
+            <button type="button" className="landing-nav-link" onClick={() => scrollTo('como-funciona')}>Como Funciona</button>
+            <button type="button" className="landing-nav-link" onClick={() => scrollTo('perfis')}>Perfis</button>
+            <button type="button" className="landing-nav-link" onClick={() => scrollTo('documentacao')}>Documentação</button>
           </div>
-          <button
-            type="button"
-            className="landing-btn-outline"
-            onClick={() => navigate('/login')}
-          >
+          <button type="button" className="landing-btn-entrar" onClick={() => navigate('/login')}>
             Entrar
           </button>
         </div>
       </nav>
 
-      {/* HERO */}
+      {/* HERO — 100vh, centralizado */}
       <section className="landing-hero" ref={setSectionRef(0)} data-section={0}>
-        <div className="landing-hero-grid" aria-hidden />
-        <div className="landing-hero-logo-bg">
-          <img src="/favicon.png" alt="" />
-        </div>
+        <div className="landing-hero-glow" aria-hidden />
         <div className="landing-hero-content">
-          <div className={`landing-badge ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            Sistema de Gestão de Identidades
+          <div className={`landing-hero-badge ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
+            🔐 Identity Governance & Administration
           </div>
           <h1 className={`landing-hero-title ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            Theris OS
+            <span className="landing-hero-title-line1">Controle total de</span>
+            <span className="landing-hero-title-line2">identidades e acessos.</span>
           </h1>
           <p className={`landing-hero-subtitle ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            Automatize o controle de acessos, cargos e permissões do Grupo 3C em um único lugar.
+            O sistema interno de IGA do Grupo 3C. Automatize acessos, aprovações e auditoria em um único lugar.
           </p>
           <div className={`landing-hero-buttons ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
             <button type="button" className="landing-btn-primary" onClick={() => navigate('/login')}>
               Acessar o Sistema <ArrowRight size={18} />
             </button>
-            <a
-              href="https://docs.google.com/document/d/1AY1-VBGEXMwO4aFTMEMFloM6jNPZGoSaeuId5xPUTBI/edit?tab=t.0"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="landing-btn-ghost"
-            >
+            <a href={DOC_URL} target="_blank" rel="noopener noreferrer" className="landing-btn-secondary">
               Ver Documentação <ExternalLink size={18} />
             </a>
+          </div>
+          <div className={`landing-hero-logo-wrap ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
+            <img src="/favicon.png" alt="" className="landing-hero-logo-img" />
           </div>
         </div>
       </section>
 
-      {/* O QUE É O THERIS */}
-      <section className="landing-section" ref={setSectionRef(1)} data-section={1}>
+      {/* FUNCIONALIDADES */}
+      <section id="funcionalidades" className="landing-section landing-section-func" ref={setSectionRef(1)} data-section={1}>
+        <p className={`landing-label ${visibleSections.has(1) ? 'landing-visible' : ''}`}>FUNCIONALIDADES</p>
         <h2 className={`landing-section-title ${visibleSections.has(1) ? 'landing-visible' : ''}`}>
-          O que é o Theris?
+          Um sistema completamente <span className="landing-gradient-text">integrado</span>
         </h2>
         <p className={`landing-section-lead ${visibleSections.has(1) ? 'landing-visible' : ''}`}>
-          O Theris OS é o sistema interno de Identity Governance & Administration (IGA) do Grupo 3C.
-          Desenvolvido para substituir os controles manuais em planilhas, o Theris centraliza e automatiza
-          toda a gestão de identidades, acessos e permissões da empresa.
+          Centralize identidades, acessos e aprovações com o Theris OS.
         </p>
-        <div className="landing-cards-three">
+        <div className="landing-cards-grid landing-cards-three">
           {[
             { icon: Lock, title: 'Controle de Acessos', desc: 'Gerencie quem tem acesso a quê. Kit Básico por cargo e Acessos Extraordinários com aprovação dupla.' },
             { icon: Users, title: 'Gestão de Pessoas', desc: 'Onboarding, movimentações e desligamentos com automação completa e rastreabilidade total.' },
-            { icon: FileCheck, title: 'Auditoria Completa', desc: 'Histórico detalhado de todas as ações, relatórios CSV e conformidade com políticas de segurança.' },
+            { icon: FileText, title: 'Auditoria Completa', desc: 'Histórico detalhado de todas as ações, relatórios CSV e conformidade com políticas de segurança.' },
           ].map((item, i) => (
             <div
               key={item.title}
               className={`landing-card ${visibleSections.has(1) ? 'landing-visible' : ''}`}
-              style={{ transitionDelay: `${i * 80}ms` }}
+              style={{ transitionDelay: `${i * 100}ms` }}
             >
-              <div className="landing-card-icon" style={{ color: PRIMARY }}>
-                <item.icon size={28} />
+              <div className="landing-card-icon">
+                <item.icon size={28} color="#0EA5E9" />
               </div>
               <h3>{item.title}</h3>
               <p>{item.desc}</p>
@@ -131,14 +130,15 @@ export default function LandingPage() {
       </section>
 
       {/* COMO FUNCIONA */}
-      <section className="landing-section landing-section--alt" ref={setSectionRef(2)} data-section={2}>
+      <section id="como-funciona" className="landing-section landing-section-como" ref={setSectionRef(2)} data-section={2}>
+        <p className={`landing-label ${visibleSections.has(2) ? 'landing-visible' : ''}`}>COMO FUNCIONA</p>
         <h2 className={`landing-section-title ${visibleSections.has(2) ? 'landing-visible' : ''}`}>
-          Como funciona?
+          Do pedido ao acesso em minutos
         </h2>
-        <div className="landing-steps">
+        <div className="landing-steps-grid">
           {[
             { num: 1, title: 'Solicitação', desc: 'Colaborador solicita acesso via /acessos no Slack em segundos.' },
-            { num: 2, title: 'Aprovação Dupla', desc: 'Owner da ferramenta aprova via Slack. Time de SI aprova no painel. Ambas as partes independentes.' },
+            { num: 2, title: 'Aprovação Dupla', desc: 'Owner da ferramenta aprova via Slack. Time de SI aprova no painel.' },
             { num: 3, title: 'Provisionamento', desc: 'Acesso concedido automaticamente no sistema. JumpCloud sincronizado.' },
             { num: 4, title: 'Auditoria', desc: 'Tudo registrado: quem pediu, quem aprovou, quando e por quanto tempo.' },
           ].map((step, i) => (
@@ -147,34 +147,34 @@ export default function LandingPage() {
               className={`landing-step ${visibleSections.has(2) ? 'landing-visible' : ''}`}
               style={{ transitionDelay: `${i * 100}ms` }}
             >
-              <div className="landing-step-num" style={{ background: PRIMARY, color: '#fff' }}>{step.num}</div>
-              <div className="landing-step-body">
-                <h3>{step.title}</h3>
-                <p>{step.desc}</p>
-              </div>
+              <div className="landing-step-num">{step.num}</div>
+              <h3>{step.title}</h3>
+              <p>{step.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* PERFIS DE ACESSO */}
-      <section className="landing-section" ref={setSectionRef(3)} data-section={3}>
+      {/* PERFIS */}
+      <section id="perfis" className="landing-section landing-section-perfis" ref={setSectionRef(3)} data-section={3}>
+        <p className={`landing-label ${visibleSections.has(3) ? 'landing-visible' : ''}`}>PERFIS</p>
         <h2 className={`landing-section-title ${visibleSections.has(3) ? 'landing-visible' : ''}`}>
           Perfis de Acesso
         </h2>
-        <div className="landing-profiles">
+        <div className="landing-cards-grid landing-cards-four">
           {[
-            { name: 'VIEWER', label: 'Colaborador padrão', desc: 'Visualiza seus acessos, acompanha chamados e solicita permissões extraordinárias.', color: '#64748b' },
-            { name: 'ADMIN', label: 'Gestores e Líderes', desc: 'Gerencia equipe, aprova chamados e configura estrutura organizacional.', color: PRIMARY },
-            { name: 'SUPER_ADMIN', label: 'Time de SI', desc: 'Acesso total: aprovações, auditoria, relatórios e configurações do sistema.', color: '#f59e0b' },
-            { name: 'APPROVER', label: 'Owners de Ferramentas', desc: 'Aprova solicitações de Acesso Extraordinário para as ferramentas sob sua responsabilidade.', color: '#10b981' },
+            { name: 'VIEWER', label: 'Colaborador padrão', desc: 'Visualiza seus acessos, acompanha chamados e solicita permissões extraordinárias.', color: '#64748B' },
+            { name: 'ADMIN', label: 'Gestores e Líderes', desc: 'Gerencia equipe, aprova chamados e configura estrutura organizacional.', color: '#0EA5E9' },
+            { name: 'SUPER_ADMIN', label: 'Time de SI', desc: 'Acesso total: aprovações, auditoria, relatórios e configurações do sistema.', color: '#7C3AED' },
+            { name: 'APPROVER', label: 'Owners de Ferramentas', desc: 'Aprova solicitações de Acesso Extraordinário para as ferramentas sob sua responsabilidade.', color: '#059669' },
           ].map((profile, i) => (
             <div
               key={profile.name}
               className={`landing-profile-card ${visibleSections.has(3) ? 'landing-visible' : ''}`}
-              style={{ transitionDelay: `${i * 80}ms`, borderTopColor: profile.color }}
+              style={{ transitionDelay: `${i * 100}ms`, ['--profile-color' as string]: profile.color }}
             >
-              <div className="landing-profile-badge" style={{ color: profile.color }}>{profile.name}</div>
+              <div className="landing-profile-bar" />
+              <div className="landing-profile-badge">{profile.name}</div>
               <h3>{profile.label}</h3>
               <p>{profile.desc}</p>
             </div>
@@ -182,22 +182,14 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* PROCEDIMENTO DE USO */}
-      <section className="landing-section landing-section--procedure" ref={setSectionRef(4)} data-section={4}>
-        <div className={`landing-procedure-wrap ${visibleSections.has(4) ? 'landing-visible' : ''}`}>
-          <div className="landing-procedure-icon">
-            <FileText size={64} color={PRIMARY} />
-          </div>
-          <h2 className="landing-section-title">Procedimento de Uso</h2>
-          <p className="landing-section-lead">
+      {/* PROCEDIMENTO / DOCUMENTAÇÃO */}
+      <section id="documentacao" className="landing-section landing-section-doc" ref={setSectionRef(4)} data-section={4}>
+        <div className={`landing-doc-wrap ${visibleSections.has(4) ? 'landing-visible' : ''}`}>
+          <h2 className="landing-doc-title">Procedimento de Uso</h2>
+          <p className="landing-doc-lead">
             Acesse o guia completo com instruções detalhadas para todos os perfis de usuário.
           </p>
-          <a
-            href="https://docs.google.com/document/d/1AY1-VBGEXMwO4aFTMEMFloM6jNPZGoSaeuId5xPUTBI/edit?tab=t.0"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="landing-btn-doc"
-          >
+          <a href={DOC_URL} target="_blank" rel="noopener noreferrer" className="landing-btn-doc">
             Acessar Procedimento de Uso <ExternalLink size={20} />
           </a>
         </div>
@@ -205,6 +197,7 @@ export default function LandingPage() {
 
       {/* FOOTER */}
       <footer className="landing-footer">
+        <div className="landing-footer-sep" />
         <div className="landing-footer-inner">
           <div className="landing-logo">
             <img src="/favicon.png" alt="Theris" className="landing-logo-img" />
