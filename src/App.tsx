@@ -2035,7 +2035,7 @@ export default function App() {
                         cursor: 'pointer',
                       }}
                     >
-                      {f === 'ALL' ? 'TODOS' : f === 'GESTAO_PESSOAS' ? 'GESTÃO DE PESSOAS' : f === 'GESTAO_ACESSOS' ? 'GESTÃO DE ACESSOS' : 'TI / INFRA'}
+                      {f === 'ALL' ? 'Todos' : f === 'GESTAO_PESSOAS' ? 'Pessoas' : f === 'GESTAO_ACESSOS' ? 'Acessos' : 'Infra'}
                     </button>
                   ))}
                 </div>
