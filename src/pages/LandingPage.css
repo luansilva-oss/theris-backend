@@ -228,15 +228,22 @@
 .landing-hero-title {
   font-size: clamp(2rem, 5vw, 3.5rem);
   font-weight: 700;
-  color: var(--lp-text);
+  color: #F0F9FF;
   margin: 0;
   max-width: 700px;
   line-height: 1.2;
 }
 
+.landing-hero-title .landing-gradient-text {
+  background: linear-gradient(90deg, #0EA5E9, #38BDF8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 .landing-hero-sub {
   font-size: clamp(1rem, 2vw, 1.2rem);
-  color: var(--lp-text-sec);
+  color: #7DD3FC;
   max-width: 500px;
   margin: 0;
   line-height: 1.6;

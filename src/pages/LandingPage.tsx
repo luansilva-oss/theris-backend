@@ -84,7 +84,8 @@ export default function LandingPage() {
 
       <section className="landing-hero">
         <h1 className="landing-hero-title">
-          Sistema interno de <span className="landing-gradient-text">Gestão de Identidades</span>
+          Sistema interno de{' '}
+          <span className="landing-gradient-text">Gestão de Identidades</span>
         </h1>
         <p className="landing-hero-sub">
           Controle de acessos, aprovações e auditoria do Grupo 3C em um só lugar.
