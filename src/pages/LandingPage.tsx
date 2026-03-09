@@ -27,7 +27,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const [navbarScrolled, setNavbarScrolled] = useState(false);
   const sectionRefs = useRef<(HTMLElement | null)[]>([]);
-  const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set());
+  const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set([0]));
   const particles = useParticles();
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function LandingPage() {
           return next;
         });
       },
-      { threshold: 0.12, rootMargin: '0px 0px -60px 0px' }
+      { threshold: 0.08, rootMargin: '0px 0px -20px 0px' }
     );
     sectionRefs.current.forEach((el) => el && observer.observe(el));
     return () => observer.disconnect();
