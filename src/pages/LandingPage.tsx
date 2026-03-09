@@ -2,18 +2,33 @@
  * Landing page institucional. Apenas conteúdo de marketing + botão "Entrar" que navega para /login.
  * Nenhum componente de login é importado ou renderizado aqui.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Users, FileText, ArrowRight, ExternalLink } from 'lucide-react';
 import './LandingPage.css';
 
 const DOC_URL = 'https://docs.google.com/document/d/1AY1-VBGEXMwO4aFTMEMFloM6jNPZGoSaeuId5xPUTBI/edit?tab=t.0';
 
+const PARTICLE_COUNT = 20;
+
+function useParticles() {
+  return useMemo(() => {
+    return Array.from({ length: PARTICLE_COUNT }, (_, i) => ({
+      id: i,
+      left: Math.random() * 100,
+      top: Math.random() * 100,
+      delay: Math.random() * 5,
+      duration: 3 + Math.random() * 5,
+    }));
+  }, []);
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
   const [navbarScrolled, setNavbarScrolled] = useState(false);
   const sectionRefs = useRef<(HTMLElement | null)[]>([]);
   const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set());
+  const particles = useParticles();
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -56,12 +71,28 @@ export default function LandingPage() {
 
   return (
     <div className="landing-page">
+      {/* Partículas flutuantes */}
+      <div className="landing-particles" aria-hidden>
+        {particles.map((p) => (
+          <div
+            key={p.id}
+            className="landing-particle"
+            style={{
+              left: `${p.left}%`,
+              top: `${p.top}%`,
+              animationDelay: `${p.delay}s`,
+              animationDuration: `${p.duration}s`,
+            }}
+          />
+        ))}
+      </div>
+
       {/* NAVBAR — full width, fixa */}
       <nav className={`landing-nav ${navbarScrolled ? 'landing-nav--scrolled' : ''}`}>
         <div className="landing-nav-inner">
           <a href="#" className="landing-logo" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
             <img src="/favicon.png" alt="Theris" className="landing-logo-img" />
-            <span>Theris OS</span>
+            <span>THERIS</span>
           </a>
           <div className="landing-nav-links">
             <button type="button" className="landing-nav-link" onClick={() => scrollTo('funcionalidades')}>Funcionalidades</button>
@@ -80,11 +111,12 @@ export default function LandingPage() {
         <div className="landing-hero-glow" aria-hidden />
         <div className="landing-hero-content">
           <div className={`landing-hero-badge ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            🔐 Identity Governance & Administration
+            <span className="landing-hero-badge-dot" aria-hidden>●</span>
+            SISTEMA ATIVO — Identity Governance & Administration
           </div>
           <h1 className={`landing-hero-title ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            <span className="landing-hero-title-line1">Controle total de</span>
-            <span className="landing-hero-title-line2">identidades e acessos.</span>
+            <span className="landing-hero-title-line1">CONTROLE TOTAL DE</span>
+            <span className="landing-hero-title-line2">IDENTIDADES E ACESSOS</span>
           </h1>
           <p className={`landing-hero-subtitle ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
             O sistema interno de IGA do Grupo 3C. Automatize acessos, aprovações e auditoria em um único lugar.
@@ -94,12 +126,16 @@ export default function LandingPage() {
               Acessar o Sistema <ArrowRight size={18} />
             </button>
             <a href={DOC_URL} target="_blank" rel="noopener noreferrer" className="landing-btn-secondary">
-              Ver Documentação <ExternalLink size={18} />
+              Ver Documentação ↗
             </a>
           </div>
           <div className={`landing-hero-logo-wrap ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
             <img src="/favicon.png" alt="" className="landing-hero-logo-img" />
           </div>
+        </div>
+        <div className="landing-hero-scroll" aria-hidden>
+          <span>SCROLL</span>
+          <div className="landing-hero-scroll-arrow" />
         </div>
       </section>
 
@@ -121,10 +157,10 @@ export default function LandingPage() {
             <div
               key={item.title}
               className={`landing-card ${visibleSections.has(1) ? 'landing-visible' : ''}`}
-              style={{ transitionDelay: `${i * 100}ms` }}
+              style={{ transitionDelay: `${i * 150}ms` }}
             >
               <div className="landing-card-icon">
-                <item.icon size={28} color="#0EA5E9" />
+                <item.icon size={24} />
               </div>
               <h3>{item.title}</h3>
               <p>{item.desc}</p>
@@ -149,9 +185,12 @@ export default function LandingPage() {
             <div
               key={step.num}
               className={`landing-step ${visibleSections.has(2) ? 'landing-visible' : ''}`}
-              style={{ transitionDelay: `${i * 100}ms` }}
+              style={{ transitionDelay: `${i * 150}ms` }}
             >
-              <div className="landing-step-num">{step.num}</div>
+              <div className="landing-step-num-wrap">
+                <span className="landing-step-num">{step.num}</span>
+              </div>
+              <span className="landing-step-num-big" aria-hidden>{step.num}</span>
               <h3>{step.title}</h3>
               <p>{step.desc}</p>
             </div>
@@ -175,7 +214,7 @@ export default function LandingPage() {
             <div
               key={profile.name}
               className={`landing-profile-card ${visibleSections.has(3) ? 'landing-visible' : ''}`}
-              style={{ transitionDelay: `${i * 100}ms`, ['--profile-color' as string]: profile.color }}
+              style={{ transitionDelay: `${i * 150}ms`, ['--profile-color' as string]: profile.color }}
             >
               <div className="landing-profile-bar" />
               <div className="landing-profile-badge">{profile.name}</div>
@@ -189,6 +228,9 @@ export default function LandingPage() {
       {/* PROCEDIMENTO / DOCUMENTAÇÃO */}
       <section id="documentacao" className="landing-section landing-section-doc" ref={setSectionRef(4)} data-section={4}>
         <div className={`landing-doc-wrap ${visibleSections.has(4) ? 'landing-visible' : ''}`}>
+          <div className="landing-doc-icon">
+            <FileText size={64} strokeWidth={1.5} />
+          </div>
           <h2 className="landing-doc-title">Procedimento de Uso</h2>
           <p className="landing-doc-lead">
             Acesse o guia completo com instruções detalhadas para todos os perfis de usuário.
@@ -205,7 +247,7 @@ export default function LandingPage() {
         <div className="landing-footer-inner">
           <div className="landing-logo">
             <img src="/favicon.png" alt="Theris" className="landing-logo-img" />
-            <span>Theris OS</span>
+            <span>THERIS OS</span>
           </div>
           <p className="landing-footer-copy">Grupo 3C © 2026</p>
           <p className="landing-footer-dev">Desenvolvido pelo Time de Segurança da Informação</p>
