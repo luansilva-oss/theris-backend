@@ -19,14 +19,24 @@ async function checkSessionTimeout(req, res, next) {
         }
         const elapsed = now.getTime() - session.lastActivity.getTime();
         if (elapsed > SESSION_TIMEOUT_MS) {
-            await (0, auditLog_1.registrarMudanca)({
-                tipo: 'SESSION_EXPIRED',
-                entidadeTipo: 'User',
-                entidadeId: userId,
-                descricao: 'Sessão expirada por inatividade (60 min)',
-                dadosAntes: { lastActivity: session.lastActivity },
-                autorId: userId,
-            }).catch((e) => console.error('[sessionTimeout] HistoricoMudanca:', e));
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+            const recentExpired = await prisma.historicoMudanca.findFirst({
+                where: {
+                    tipo: 'SESSION_EXPIRED',
+                    entidadeId: userId,
+                    createdAt: { gte: oneHourAgo },
+                },
+            });
+            if (!recentExpired) {
+                await (0, auditLog_1.registrarMudanca)({
+                    tipo: 'SESSION_EXPIRED',
+                    entidadeTipo: 'User',
+                    entidadeId: userId,
+                    descricao: 'Sessão expirada por inatividade (60 min)',
+                    dadosAntes: { lastActivity: session.lastActivity },
+                    autorId: userId,
+                }).catch((e) => console.error('[sessionTimeout] HistoricoMudanca:', e));
+            }
             await prisma.session.delete({ where: { userId } }).catch(() => { });
             res.status(401).json({ error: 'SESSION_EXPIRED', message: 'Sessão expirada por inatividade.' });
             return;
