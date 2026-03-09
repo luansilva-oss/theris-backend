@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Users, FileText, ArrowRight, ExternalLink } from 'lucide-react';
+import { Lock, Users, FileText, ExternalLink } from 'lucide-react';
 import './LandingPage.css';
 
 const DOC_URL = 'https://docs.google.com/document/d/1AY1-VBGEXMwO4aFTMEMFloM6jNPZGoSaeuId5xPUTBI/edit?tab=t.0';
@@ -106,46 +106,13 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* HERO — 100vh, conteúdo a partir do topo (abaixo da navbar) */}
-      <section className="landing-hero" ref={setSectionRef(0)} data-section={0}>
-        <div className="landing-hero-glow" aria-hidden />
-        <div className="landing-hero-content">
-          <div className={`landing-hero-badge ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            <span className="landing-hero-badge-dot" aria-hidden>●</span>
-            SISTEMA ATIVO — Identity Governance & Administration
-          </div>
-          <h1 className={`landing-hero-title ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            <span className="landing-hero-title-line1">CONTROLE TOTAL DE</span>
-            <span className="landing-hero-title-line2">IDENTIDADES E ACESSOS</span>
-          </h1>
-          <p className={`landing-hero-subtitle ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            O sistema interno de IGA do Grupo 3C. Automatize acessos, aprovações e auditoria em um único lugar.
-          </p>
-          <div className={`landing-hero-buttons ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            <button type="button" className="landing-btn-primary" onClick={() => navigate('/login')}>
-              Acessar o Sistema <ArrowRight size={18} />
-            </button>
-            <a href={DOC_URL} target="_blank" rel="noopener noreferrer" className="landing-btn-secondary">
-              Ver Documentação ↗
-            </a>
-          </div>
-          <div className={`landing-hero-logo-wrap ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
-            <img src="/favicon.png" alt="" className="landing-hero-logo-img" />
-          </div>
-        </div>
-        <div className="landing-hero-scroll" aria-hidden>
-          <span>SCROLL</span>
-          <div className="landing-hero-scroll-arrow" />
-        </div>
-      </section>
-
-      {/* FUNCIONALIDADES */}
-      <section id="funcionalidades" className="landing-section landing-section-func" ref={setSectionRef(1)} data-section={1}>
-        <p className={`landing-label ${visibleSections.has(1) ? 'landing-visible' : ''}`}>FUNCIONALIDADES</p>
-        <h2 className={`landing-section-title ${visibleSections.has(1) ? 'landing-visible' : ''}`}>
+      {/* FUNCIONALIDADES (primeira seção visível) */}
+      <section id="funcionalidades" className="landing-section landing-section-func" ref={setSectionRef(0)} data-section={0}>
+        <p className={`landing-label ${visibleSections.has(0) ? 'landing-visible' : ''}`}>FUNCIONALIDADES</p>
+        <h2 className={`landing-section-title ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
           Um sistema completamente <span className="landing-gradient-text">integrado</span>
         </h2>
-        <p className={`landing-section-lead ${visibleSections.has(1) ? 'landing-visible' : ''}`}>
+        <p className={`landing-section-lead ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
           Centralize identidades, acessos e aprovações com o Theris OS.
         </p>
         <div className="landing-cards-grid landing-cards-three">
@@ -156,7 +123,7 @@ export default function LandingPage() {
           ].map((item, i) => (
             <div
               key={item.title}
-              className={`landing-card ${visibleSections.has(1) ? 'landing-visible' : ''}`}
+              className={`landing-card ${visibleSections.has(0) ? 'landing-visible' : ''}`}
               style={{ transitionDelay: `${i * 150}ms` }}
             >
               <div className="landing-card-icon">
@@ -170,9 +137,9 @@ export default function LandingPage() {
       </section>
 
       {/* COMO FUNCIONA */}
-      <section id="como-funciona" className="landing-section landing-section-como" ref={setSectionRef(2)} data-section={2}>
-        <p className={`landing-label ${visibleSections.has(2) ? 'landing-visible' : ''}`}>COMO FUNCIONA</p>
-        <h2 className={`landing-section-title ${visibleSections.has(2) ? 'landing-visible' : ''}`}>
+      <section id="como-funciona" className="landing-section landing-section-como" ref={setSectionRef(1)} data-section={1}>
+        <p className={`landing-label ${visibleSections.has(1) ? 'landing-visible' : ''}`}>COMO FUNCIONA</p>
+        <h2 className={`landing-section-title ${visibleSections.has(1) ? 'landing-visible' : ''}`}>
           Do pedido ao acesso em minutos
         </h2>
         <div className="landing-steps-grid">
@@ -184,7 +151,7 @@ export default function LandingPage() {
           ].map((step, i) => (
             <div
               key={step.num}
-              className={`landing-step ${visibleSections.has(2) ? 'landing-visible' : ''}`}
+              className={`landing-step ${visibleSections.has(1) ? 'landing-visible' : ''}`}
               style={{ transitionDelay: `${i * 150}ms` }}
             >
               <h3>{step.title}</h3>
@@ -195,9 +162,9 @@ export default function LandingPage() {
       </section>
 
       {/* PERFIS */}
-      <section id="perfis" className="landing-section landing-section-perfis" ref={setSectionRef(3)} data-section={3}>
-        <p className={`landing-label ${visibleSections.has(3) ? 'landing-visible' : ''}`}>PERFIS</p>
-        <h2 className={`landing-section-title ${visibleSections.has(3) ? 'landing-visible' : ''}`}>
+      <section id="perfis" className="landing-section landing-section-perfis" ref={setSectionRef(2)} data-section={2}>
+        <p className={`landing-label ${visibleSections.has(2) ? 'landing-visible' : ''}`}>PERFIS</p>
+        <h2 className={`landing-section-title ${visibleSections.has(2) ? 'landing-visible' : ''}`}>
           Perfis de Acesso
         </h2>
         <div className="landing-cards-grid landing-cards-four">
@@ -209,7 +176,7 @@ export default function LandingPage() {
           ].map((profile, i) => (
             <div
               key={profile.name}
-              className={`landing-profile-card ${visibleSections.has(3) ? 'landing-visible' : ''}`}
+              className={`landing-profile-card ${visibleSections.has(2) ? 'landing-visible' : ''}`}
               style={{ transitionDelay: `${i * 150}ms`, ['--profile-color' as string]: profile.color }}
             >
               <div className="landing-profile-bar" />
@@ -222,8 +189,8 @@ export default function LandingPage() {
       </section>
 
       {/* PROCEDIMENTO / DOCUMENTAÇÃO */}
-      <section id="documentacao" className="landing-section landing-section-doc" ref={setSectionRef(4)} data-section={4}>
-        <div className={`landing-doc-wrap ${visibleSections.has(4) ? 'landing-visible' : ''}`}>
+      <section id="documentacao" className="landing-section landing-section-doc" ref={setSectionRef(3)} data-section={3}>
+        <div className={`landing-doc-wrap ${visibleSections.has(3) ? 'landing-visible' : ''}`}>
           <div className="landing-doc-icon">
             <FileText size={64} strokeWidth={1.5} />
           </div>
