@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
+import { rateLimit } from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -19,12 +20,13 @@ import {
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
 import { getAllUsers, getMe, getUserById, getUserDetails, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
-// NOVO: Importar o controlador de reset
-import { resetCatalog } from './controllers/adminController';
+import { resetCatalog, getLoginAttempts } from './controllers/adminController';
+import { checkSessionTimeout } from './middleware/sessionTimeout';
 import * as structureController from './controllers/structureController';
 import { getAuditLog } from './controllers/auditLogController';
 import { syncStructureFromUsers } from './services/structureSync'; // Import sync service
 import { startPasswordReminderCron } from './jobs/passwordReminderCron';
+import { startCleanupSessionsCron } from './crons/cleanupSessions';
 
 // Slack
 import { slackReceiver, getToolsAndLevelsMap } from './services/slackService';
@@ -34,11 +36,36 @@ dotenv.config();
 const app = express();
 const prisma = new PrismaClient();
 
+// --- HTTPS FORÇADO (produção: redirecionar HTTP → HTTPS) ---
+app.use((req, res, next) => {
+  const proto = req.headers['x-forwarded-proto'];
+  const isHttps = proto === 'https' || (Array.isArray(proto) && proto[0] === 'https');
+  if (process.env.NODE_ENV === 'production' && !isHttps) {
+    return res.redirect(301, `https://${req.headers.host}${req.url}`);
+  }
+  next();
+});
+
+// --- SECURITY HEADERS (landing e todas as respostas) ---
+app.use((_req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'self';"
+  );
+  next();
+});
+
 // Auto-sync structure on startup
 syncStructureFromUsers();
 
 // Cron: lembrete de troca de senha a cada 90 dias (DM Slack às 09:00)
 startPasswordReminderCron();
+// Cron: limpeza de sessões (> 24h) e tentativas de login (> 90 dias), 1x/dia às 03:00 (Brasília)
+startCleanupSessionsCron();
 
 // --- CORS ---
 app.use(cors({
@@ -68,6 +95,19 @@ app.use('/api/slack', slackReceiver.router);
 app.use(express.json({ limit: '15mb' }));
 
 // ============================================================
+// --- RATE LIMITING (auth: anti brute-force) ---
+// ============================================================
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 15, // login + send-mfa + verify-mfa + algumas tentativas
+  message: { error: 'Muitas tentativas. Tente novamente em alguns minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/login', authRateLimiter);
+app.use('/api/auth', authRateLimiter);
+
+// ============================================================
 // --- ROTAS DE AUTENTICAÇÃO ---
 // ============================================================
 app.post('/api/login/google', googleLogin);
@@ -75,10 +115,19 @@ app.post('/api/auth/send-mfa', sendMfa);
 app.post('/api/auth/verify-mfa', verifyMfa);
 
 // ============================================================
-// --- ROTAS ADMINISTRATIVAS (EMERGÊNCIA) ---
+// --- SESSION TIMEOUT (60 min inatividade) — rotas autenticadas ---
 // ============================================================
-// Roda este link no navegador para resetar o catálogo de ferramentas
+app.use((req, res, next) => {
+  const p = req.path;
+  if (p.startsWith('/api/login') || p.startsWith('/api/auth') || p.startsWith('/api/slack') || p.startsWith('/api/webhooks')) return next();
+  checkSessionTimeout(req, res, next);
+});
+
+// ============================================================
+// --- ROTAS ADMINISTRATIVAS ---
+// ============================================================
 app.get('/api/admin/reset-tools', resetCatalog);
+app.get('/api/admin/login-attempts', getLoginAttempts);
 
 // ============================================================
 // --- ROTAS DE DADOS ---
