@@ -210,6 +210,44 @@
   box-shadow: 0 0 20px rgba(14, 165, 233, 0.4);
 }
 
+/* ---- HERO (minimalista, viewport) ---- */
+.landing-hero {
+  position: relative;
+  z-index: 1;
+  min-height: calc(100vh - 64px);
+  margin-top: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+  gap: 20px;
+}
+
+.landing-hero-title {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 700;
+  color: var(--lp-text);
+  margin: 0;
+  max-width: 700px;
+  line-height: 1.2;
+}
+
+.landing-hero-sub {
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  color: var(--lp-text-sec);
+  max-width: 500px;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.landing-hero-cta {
+  padding: 14px 40px;
+  font-size: 1rem;
+  margin-top: 8px;
+}
+
 /* ---- SEÇÕES (padrão, espaçamento fixo py-20) ---- */
 .landing-section {
   position: relative;
