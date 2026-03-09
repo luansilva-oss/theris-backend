@@ -108,8 +108,11 @@
   left: 0;
   right: 0;
   width: 100%;
-  z-index: 100;
-  padding: 16px 24px;
+  height: 64px;
+  z-index: 1000;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
   background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -122,6 +125,7 @@
 }
 
 .landing-nav-inner {
+  width: 100%;
   max-width: 1280px;
   margin: 0 auto;
   display: flex;
@@ -210,11 +214,14 @@
 .landing-hero {
   position: relative;
   min-height: 100vh;
+  padding-top: 80px;
+  padding-bottom: 60px;
+  padding-left: 24px;
+  padding-right: 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 100px 24px 80px;
+  justify-content: flex-start;
   background: var(--lp-bg);
   overflow: visible;
   z-index: 1;
@@ -233,6 +240,7 @@
 .landing-hero-content {
   position: relative;
   z-index: 2;
+  margin-top: 40px;
   display: flex;
   flex-direction: column;
   align-items: center;

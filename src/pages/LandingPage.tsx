@@ -106,21 +106,8 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* HERO — 100vh, centralizado */}
-      <section
-        className="landing-hero"
-        ref={setSectionRef(0)}
-        data-section={0}
-        style={{
-          paddingTop: '100px',
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'visible',
-        }}
-      >
+      {/* HERO — 100vh, conteúdo a partir do topo (abaixo da navbar) */}
+      <section className="landing-hero" ref={setSectionRef(0)} data-section={0}>
         <div className="landing-hero-glow" aria-hidden />
         <div className="landing-hero-content">
           <div className={`landing-hero-badge ${visibleSections.has(0) ? 'landing-visible' : ''}`}>

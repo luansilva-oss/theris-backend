@@ -42,7 +42,6 @@ html {
   color: var(--text-main);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
-  overflow: hidden;
 }
 
 /* Scrollbar Profissional */
