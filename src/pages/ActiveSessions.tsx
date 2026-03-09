@@ -211,7 +211,7 @@ export const ActiveSessions: React.FC<{ currentUserId: string; showToast?: ShowT
                     key={row.sessionId}
                     style={{
                       borderBottom: '1px solid #334155',
-                      opacity: isRemoving ? 0,
+                      opacity: isRemoving ? 0 : 1,
                       transform: isRemoving ? 'translateY(-4px)' : undefined,
                       transition: 'opacity 0.3s ease, transform 0.3s ease',
                     }}
