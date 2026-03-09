@@ -70,7 +70,7 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="landing-page">
+    <div className="landing-page" style={{ overflow: 'visible' }}>
       {/* Partículas flutuantes */}
       <div className="landing-particles" aria-hidden>
         {particles.map((p) => (
@@ -107,7 +107,20 @@ export default function LandingPage() {
       </nav>
 
       {/* HERO — 100vh, centralizado */}
-      <section className="landing-hero" ref={setSectionRef(0)} data-section={0}>
+      <section
+        className="landing-hero"
+        ref={setSectionRef(0)}
+        data-section={0}
+        style={{
+          paddingTop: '100px',
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'visible',
+        }}
+      >
         <div className="landing-hero-glow" aria-hidden />
         <div className="landing-hero-content">
           <div className={`landing-hero-badge ${visibleSections.has(0) ? 'landing-visible' : ''}`}>

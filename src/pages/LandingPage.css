@@ -51,7 +51,7 @@
   background: var(--lp-bg);
   color: var(--lp-text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  overflow-x: hidden;
+  overflow: visible;
   box-sizing: border-box;
   position: relative;
 }
@@ -82,7 +82,7 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .landing-particle {
@@ -216,7 +216,7 @@
   justify-content: center;
   padding: 100px 24px 80px;
   background: var(--lp-bg);
-  overflow: hidden;
+  overflow: visible;
   z-index: 1;
 }
 
