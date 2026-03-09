@@ -185,33 +185,10 @@ export default function LandingPage() {
             <div
               key={step.num}
               className={`landing-step ${visibleSections.has(2) ? 'landing-visible' : ''}`}
-              style={{ position: 'relative', overflow: 'hidden', transitionDelay: `${i * 150}ms` }}
+              style={{ transitionDelay: `${i * 150}ms` }}
             >
-              <span
-                style={{
-                  position: 'absolute',
-                  bottom: '-10px',
-                  right: '12px',
-                  fontSize: '8rem',
-                  fontWeight: 900,
-                  color: 'transparent',
-                  WebkitTextStroke: '1px rgba(14, 165, 233, 0.12)',
-                  lineHeight: 1,
-                  userSelect: 'none',
-                  pointerEvents: 'none',
-                  zIndex: 0,
-                }}
-                aria-hidden
-              >
-                {step.num}
-              </span>
-              <div style={{ position: 'relative', zIndex: 1 }}>
-                <div className="landing-step-num-wrap">
-                  <span className="landing-step-num">{step.num}</span>
-                </div>
-                <h3>{step.title}</h3>
-                <p>{step.desc}</p>
-              </div>
+              <h3>{step.title}</h3>
+              <p>{step.desc}</p>
             </div>
           ))}
         </div>

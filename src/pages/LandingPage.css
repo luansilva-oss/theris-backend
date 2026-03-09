@@ -608,7 +608,6 @@
   border: 1px solid rgba(14, 165, 233, 0.15);
   border-radius: 8px;
   padding: 28px 24px;
-  padding-top: 56px;
   opacity: 0;
   transform: translateY(30px);
   transition: opacity 0.6s ease, transform 0.6s ease;
@@ -617,27 +616,6 @@
 .landing-step.landing-visible {
   opacity: 1;
   transform: translateY(0);
-}
-
-.landing-step-num-wrap {
-  position: absolute;
-  top: 16px;
-  left: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  border: 2px solid var(--lp-primary);
-  border-radius: 50%;
-  background: rgba(14, 165, 233, 0.1);
-  box-shadow: 0 0 20px rgba(14, 165, 233, 0.3);
-}
-
-.landing-step-num {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--lp-neon);
 }
 
 .landing-step h3 {
