@@ -2,7 +2,7 @@
  * Landing page institucional. Apenas conteúdo de marketing + botão "Entrar" que navega para /login.
  * Nenhum componente de login é importado ou renderizado aqui.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Users, FileText, ExternalLink } from 'lucide-react';
 import './LandingPage.css';
@@ -26,8 +26,6 @@ function useParticles() {
 export default function LandingPage() {
   const navigate = useNavigate();
   const [navbarScrolled, setNavbarScrolled] = useState(false);
-  const sectionRefs = useRef<(HTMLElement | null)[]>([]);
-  const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set([0]));
   const particles = useParticles();
 
   useEffect(() => {
@@ -41,28 +39,6 @@ export default function LandingPage() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        setVisibleSections((prev) => {
-          const next = new Set(prev);
-          entries.forEach((e) => {
-            const i = Number((e.target as HTMLElement).dataset.section);
-            if (!Number.isNaN(i) && e.isIntersecting) next.add(i);
-          });
-          return next;
-        });
-      },
-      { threshold: 0.08, rootMargin: '0px 0px -20px 0px' }
-    );
-    sectionRefs.current.forEach((el) => el && observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
-
-  const setSectionRef = (i: number) => (el: HTMLElement | null) => {
-    sectionRefs.current[i] = el;
-  };
 
   const scrollTo = (id: string) => {
     const el = document.getElementById(id);
@@ -107,12 +83,12 @@ export default function LandingPage() {
       </nav>
 
       {/* FUNCIONALIDADES (primeira seção visível) */}
-      <section id="funcionalidades" className="landing-section landing-section-func" ref={setSectionRef(0)} data-section={0}>
-        <p className={`landing-label ${visibleSections.has(0) ? 'landing-visible' : ''}`}>FUNCIONALIDADES</p>
-        <h2 className={`landing-section-title ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
+      <section id="funcionalidades" className="landing-section landing-section-func">
+        <p className="landing-label">FUNCIONALIDADES</p>
+        <h2 className="landing-section-title">
           Um sistema completamente <span className="landing-gradient-text">integrado</span>
         </h2>
-        <p className={`landing-section-lead ${visibleSections.has(0) ? 'landing-visible' : ''}`}>
+        <p className="landing-section-lead">
           Centralize identidades, acessos e aprovações com o Theris OS.
         </p>
         <div className="landing-cards-grid landing-cards-three">
@@ -120,12 +96,8 @@ export default function LandingPage() {
             { icon: Lock, title: 'Controle de Acessos', desc: 'Gerencie quem tem acesso a quê. Kit Básico por cargo e Acessos Extraordinários com aprovação dupla.' },
             { icon: Users, title: 'Gestão de Pessoas', desc: 'Onboarding, movimentações e desligamentos com automação completa e rastreabilidade total.' },
             { icon: FileText, title: 'Auditoria Completa', desc: 'Histórico detalhado de todas as ações, relatórios CSV e conformidade com políticas de segurança.' },
-          ].map((item, i) => (
-            <div
-              key={item.title}
-              className={`landing-card ${visibleSections.has(0) ? 'landing-visible' : ''}`}
-              style={{ transitionDelay: `${i * 150}ms` }}
-            >
+          ].map((item) => (
+            <div key={item.title} className="landing-card">
               <div className="landing-card-icon">
                 <item.icon size={24} />
               </div>
@@ -137,9 +109,9 @@ export default function LandingPage() {
       </section>
 
       {/* COMO FUNCIONA */}
-      <section id="como-funciona" className="landing-section landing-section-como" ref={setSectionRef(1)} data-section={1}>
-        <p className={`landing-label ${visibleSections.has(1) ? 'landing-visible' : ''}`}>COMO FUNCIONA</p>
-        <h2 className={`landing-section-title ${visibleSections.has(1) ? 'landing-visible' : ''}`}>
+      <section id="como-funciona" className="landing-section landing-section-como">
+        <p className="landing-label">COMO FUNCIONA</p>
+        <h2 className="landing-section-title">
           Do pedido ao acesso em minutos
         </h2>
         <div className="landing-steps-grid">
@@ -148,12 +120,8 @@ export default function LandingPage() {
             { num: 2, title: 'Aprovação Dupla', desc: 'Owner da ferramenta aprova via Slack. Time de SI aprova no painel.' },
             { num: 3, title: 'Provisionamento', desc: 'Acesso concedido automaticamente no sistema. JumpCloud sincronizado.' },
             { num: 4, title: 'Auditoria', desc: 'Tudo registrado: quem pediu, quem aprovou, quando e por quanto tempo.' },
-          ].map((step, i) => (
-            <div
-              key={step.num}
-              className={`landing-step ${visibleSections.has(1) ? 'landing-visible' : ''}`}
-              style={{ transitionDelay: `${i * 150}ms` }}
-            >
+          ].map((step) => (
+            <div key={step.num} className="landing-step">
               <h3>{step.title}</h3>
               <p>{step.desc}</p>
             </div>
@@ -162,9 +130,9 @@ export default function LandingPage() {
       </section>
 
       {/* PERFIS */}
-      <section id="perfis" className="landing-section landing-section-perfis" ref={setSectionRef(2)} data-section={2}>
-        <p className={`landing-label ${visibleSections.has(2) ? 'landing-visible' : ''}`}>PERFIS</p>
-        <h2 className={`landing-section-title ${visibleSections.has(2) ? 'landing-visible' : ''}`}>
+      <section id="perfis" className="landing-section landing-section-perfis">
+        <p className="landing-label">PERFIS</p>
+        <h2 className="landing-section-title">
           Perfis de Acesso
         </h2>
         <div className="landing-cards-grid landing-cards-four">
@@ -173,11 +141,11 @@ export default function LandingPage() {
             { name: 'ADMIN', label: 'Gestores e Líderes', desc: 'Gerencia equipe, aprova chamados e configura estrutura organizacional.', color: '#0EA5E9' },
             { name: 'SUPER_ADMIN', label: 'Time de SI', desc: 'Acesso total: aprovações, auditoria, relatórios e configurações do sistema.', color: '#7C3AED' },
             { name: 'APPROVER', label: 'Owners de Ferramentas', desc: 'Aprova solicitações de Acesso Extraordinário para as ferramentas sob sua responsabilidade.', color: '#059669' },
-          ].map((profile, i) => (
+          ].map((profile) => (
             <div
               key={profile.name}
-              className={`landing-profile-card ${visibleSections.has(2) ? 'landing-visible' : ''}`}
-              style={{ transitionDelay: `${i * 150}ms`, ['--profile-color' as string]: profile.color }}
+              className="landing-profile-card"
+              style={{ ['--profile-color' as string]: profile.color }}
             >
               <div className="landing-profile-bar" />
               <div className="landing-profile-badge">{profile.name}</div>
@@ -189,8 +157,8 @@ export default function LandingPage() {
       </section>
 
       {/* PROCEDIMENTO / DOCUMENTAÇÃO */}
-      <section id="documentacao" className="landing-section landing-section-doc" ref={setSectionRef(3)} data-section={3}>
-        <div className={`landing-doc-wrap ${visibleSections.has(3) ? 'landing-visible' : ''}`}>
+      <section id="documentacao" className="landing-section landing-section-doc">
+        <div className="landing-doc-wrap">
           <div className="landing-doc-icon">
             <FileText size={64} strokeWidth={1.5} />
           </div>

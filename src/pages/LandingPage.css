@@ -235,9 +235,6 @@
   color: var(--lp-primary);
   text-align: center;
   margin: 0 0 12px;
-  opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
 }
 
 .landing-label::before,
@@ -248,25 +245,12 @@
   background: var(--lp-primary);
 }
 
-.landing-label.landing-visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 .landing-section-title {
   font-size: clamp(2rem, 4vw, 3rem);
   font-weight: 700;
   color: var(--lp-text);
   text-align: center;
   margin: 0 0 16px;
-  opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
-}
-
-.landing-section-title.landing-visible {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .landing-gradient-text {
@@ -283,14 +267,6 @@
   line-height: 1.6;
   max-width: 560px;
   margin: 0 auto 48px;
-  opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.6s ease 0.05s, transform 0.6s ease 0.05s;
-}
-
-.landing-section-lead.landing-visible {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 /* ---- CARDS (Funcionalidades, Perfis) ---- */
@@ -313,9 +289,7 @@
   border: 1px solid rgba(14, 165, 233, 0.15);
   border-radius: 8px;
   padding: 32px;
-  opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.6s ease, transform 0.6s ease, border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+  transition: border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
   overflow: hidden;
 }
 
@@ -328,11 +302,6 @@
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--lp-primary), transparent);
   transition: width 0.4s ease;
-}
-
-.landing-card.landing-visible {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .landing-card:hover {
@@ -406,14 +375,6 @@
   border: 1px solid rgba(14, 165, 233, 0.15);
   border-radius: 8px;
   padding: 28px 24px;
-  opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
-}
-
-.landing-step.landing-visible {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .landing-step h3 {
@@ -450,9 +411,7 @@
   border: 1px solid rgba(14, 165, 233, 0.15);
   border-radius: 8px;
   padding: 32px;
-  opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.6s ease, transform 0.6s ease, border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
+  transition: border-color 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
   overflow: hidden;
 }
 
@@ -465,11 +424,6 @@
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--lp-primary), transparent);
   transition: width 0.4s ease;
-}
-
-.landing-profile-card.landing-visible {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .landing-profile-card:hover {
@@ -526,14 +480,6 @@
   background: var(--lp-bg);
   border: 1px solid rgba(14, 165, 233, 0.2);
   border-radius: 12px;
-  opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
-}
-
-.landing-doc-wrap.landing-visible {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .landing-doc-icon {
@@ -659,34 +605,3 @@
   /* Ajustes de layout em telas pequenas */
 }
 
-/* Stagger para cards (150ms) */
-.landing-card.landing-visible,
-.landing-profile-card.landing-visible,
-.landing-step.landing-visible {
-  transition-delay: 0ms;
-}
-
-.landing-card[style*="transitionDelay"],
-.landing-profile-card[style*="transitionDelay"],
-.landing-step[style*="transitionDelay"] {
-  /* stagger aplicado via inline style no TSX: 0, 150ms, 300ms, ... */
-}
-
-/* Seção Funcionalidades sempre visível ao carregar (independente do observer) */
-#funcionalidades .landing-label,
-#funcionalidades .landing-section-title,
-#funcionalidades .landing-section-lead,
-#funcionalidades .landing-card {
-  opacity: 1 !important;
-  transform: translateY(0) !important;
-  animation: fadeInUp 0.6s ease forwards;
-}
-
-#funcionalidades .landing-card:nth-child(1) { animation-delay: 0ms; }
-#funcionalidades .landing-card:nth-child(2) { animation-delay: 150ms; }
-#funcionalidades .landing-card:nth-child(3) { animation-delay: 300ms; }
-
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(30px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
