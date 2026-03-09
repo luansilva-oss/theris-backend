@@ -288,7 +288,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                                         onClick={() => setIcon(ic)}
                                         style={{
                                             background: icon === ic ? '#3f3f46' : '#27272a',
-                                            border: icon === ic ? '1px solid #a78bfa' : '1px solid #3f3f46',
+                                            border: icon === ic ? '1px solid #0EA5E9' : '1px solid #475569',
                                             borderRadius: 6,
                                             padding: 8,
                                             cursor: 'pointer',
@@ -298,7 +298,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                                         className="hover:bg-zinc-800"
                                     >
                                         <span style={{ marginRight: 6 }}>
-                                            {ic === 'Crown' ? <Crown size={16} color={icon === ic ? '#a78bfa' : '#71717a'} /> : <Shield size={16} color={icon === ic ? '#a78bfa' : '#71717a'} />}
+                                            {ic === 'Crown' ? <Crown size={16} color={icon === ic ? '#38BDF8' : '#71717a'} /> : <Shield size={16} color={icon === ic ? '#38BDF8' : '#71717a'} />}
                                         </span>
                                         <span style={{ fontSize: 13, color: icon === ic ? '#f4f4f5' : '#71717a', fontWeight: 500 }}>{ic === 'Crown' ? 'Coroa (Admin)' : 'Escudo (User)'}</span>
                                     </button>
@@ -371,7 +371,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                                             className="hover:bg-zinc-800"
                                         >
                                             <span>{u.name}</span>
-                                            <Plus size={14} color="#a78bfa" />
+                                            <Plus size={14} color="#0EA5E9" />
                                         </div>
                                     ))}
                                 </div>
@@ -427,7 +427,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                                             style={{
                                                 background: 'transparent',
                                                 border: 'none',
-                                                color: '#a78bfa',
+                                                color: '#38BDF8',
                                                 fontSize: 13,
                                                 cursor: 'pointer',
                                                 alignSelf: 'flex-start',

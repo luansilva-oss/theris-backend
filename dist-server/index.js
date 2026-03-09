@@ -73,6 +73,15 @@ app.use((0, cors_1.default)({
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 }));
 // ⚠️ ROTA DO SLACK
+// Ignorar retries do Slack (evita processar duas vezes e disparos indevidos)
+app.use('/api/slack', (req, res, next) => {
+    const retryReason = req.headers['x-slack-retry-reason'];
+    if (retryReason) {
+        console.log('[Slack] Ignorando retry:', retryReason);
+        return res.status(200).send();
+    }
+    next();
+});
 app.use('/api/slack', slackService_1.slackReceiver.router);
 // --- JSON MIDDLEWARE (limite maior para upload base64 de anexos) ---
 app.use(express_1.default.json({ limit: '15mb' }));

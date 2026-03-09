@@ -121,7 +121,7 @@ export const ReportExportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess,
         <div style={{ padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
           {error && <div style={{ padding: 10, background: 'rgba(239,68,68,0.15)', borderRadius: 8, color: '#ef4444', fontSize: 13 }}>{error}</div>}
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 8 }}>Período *</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#38BDF8', marginBottom: 8 }}>Período *</div>
             <div style={{ display: 'flex', gap: 12 }}>
               <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => deRef.current?.showPicker?.()}>
                 <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>De</div>
@@ -148,7 +148,7 @@ export const ReportExportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess,
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 8 }}>Categoria</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#38BDF8', marginBottom: 8 }}>Categoria</div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 8 }}>
               <input type="checkbox" checked={allCategoriesChecked} onChange={e => toggleAllCategories(e.target.checked)} />
               <span style={{ fontSize: 13 }}>Todos</span>
@@ -161,7 +161,7 @@ export const ReportExportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess,
             ))}
           </div>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 8 }}>Colunas a incluir</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#38BDF8', marginBottom: 8 }}>Colunas a incluir</div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 8 }}>
               <input type="checkbox" checked={allColumnsChecked} onChange={e => toggleAllColumns(e.target.checked)} />
               <span style={{ fontSize: 13 }}>Todas</span>

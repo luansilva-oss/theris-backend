@@ -139,7 +139,7 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
 
             setEdges((eds) => {
                 const otherEdges = eds.filter((e) => e.target !== params.target);
-                return addEdge({ ...params, type: 'smoothstep', style: { stroke: '#a78bfa', strokeWidth: 2 } }, otherEdges);
+                return addEdge({ ...params, type: 'smoothstep', style: { stroke: '#0EA5E9', strokeWidth: 2 } }, otherEdges);
             });
 
             if (params.target && params.source) {
@@ -175,7 +175,7 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
                         showInteractive={false}
                         style={{
                             background: '#1e1b4b',
-                            border: '1px solid #7c3aed',
+                            border: '1px solid #0EA5E9',
                             padding: 4,
                             borderRadius: 10,
                             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
@@ -204,10 +204,10 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
                             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
                             onClick={() => setIsLegendCollapsed(!isLegendCollapsed)}
                         >
-                            <div style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: 1.5 }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: '#38BDF8', textTransform: 'uppercase', letterSpacing: 1.5 }}>
                                 {!isLegendCollapsed && 'Legenda de Estrutura'}
                             </div>
-                            {isLegendCollapsed ? <ChevronRight size={18} color="#a78bfa" /> : <ChevronDown size={18} color="#a78bfa" />}
+                            {isLegendCollapsed ? <ChevronRight size={18} color="#0EA5E9" /> : <ChevronDown size={18} color="#0EA5E9" />}
                         </div>
 
                         {!isLegendCollapsed && (
@@ -218,7 +218,7 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
                                         { color: '#10b981', label: 'Comercial / Vendas' },
                                         { color: '#3b82f6', label: 'Produto / Tecnologia' },
                                         { color: '#f472b6', label: 'Pessoas / Performance' },
-                                        { color: '#8b5cf6', label: 'Financeiro / Outros' },
+                                        { color: '#0EA5E9', label: 'Financeiro / Outros' },
                                         { color: '#ef4444', label: 'Marketing / Growth' },
                                     ].map((item, idx) => (
                                         <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -253,7 +253,7 @@ export default function OrgChart({ users, onEditUser, onManagerChange }: OrgChar
                     style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 10 }}
                     maskColor="rgba(0, 0, 0, 0.5)"
                     nodeColor={(node) => {
-                        return (node.data as any).isRoot ? '#fbbf24' : '#7c3aed';
+                        return (node.data as any).isRoot ? '#fbbf24' : '#0EA5E9';
                     }}
                 />
             </ReactFlow>

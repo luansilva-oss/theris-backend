@@ -44,7 +44,7 @@ const PersonNode = ({ data }: NodeProps<any>) => {
         };
 
         if (dept.includes('financeiro') || dept.includes('contabil')) return {
-            bg: 'rgba(139, 92, 246, 0.15)', border: '#8b5cf6', accent: '#8b5cf6', text: '#a78bfa',
+            bg: 'rgba(14, 165, 233, 0.15)', border: '#0EA5E9', accent: '#0EA5E9', text: '#38BDF8',
             gradient: 'linear-gradient(135deg, #18181b 0%, #2e1065 100%)'
         };
 
@@ -55,7 +55,7 @@ const PersonNode = ({ data }: NodeProps<any>) => {
 
         // Padrão: Lilás Escuro/Dark Lilac
         return {
-            bg: 'rgba(167, 139, 250, 0.1)', border: '#4c1d95', accent: '#7c3aed', text: '#a78bfa',
+            bg: 'rgba(56, 189, 248, 0.12)', border: '#0284C7', accent: '#0EA5E9', text: '#38BDF8',
             gradient: 'linear-gradient(135deg, #0f172a 0%, #2e1065 100%)'
         };
     };

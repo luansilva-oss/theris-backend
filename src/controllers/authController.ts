@@ -1,8 +1,51 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { sendMfaEmail } from '../services/emailService';
+import { getClientIp, getClientUserAgent } from '../lib/requestContext';
+import { sendSuspiciousIpAlertToSI } from '../services/suspiciousIpSlackAlert';
 
 const prisma = new PrismaClient();
+
+async function logLoginAttempt(params: {
+  req: Request;
+  email?: string | null;
+  success: boolean;
+  failReason?: string | null;
+}) {
+  const { req, email, success, failReason } = params;
+  const clientIp = getClientIp(req);
+  try {
+    await prisma.loginAttempt.create({
+      data: {
+        email: email ?? null,
+        ipAddress: clientIp,
+        userAgent: getClientUserAgent(req),
+        success,
+        failReason: failReason ?? null,
+      },
+    });
+
+    if (!success) {
+      const recentFails = await prisma.loginAttempt.count({
+        where: {
+          ipAddress: clientIp,
+          success: false,
+          createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
+      });
+      if (recentFails === 5) {
+        sendSuspiciousIpAlertToSI({
+          ipAddress: clientIp,
+          email: email ?? null,
+          failReason: failReason ?? null,
+          timestamp: new Date(),
+        }).catch((e) => console.error('[logLoginAttempt] Alerta IP suspeito:', e));
+      }
+    }
+  } catch (e) {
+    console.error('[logLoginAttempt]', e);
+  }
+}
 
 // FUNÇÃO DE NORMALIZAÇÃO DE E-MAIL (nome.sobrenome@grupo-3c.com)
 const normalizeEmail = (email: string): string => {
@@ -27,7 +70,10 @@ export const googleLogin = async (req: Request, res: Response) => {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }
     });
 
-    if (!googleRes.ok) return res.status(401).json({ error: 'Token Google inválido' });
+    if (!googleRes.ok) {
+      await logLoginAttempt({ req, email: req.body?.email ?? null, success: false, failReason: 'GOOGLE_AUTH_FAILED' });
+      return res.status(401).json({ error: 'Token Google inválido' });
+    }
 
     const googleData = await googleRes.json();
     const rawEmail = googleData.email;
@@ -35,6 +81,7 @@ export const googleLogin = async (req: Request, res: Response) => {
 
     // 2. Verificar Domínio (Segurança)
     if (!email.endsWith('@grupo-3c.com')) {
+      await logLoginAttempt({ req, email, success: false, failReason: 'DOMAIN_DENIED' });
       return res.status(403).json({ error: 'Acesso restrito ao domínio corporativo.' });
     }
 
@@ -90,6 +137,7 @@ export const googleLogin = async (req: Request, res: Response) => {
       }
     }
 
+    await logLoginAttempt({ req, email, success: true });
     return res.json({
       user,
       profile: systemProfile,
@@ -98,6 +146,7 @@ export const googleLogin = async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error(error);
+    await logLoginAttempt({ req, email: null, success: false, failReason: 'GOOGLE_AUTH_FAILED' });
     return res.status(500).json({ error: 'Erro no login Google' });
   }
 };
@@ -108,7 +157,10 @@ export const sendMfa = async (req: Request, res: Response) => {
 
   try {
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+    if (!user) {
+      await logLoginAttempt({ req, email: null, success: false, failReason: 'USER_NOT_FOUND' });
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
 
     // Gera código de 6 dígitos
     const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -123,8 +175,10 @@ export const sendMfa = async (req: Request, res: Response) => {
     // Envia Email
     await sendMfaEmail(user.email, code);
 
+    await logLoginAttempt({ req, email: user.email, success: true });
     res.json({ message: 'Código enviado' });
   } catch (error) {
+    await logLoginAttempt({ req, email: null, success: false, failReason: 'MFA_SEND_FAILED' });
     res.status(500).json({ error: 'Erro ao enviar MFA' });
   }
 };
@@ -137,10 +191,12 @@ export const verifyMfa = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
 
     if (!user || user.mfaCode !== code) {
+      await logLoginAttempt({ req, email: user?.email ?? null, success: false, failReason: 'MFA_INVALID' });
       return res.status(400).json({ error: 'Código inválido', valid: false });
     }
 
     if (user.mfaExpiresAt && new Date() > user.mfaExpiresAt) {
+      await logLoginAttempt({ req, email: user.email, success: false, failReason: 'MFA_EXPIRED' });
       return res.status(400).json({ error: 'Código expirado', valid: false });
     }
 
@@ -150,6 +206,14 @@ export const verifyMfa = async (req: Request, res: Response) => {
       data: { mfaCode: null, mfaExpiresAt: null }
     });
 
+    // Criar/atualizar sessão para timeout por inatividade
+    await prisma.session.upsert({
+      where: { userId },
+      create: { userId, lastActivity: new Date() },
+      update: { lastActivity: new Date() },
+    });
+
+    await logLoginAttempt({ req, email: user.email, success: true });
     res.json({ valid: true });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao verificar MFA' });

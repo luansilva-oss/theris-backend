@@ -3,6 +3,144 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+/** GET /api/admin/login-attempts — apenas SUPER_ADMIN. Query: limit, page, onlyFailed, email, ip, since (ISO). */
+export const getLoginAttempts = async (req: Request, res: Response) => {
+  const userId = (req.headers['x-user-id'] as string)?.trim();
+  if (!userId) return res.status(401).json({ error: 'Usuário não identificado.' });
+  const caller = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true } });
+  if (caller?.systemProfile !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Acesso negado.' });
+
+  const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 100);
+  const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+  const onlyFailed = req.query.onlyFailed === 'true';
+  const email = (req.query.email as string)?.trim() || undefined;
+  const ip = (req.query.ip as string)?.trim() || undefined;
+  const since = (req.query.since as string)?.trim() || undefined;
+
+  const where: any = {};
+  if (onlyFailed) where.success = false;
+  if (email) where.email = { contains: email, mode: 'insensitive' };
+  if (ip) where.ipAddress = { contains: ip };
+  if (since) where.createdAt = { gte: new Date(since) };
+
+  const [items, total] = await Promise.all([
+    prisma.loginAttempt.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.loginAttempt.count({ where }),
+  ]);
+
+  return res.json({ items, total, limit, page });
+};
+
+/** GET /api/admin/sessions — apenas SUPER_ADMIN. Sessões ativas com dados do usuário. */
+export const getSessions = async (req: Request, res: Response) => {
+  const userId = (req.headers['x-user-id'] as string)?.trim();
+  if (!userId) return res.status(401).json({ error: 'Usuário não identificado.' });
+  const caller = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true } });
+  if (caller?.systemProfile !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Acesso negado.' });
+
+  const sessions = await prisma.session.findMany({
+    orderBy: { lastActivity: 'desc' },
+  });
+  if (sessions.length === 0) return res.json([]);
+
+  const userIds = [...new Set(sessions.map((s) => s.userId))];
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      systemProfile: true,
+      departmentRef: { select: { name: true } },
+    },
+  });
+  const userMap = new Map(users.map((u) => [u.id, u]));
+  const now = Date.now();
+
+  const items = sessions.map((s) => {
+    const u = userMap.get(s.userId);
+    const createdAt = s.createdAt ? new Date(s.createdAt).getTime() : new Date(s.lastActivity).getTime();
+    const lastActivityTime = new Date(s.lastActivity).getTime();
+    return {
+      sessionId: s.id,
+      userId: s.userId,
+      userName: u?.name ?? '—',
+      userEmail: u?.email ?? '—',
+      userRole: u?.systemProfile ?? '—',
+      userDepartment: u?.departmentRef?.name ?? '—',
+      lastActivity: s.lastActivity,
+      createdAt: s.createdAt ?? s.lastActivity,
+      minutesActive: Math.floor((now - createdAt) / 60000),
+      minutesSinceActivity: Math.floor((now - lastActivityTime) / 60000),
+    };
+  });
+
+  return res.json(items);
+};
+
+/** DELETE /api/admin/sessions/:userId — revogar sessão de um usuário. */
+export const revokeSession = async (req: Request, res: Response) => {
+  const callerId = (req.headers['x-user-id'] as string)?.trim();
+  if (!callerId) return res.status(401).json({ error: 'Usuário não identificado.' });
+  const caller = await prisma.user.findUnique({ where: { id: callerId }, select: { systemProfile: true, name: true } });
+  if (caller?.systemProfile !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Acesso negado.' });
+
+  const targetUserId = req.params.userId;
+  if (!targetUserId) return res.status(400).json({ error: 'userId obrigatório.' });
+
+  const session = await prisma.session.findUnique({ where: { userId: targetUserId } });
+  if (!session) return res.status(404).json({ error: 'Sessão não encontrada.' });
+
+  await prisma.session.delete({ where: { userId: targetUserId } });
+  await prisma.historicoMudanca.create({
+    data: {
+      tipo: 'SESSION_REVOKED',
+      entidadeTipo: 'User',
+      entidadeId: targetUserId,
+      descricao: `Sessão revogada por ${caller.name ?? 'SUPER_ADMIN'}.`,
+      dadosAntes: { status: 'ATIVA' },
+      dadosDepois: { status: 'REVOGADA' },
+      autorId: callerId,
+    },
+  });
+
+  return res.json({ success: true });
+};
+
+/** DELETE /api/admin/sessions — revogar todas as sessões exceto a do próprio usuário. */
+export const revokeAllSessions = async (req: Request, res: Response) => {
+  const callerId = (req.headers['x-user-id'] as string)?.trim();
+  if (!callerId) return res.status(401).json({ error: 'Usuário não identificado.' });
+  const caller = await prisma.user.findUnique({ where: { id: callerId }, select: { systemProfile: true, name: true } });
+  if (caller?.systemProfile !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Acesso negado.' });
+
+  const sessions = await prisma.session.findMany({
+    where: { userId: { not: callerId } },
+  });
+
+  for (const s of sessions) {
+    await prisma.session.delete({ where: { userId: s.userId } });
+    await prisma.historicoMudanca.create({
+      data: {
+        tipo: 'SESSION_REVOKED',
+        entidadeTipo: 'User',
+        entidadeId: s.userId,
+        descricao: `Sessão revogada em lote por ${caller.name ?? 'SUPER_ADMIN'}.`,
+        dadosAntes: { status: 'ATIVA' },
+        dadosDepois: { status: 'REVOGADA' },
+        autorId: callerId,
+      },
+    });
+  }
+
+  return res.json({ success: true, count: sessions.length });
+};
+
 // --- DADOS OFICIAIS (A tua lista completa) ---
 const toolsData = [
     {

@@ -36,7 +36,7 @@ export const CustomConfirmModal = ({
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: isDestructive ? '#ef4444' : '#a78bfa'
+                            color: isDestructive ? '#ef4444' : '#38BDF8'
                         }}>
                             <AlertTriangle size={20} />
                         </div>
@@ -71,7 +71,7 @@ export const CustomConfirmModal = ({
                             border: 'none',
                             cursor: 'pointer',
                             fontWeight: 600,
-                            background: isDestructive ? '#ef4444' : '#7c3aed',
+                            background: isDestructive ? '#ef4444' : '#0EA5E9',
                             color: 'white',
                             transition: 'all 0.2s'
                         }}

@@ -84,7 +84,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   if (loading) {
     return (
       <div style={{ padding: 24 }}>
-        <button onClick={handleBack} style={{ background: 'transparent', border: 'none', color: '#a78bfa', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 14 }}>
+        <button onClick={handleBack} style={{ background: 'transparent', border: 'none', color: '#38BDF8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 14 }}>
           <ArrowLeft size={18} /> Voltar
         </button>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 24 }}>
@@ -110,7 +110,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   if (error || !data) {
     return (
       <div style={{ padding: 24, textAlign: 'center' }}>
-        <button onClick={handleBack} style={{ background: 'transparent', border: 'none', color: '#a78bfa', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 14 }}>
+        <button onClick={handleBack} style={{ background: 'transparent', border: 'none', color: '#38BDF8', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 24, fontSize: 14 }}>
           <ArrowLeft size={18} /> Voltar
         </button>
         <div style={{ color: '#ef4444', fontSize: 16 }}>{error || 'Colaborador não encontrado'}</div>
@@ -137,7 +137,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
         style={{
           background: 'transparent',
           border: 'none',
-          color: '#a78bfa',
+          color: '#38BDF8',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
@@ -170,9 +170,9 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
                   alignItems: 'center',
                   gap: 6,
                   padding: '6px 12px',
-                  background: 'rgba(167, 139, 250, 0.15)',
-                  border: '1px solid #7c3aed',
-                  color: '#a78bfa',
+                  background: 'rgba(14, 165, 233, 0.15)',
+                  border: '1px solid #0EA5E9',
+                  color: '#38BDF8',
                   borderRadius: 8,
                   fontSize: 12,
                   fontWeight: 600,
@@ -188,7 +188,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
               width: 72,
               height: 72,
               borderRadius: '50%',
-              background: 'linear-gradient(135deg, #6d28d9 0%, #4c1d95 100%)',
+              background: 'linear-gradient(135deg, #0284C7 0%, #0EA5E9 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -241,7 +241,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Mail size={16} color="#71717a" style={{ flexShrink: 0 }} />
-              <a href={`mailto:${user?.email}`} style={{ color: '#a78bfa', textDecoration: 'none' }}>{user?.email || '—'}</a>
+              <a href={`mailto:${user?.email}`} style={{ color: '#38BDF8', textDecoration: 'none' }}>{user?.email || '—'}</a>
             </div>
             {user?.manager && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -326,7 +326,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
                             <tr key={idx} style={{ borderTop: '1px solid #27272a' }}>
                               <td style={{ padding: '12px 16px', color: '#e4e4e7', fontWeight: 500 }}>{f.ferramenta}</td>
                               <td style={{ padding: '12px 16px', color: '#a1a1aa' }}>{f.sigla}</td>
-                              <td style={{ padding: '12px 16px', color: '#a78bfa' }}>{f.nivel}</td>
+                              <td style={{ padding: '12px 16px', color: '#38BDF8' }}>{f.nivel}</td>
                               <td style={{ padding: '12px 16px' }}>
                                 {f.critico || f.criticidade ? (
                                   <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
@@ -363,7 +363,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
                             <tr key={idx} style={{ borderTop: '1px solid #27272a' }}>
                               <td style={{ padding: '12px 16px', color: '#e4e4e7', fontWeight: 500 }}>{f.ferramenta}</td>
                               <td style={{ padding: '12px 16px', color: '#a1a1aa' }}>{f.sigla}</td>
-                              <td style={{ padding: '12px 16px', color: '#a78bfa' }}>{f.nivel}</td>
+                              <td style={{ padding: '12px 16px', color: '#38BDF8' }}>{f.nivel}</td>
                               <td style={{ padding: '12px 16px' }}>
                                 {f.critico || f.criticidade ? (
                                   <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>

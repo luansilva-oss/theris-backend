@@ -68,7 +68,7 @@ export const EditAccessModal = ({ isOpen, onClose, access, toolId, onUpdate, sho
                             id="isExtra"
                             checked={isExtraordinary}
                             onChange={(e) => setIsExtraordinary(e.target.checked)}
-                            style={{ width: '18px', height: '18px', accentColor: '#a78bfa' }}
+                            style={{ width: '18px', height: '18px', accentColor: '#0EA5E9' }}
                         />
                         <label htmlFor="isExtra" style={{ color: 'white', cursor: 'pointer' }}>É um acesso extraordinário (temporário)?</label>
                     </div>

@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS "Session" (
+  "id"           TEXT NOT NULL,
+  "userId"       TEXT NOT NULL,
+  "lastActivity" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "createdAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "Session_userId_key" ON "Session"("userId");

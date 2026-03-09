@@ -250,7 +250,7 @@ export const EditUserModal: React.FC<Props> = ({ isOpen, onClose, user, onUpdate
                         id="isActive"
                         checked={isActive}
                         onChange={(e) => setIsActive(e.target.checked)}
-                        style={{ width: 18, height: 18, accentColor: '#a78bfa' }}
+                        style={{ width: 18, height: 18, accentColor: '#0EA5E9' }}
                     />
                     <label htmlFor="isActive" style={{ margin: 0 }}>Colaborador ativo</label>
                 </div>

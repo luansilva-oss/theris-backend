@@ -14,7 +14,7 @@ const CustomConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confir
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        color: isDestructive ? '#ef4444' : '#a78bfa'
+                                        color: isDestructive ? '#ef4444' : '#38BDF8'
                                     }, children: (0, jsx_runtime_1.jsx)(lucide_react_1.AlertTriangle, { size: 20 }) }), (0, jsx_runtime_1.jsx)("h3", { style: { color: 'white', margin: 0, fontSize: '18px', fontWeight: 600 }, children: title })] }), (0, jsx_runtime_1.jsx)("button", { onClick: onClose, className: "btn-icon", children: (0, jsx_runtime_1.jsx)(lucide_react_1.X, { size: 20, color: "#71717a" }) })] }), (0, jsx_runtime_1.jsx)("p", { style: { color: '#a1a1aa', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px', margin: '0 0 24px 0' }, children: message }), (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', gap: '12px', justifyContent: 'flex-end' }, children: [(0, jsx_runtime_1.jsx)("button", { onClick: onClose, className: "btn-text", style: { padding: '10px 20px', fontSize: '14px' }, children: cancelLabel }), (0, jsx_runtime_1.jsx)("button", { onClick: () => {
                                 onConfirm();
                                 onClose();
@@ -25,7 +25,7 @@ const CustomConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confir
                                 border: 'none',
                                 cursor: 'pointer',
                                 fontWeight: 600,
-                                background: isDestructive ? '#ef4444' : '#7c3aed',
+                                background: isDestructive ? '#ef4444' : '#0EA5E9',
                                 color: 'white',
                                 transition: 'all 0.2s'
                             }, className: isDestructive ? 'hover:bg-red-600' : 'hover:bg-violet-700', children: confirmLabel })] })] }) }));

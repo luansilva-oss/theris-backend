@@ -325,7 +325,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                 {/* HEADER */}
                 <div className="modal-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <Building2 size={24} color="#a78bfa" />
+                        <Building2 size={24} color="#0EA5E9" />
                         <h2 style={{ margin: 0 }}>
                             {viewMode === 'DEPARTMENT' && currentDept ? 'Gerenciar Departamento' : 'Estrutura Organizacional'}
                         </h2>
@@ -364,7 +364,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', paddingRight: 8, flex: 1 }}>
                                 {units.map(unit => (
                                     <div key={unit.id} style={{ flexShrink: 0 }}>
-                                        <div style={{ fontSize: 12, color: '#8b5cf6', fontWeight: 700, textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }}>
+                                        <div style={{ fontSize: 12, color: '#0EA5E9', fontWeight: 700, textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }}>
                                             UNIDADE: {unit.name}
                                         </div>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -492,7 +492,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                                                 onClick={() => setRoleForKit({ id: role.id, name: role.name, departmentName: currentDept.name })}
                                                                 title="Ver/Editar Kit Básico do cargo"
                                                             >
-                                                                <Package size={14} color="#a78bfa" />
+                                                                <Package size={14} color="#0EA5E9" />
                                                             </button>
                                                             <button
                                                                 className="btn-mini"
@@ -501,7 +501,7 @@ export const ManageStructureModal: React.FC<Props> = ({ isOpen, onClose, onUpdat
                                                                     setUserSearchTerm('');
                                                                     setIsUserPickerOpen(true);
                                                                 }}
-                                                                style={{ fontSize: 11, padding: '4px 8px', background: '#a78bfa', color: '#fff', border: 'none' }}
+                                                                style={{ fontSize: 11, padding: '4px 8px', background: '#0EA5E9', color: '#fff', border: 'none' }}
                                                             >
                                                                 <Plus size={12} /> Add Pessoa
                                                             </button>

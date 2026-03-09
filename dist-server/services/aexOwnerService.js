@@ -3,9 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSlackIdByUserName = getSlackIdByUserName;
 exports.getOwnerSlackIdsForTool = getOwnerSlackIdsForTool;
 exports.getSISlackIds = getSISlackIds;
+exports.isSIMember = isSIMember;
+exports.isOwnerSIMember = isOwnerSIMember;
 exports.sendAexCreationDMs = sendAexCreationDMs;
+exports.sendAexRequesterCreatedDM = sendAexRequesterCreatedDM;
+exports.sendAexRequesterOwnerApprovedDM = sendAexRequesterOwnerApprovedDM;
+exports.sendAexRequesterSIApprovedFirstDM = sendAexRequesterSIApprovedFirstDM;
 exports.sendAexOwnerApprovedDMs = sendAexOwnerApprovedDMs;
 exports.sendAexRejectedByOwnerDM = sendAexRejectedByOwnerDM;
+exports.sendAexRejectedBySIDM = sendAexRejectedBySIDM;
 exports.sendAexApprovedBySIDM = sendAexApprovedBySIDM;
 /**
  * Mapa de Owners/Sub-owners por ferramenta para o fluxo de Acesso Extraordinário.
@@ -101,9 +107,22 @@ async function getSISlackIds() {
     }
     return ids;
 }
+/** Verifica se o slackId pertence ao time de SI (Luan, Vladimir ou Allan) */
+async function isSIMember(slackId) {
+    if (!slackId)
+        return false;
+    const siIds = await getSISlackIds();
+    return siIds.includes(slackId);
+}
+/** Verifica se Owner ou Sub-Owner da ferramenta pertence ao time de SI */
+async function isOwnerSIMember(toolName) {
+    const ownerIds = await getOwnerSlackIdsForTool(toolName);
+    const siIds = await getSISlackIds();
+    return ownerIds.some((id) => siIds.includes(id));
+}
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.VITE_API_URL || 'https://theris.grupo-3c.com';
-/** Envia DMs para Owner/Sub e SI quando uma solicitação AEX é criada */
-async function sendAexCreationDMs(client, requestId, toolName, accessLevel, requesterName, justification) {
+/** Envia DMs para Owner/Sub e SI quando uma solicitação AEX é criada (sempre fluxo de 2 etapas) */
+async function sendAexCreationDMs(client, requestId, toolName, accessLevel, requesterName, justification, opts) {
     const shortId = requestId.slice(0, 8);
     const ownerIds = await getOwnerSlackIdsForTool(toolName);
     const siIds = await getSISlackIds();
@@ -121,8 +140,8 @@ Por favor, avalie a solicitação #${shortId}:`;
             type: 'actions',
             block_id: 'aex_owner_decision',
             elements: [
-                { type: 'button', text: { type: 'plain_text', text: '✅ Aprovar', emoji: true }, action_id: 'aex_approve', value: requestId, style: 'primary' },
-                { type: 'button', text: { type: 'plain_text', text: '❌ Reprovar', emoji: true }, action_id: 'aex_reject', value: requestId }
+                { type: 'button', text: { type: 'plain_text', text: '✅ Aprovar', emoji: true }, action_id: 'aex_owner_approve_v2', value: `approve_${requestId}`, style: 'primary' },
+                { type: 'button', text: { type: 'plain_text', text: '❌ Reprovar', emoji: true }, action_id: 'aex_owner_reject_v2', value: `reject_${requestId}` }
             ]
         }
     ];
@@ -153,8 +172,73 @@ Aguardando aprovação do owner. Você será notificado quando o owner decidir p
         }
     }
 }
-/** Envia DM para Owner confirmando aprovação e para SI com link do painel */
-async function sendAexOwnerApprovedDMs(client, requestId, toolName, accessLevel, requesterName, ownerSlackId) {
+/** NOTIF 1 — DM para o solicitante ao criar o chamado */
+async function sendAexRequesterCreatedDM(client, requesterSlackId, requestId, toolName, accessLevel) {
+    const shortId = requestId.slice(0, 8);
+    try {
+        await client.chat.postMessage({
+            channel: requesterSlackId,
+            text: `📋 *Chamado criado com sucesso!*
+
+Seu pedido de acesso extraordinário foi registrado.
+
+*Ferramenta:* ${toolName}
+*Nível solicitado:* ${accessLevel}
+*ID do chamado:* #${shortId}
+
+A solicitação foi enviada para aprovação do responsável pela ferramenta. Você será notificado a cada atualização.`
+        });
+    }
+    catch (e) {
+        console.error('[AEX] Erro ao notificar solicitante (criação):', e);
+    }
+}
+/** NOTIF 2A — DM para o solicitante quando Owner aprova (PENDING_SI) */
+async function sendAexRequesterOwnerApprovedDM(client, requesterSlackId, requestId, toolName, accessLevel) {
+    const shortId = requestId.slice(0, 8);
+    try {
+        await client.chat.postMessage({
+            channel: requesterSlackId,
+            text: `✅ *Etapa 1 concluída — Owner aprovou!*
+
+O responsável pela ferramenta aprovou sua solicitação.
+
+*Ferramenta:* ${toolName}
+*Nível:* ${accessLevel}
+*Chamado:* #${shortId}
+
+Agora aguarda aprovação final do time de Segurança da Informação. Você será notificado quando concluído.`
+        });
+    }
+    catch (e) {
+        console.error('[AEX] Erro ao notificar solicitante (owner aprovou):', e);
+    }
+}
+/** NOTIF 2B — DM para solicitante quando SI aprova primeiro (fluxo PENDENTE_OWNER após SI) */
+async function sendAexRequesterSIApprovedFirstDM(client, requesterSlackId, requestId, toolName, accessLevel, ownerName, subOwnerName) {
+    const shortId = requestId.slice(0, 8);
+    const subLine = subOwnerName ? `\n*Sub-owner:* ${subOwnerName}` : '';
+    try {
+        await client.chat.postMessage({
+            channel: requesterSlackId,
+            text: `✅ *Etapa 1 concluída — Time de SI aprovou!*
+
+O time de Segurança da Informação aprovou sua solicitação.
+
+*Ferramenta:* ${toolName} — *Owner:* ${ownerName}${subLine}
+*Nível:* ${accessLevel}
+*Chamado:* #${shortId}
+
+Aguardando aprovação do responsável pela ferramenta.`
+        });
+    }
+    catch (e) {
+        console.error('[AEX] Erro ao notificar solicitante (SI aprovou primeiro):', e);
+    }
+}
+/** Envia DM para Owner confirmando aprovação e para SI com link do painel.
+ * Se o Owner for do time de SI, inclui aviso: aprovação final deve ser feita por outro integrante. */
+async function sendAexOwnerApprovedDMs(client, requestId, toolName, accessLevel, requesterName, ownerSlackId, ownerName) {
     const shortId = requestId.slice(0, 8);
     const ticketsUrl = `${FRONTEND_URL}/tickets`;
     try {
@@ -167,11 +251,20 @@ async function sendAexOwnerApprovedDMs(client, requestId, toolName, accessLevel,
         console.error('[AEX] Erro ao confirmar DM para owner:', e);
     }
     const siIds = await getSISlackIds();
-    const siMessage = `✅ *Owner aprovou o Acesso Extraordinário #${shortId}*
+    const ownerIsSI = await isSIMember(ownerSlackId);
+    const ownerDisplayName = ownerName || 'Owner';
+    let siMessage = `✅ *Owner aprovou o Acesso Extraordinário #${shortId}*
 
 *Solicitante:* ${requesterName}
 *Ferramenta:* ${toolName}
-*Nível:* ${accessLevel}
+*Nível:* ${accessLevel}`;
+    if (ownerIsSI) {
+        siMessage += `
+
+⚠️ Atenção: o Owner (${ownerDisplayName}) é do time de SI.
+A aprovação final deve ser feita por Luan, Vladimir ou Allan — exceto ${ownerDisplayName}.`;
+    }
+    siMessage += `
 
 Acesse o painel para a aprovação final: ${ticketsUrl}`;
     for (const channel of siIds) {
@@ -183,24 +276,59 @@ Acesse o painel para a aprovação final: ${ticketsUrl}`;
         }
     }
 }
-/** Envia DM para solicitante informando rejeição pelo owner */
-async function sendAexRejectedByOwnerDM(client, requesterSlackId, toolName) {
+/** NOTIF REJEIÇÃO — DM para solicitante quando Owner reprova */
+async function sendAexRejectedByOwnerDM(client, requesterSlackId, requestId, toolName) {
+    const shortId = requestId.slice(0, 8);
     try {
         await client.chat.postMessage({
             channel: requesterSlackId,
-            text: `❌ Sua solicitação de acesso extraordinário para ${toolName} foi reprovada pelo responsável da ferramenta.`
+            text: `❌ *Solicitação reprovada*
+
+Sua solicitação de acesso extraordinário foi reprovada.
+
+*Ferramenta:* ${toolName}
+*Chamado:* #${shortId}
+*Reprovado por:* Owner/Responsável pela ferramenta`
         });
     }
     catch (e) {
         console.error('[AEX] Erro ao notificar solicitante da rejeição:', e);
     }
 }
-/** Envia DM para solicitante informando aprovação final pelo SI */
-async function sendAexApprovedBySIDM(client, requesterSlackId, toolName, accessLevel) {
+/** NOTIF REJEIÇÃO — DM para solicitante quando SI reprova */
+async function sendAexRejectedBySIDM(client, requesterSlackId, requestId, toolName) {
+    const shortId = requestId.slice(0, 8);
     try {
         await client.chat.postMessage({
             channel: requesterSlackId,
-            text: `✅ Seu acesso extraordinário para ${toolName} - ${accessLevel} foi aprovado! O acesso já está ativo no sistema.`
+            text: `❌ *Solicitação reprovada*
+
+Sua solicitação de acesso extraordinário foi reprovada.
+
+*Ferramenta:* ${toolName}
+*Chamado:* #${shortId}
+*Reprovado por:* Time de SI`
+        });
+    }
+    catch (e) {
+        console.error('[AEX] Erro ao notificar solicitante da rejeição pelo SI:', e);
+    }
+}
+/** NOTIF 3 — DM para solicitante quando ambos aprovaram (APPROVED) */
+async function sendAexApprovedBySIDM(client, requesterSlackId, requestId, toolName, accessLevel) {
+    const shortId = requestId.slice(0, 8);
+    try {
+        await client.chat.postMessage({
+            channel: requesterSlackId,
+            text: `🎉 *Acesso liberado!*
+
+Sua solicitação foi totalmente aprovada.
+
+*Ferramenta:* ${toolName}
+*Nível de acesso:* ${accessLevel}
+*Chamado:* #${shortId}
+
+O acesso já está ativo no sistema.`
         });
     }
     catch (e) {

@@ -20,7 +20,7 @@ import {
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
 import { getAllUsers, getMe, getUserById, getUserDetails, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
-import { resetCatalog, getLoginAttempts } from './controllers/adminController';
+import { resetCatalog, getLoginAttempts, getSessions, revokeSession, revokeAllSessions } from './controllers/adminController';
 import { checkSessionTimeout } from './middleware/sessionTimeout';
 import * as structureController from './controllers/structureController';
 import { getAuditLog } from './controllers/auditLogController';
@@ -128,6 +128,9 @@ app.use((req, res, next) => {
 // ============================================================
 app.get('/api/admin/reset-tools', resetCatalog);
 app.get('/api/admin/login-attempts', getLoginAttempts);
+app.get('/api/admin/sessions', getSessions);
+app.delete('/api/admin/sessions/:userId', revokeSession);
+app.delete('/api/admin/sessions', revokeAllSessions);
 
 // ============================================================
 // --- ROTAS DE DADOS ---

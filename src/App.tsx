@@ -4,7 +4,7 @@ import {
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
   Search, Lock, Layers, ChevronDown, ChevronRight,
   Users, Building, Briefcase, // Ícone para Gestão de Pessoas
-  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare,   Filter, X, Download
+  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare,   Filter, X, Download, Monitor
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
@@ -28,11 +28,15 @@ import { EntityAuditHistory } from './components/EntityAuditHistory';
 import { ReportExportModal } from './components/ReportExportModal';
 import { AuditLog } from './pages/AuditLog';
 import { CollaboratorDetails } from './pages/CollaboratorDetails';
-import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { LoginAttempts } from './pages/LoginAttempts';
+import { ActiveSessions } from './pages/ActiveSessions';
+import LandingPage from './pages/LandingPage';
+import { useLocation, useParams, useNavigate, useSearchParams, Navigate } from 'react-router-dom';
 import { ToastContainer, Toast } from './components/ToastContainer';
 import { CustomConfirmModal } from './components/CustomConfirmModal';
 import { API_URL } from './config';
-import { setUserIdGetter } from './lib/api';
+import { setUserIdGetter, setSessionExpiredCallback } from './lib/api';
+import { useSessionTimeout } from './hooks/useSessionTimeout';
 
 // --- TYPES ---
 interface User {
@@ -178,7 +182,7 @@ function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 
     lines.push({ label: 'Ferramenta', value: toolName });
     const justification = (d.justification as string) || r.justification;
     if (justification) lines.push({ label: 'Justificativa', value: justification });
-    return { category: 'Acessos', categoryColor: '#a78bfa', title, lines };
+    return { category: 'Acessos', categoryColor: '#38BDF8', title, lines };
   }
 
   // Pessoas: ação de RH, colaborador e mudança
@@ -238,7 +242,7 @@ function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 
       if (period) lines.push({ label: 'Período', value: period });
     }
     if (r.justification) lines.push({ label: 'Justificativa', value: r.justification });
-    return { category: 'Acessos', categoryColor: '#a78bfa', title, lines };
+    return { category: 'Acessos', categoryColor: '#38BDF8', title, lines };
   }
 
   // Fallback genérico
@@ -246,7 +250,7 @@ function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 
   const lines: { label: string; value: string }[] = [];
   if (d.info && d.info !== title) lines.push({ label: 'Resumo', value: d.info as string });
   if (r.justification) lines.push({ label: 'Justificativa', value: r.justification });
-  return { category: 'Acessos', categoryColor: '#a78bfa', title, lines };
+  return { category: 'Acessos', categoryColor: '#38BDF8', title, lines };
 }
 
 export default function App() {
@@ -273,11 +277,13 @@ export default function App() {
   // activeTab derivado da URL (pathname como fonte da verdade)
   const pathname = location.pathname;
   const activeTab = pathname.startsWith('/collaborators/') ? 'PEOPLE' : // highlight PEOPLE quando em detalhes
-    pathname === '/' || pathname === '/dashboard' ? 'DASHBOARD' :
+    pathname === '/dashboard' ? 'DASHBOARD' :
     pathname === '/people' ? 'PEOPLE' :
     pathname.startsWith('/tools') ? 'TOOLS' :
     pathname === '/history' ? 'HISTORY' :
     pathname === '/audit-log' ? 'AUDIT_LOG' :
+    pathname === '/login-attempts' ? 'LOGIN_ATTEMPTS' :
+    pathname === '/active-sessions' ? 'ACTIVE_SESSIONS' :
     pathname === '/tickets' ? 'TICKETS' :
     pathname === '/my-tickets' ? 'MY_TICKETS' :
     'DASHBOARD';
@@ -436,6 +442,24 @@ export default function App() {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
+  // Sessão expirada por inatividade (60 min) ou 401 SESSION_EXPIRED do backend
+  const sessionExpiredRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    sessionExpiredRef.current = () => {
+      localStorage.clear();
+      showToast('Sua sessão expirou por inatividade. Faça login novamente.', 'warning');
+      setIsLoggedIn(false);
+      setCurrentUser(null);
+      setIsMfaRequired(false);
+      navigate('/login');
+    };
+  }, [showToast, navigate]);
+  useEffect(() => {
+    setSessionExpiredCallback(() => sessionExpiredRef.current());
+    return () => setSessionExpiredCallback(null);
+  }, []);
+  useSessionTimeout(() => sessionExpiredRef.current(), { enabled: isLoggedIn });
+
   const customConfirm = (config: {
     title: string;
     message: string;
@@ -504,6 +528,12 @@ export default function App() {
   // Redirecionar VIEWER que tenta acessar /audit-log diretamente
   useEffect(() => {
     if (pathname === '/audit-log' && systemProfile === 'VIEWER') {
+      navigate('/dashboard');
+    }
+  }, [pathname, systemProfile, navigate]);
+  // Redirecionar não-SUPER_ADMIN que tenta acessar /active-sessions
+  useEffect(() => {
+    if (pathname === '/active-sessions' && systemProfile !== 'SUPER_ADMIN') {
       navigate('/dashboard');
     }
   }, [pathname, systemProfile, navigate]);
@@ -874,6 +904,7 @@ export default function App() {
         localStorage.setItem('theris_profile', systemProfile);
         localStorage.setItem('theris_session_start', Date.now().toString());
         setIsLoggedIn(true); setIsMfaRequired(false);
+        navigate('/dashboard');
         showToast("Bem-vindo de volta!", "success");
       } else {
         showToast(data.error || "Código inválido.", "error"); setMfaCode('');
@@ -1064,16 +1095,18 @@ export default function App() {
   };
 
   // --- RENDER ---
-
-  if (!isLoggedIn) return (
+  if (pathname === '/' && isLoggedIn) return <Navigate to="/dashboard" replace />;
+  if (pathname === '/' && !isLoggedIn) return <LandingPage />;
+  if (pathname === '/login' && isLoggedIn) return <Navigate to="/dashboard" replace />;
+  if (pathname === '/login' && !isLoggedIn) return (
     <div className="login-wrapper">
       <div className="login-marketing">
         <div className="marketing-content fade-in">
           <div className="marketing-badge">
-            <Zap size={14} fill="#a78bfa" /> Disponível para todo o ecossistema
+            <Zap size={14} fill="#38BDF8" /> Disponível para todo o ecossistema
           </div>
           <h1 style={{ color: 'white' }}>
-            Domine a <span style={{ color: '#7c3aed' }}>Governança</span> de Acessos da sua empresa.
+            Domine a <span style={{ color: '#0EA5E9' }}>Governança</span> de Acessos da sua empresa.
           </h1>
           <p>
             O Theris OS centraliza identidades, automatiza solicitações e garante compliance em tempo real para times de alta performance.
@@ -1109,15 +1142,15 @@ export default function App() {
         <div className="login-card fade-in">
           {!isMfaRequired ? (
             <>
-              <div style={{ background: 'rgba(124, 58, 237, 0.1)', width: '64px', height: '64px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid rgba(124, 58, 237, 0.2)' }}>
-                <Bird size={36} color="#a78bfa" />
+              <div style={{ background: 'rgba(14, 165, 233, 0.15)', width: '64px', height: '64px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid rgba(14, 165, 233, 0.3)' }}>
+                <Bird size={36} color="#38BDF8" />
               </div>
               <h2>Boas-vindas ao Theris</h2>
               <p className="subtitle">Acesse sua conta corporativa para continuar.</p>
 
               {isLoading ? (
-                <div style={{ marginTop: 20, color: '#8b5cf6', fontSize: '14px', fontWeight: 500 }}>
-                  <div className="spinner" style={{ border: '3px solid rgba(139, 92, 246, 0.1)', borderTop: '3px solid #8b5cf6', borderRadius: '50%', width: '24px', height: '24px', animation: 'spin 1s linear infinite', margin: '0 auto 10px' }}></div>
+                <div style={{ marginTop: 20, color: '#0EA5E9', fontSize: '14px', fontWeight: 500 }}>
+                  <div className="spinner" style={{ border: '3px solid rgba(14, 165, 233, 0.2)', borderTop: '3px solid #0EA5E9', borderRadius: '50%', width: '24px', height: '24px', animation: 'spin 1s linear infinite', margin: '0 auto 10px' }}></div>
                   Configurando ambiente...
                 </div>
               ) : (
@@ -1129,7 +1162,7 @@ export default function App() {
             </>
           ) : (
             <div className="mfa-container">
-              <div className="mfa-icon-wrapper" style={{ margin: '0 auto 20px' }}><Lock size={32} color="#8b5cf6" /></div>
+              <div className="mfa-icon-wrapper" style={{ margin: '0 auto 20px' }}><Lock size={32} color="#0EA5E9" /></div>
               <h2 style={{ color: 'white', margin: 0, fontSize: 20 }}>Código de Segurança</h2>
               <p className="subtitle" style={{ marginBottom: 24 }}>Enviamos um código para <strong>{currentUser?.email}</strong>.</p>
               <input
@@ -1141,7 +1174,7 @@ export default function App() {
                 autoFocus
               />
               <button onClick={handleMfaVerify} className="btn-verify" disabled={isLoading}>
-                {isLoading ? 'Verificando...' : 'Confirmador Acesso'}
+                {isLoading ? 'Verificando...' : 'Confirmar Acesso'}
               </button>
               <button
                 onClick={() => { setIsMfaRequired(false); setCurrentUser(null); setMfaCode(''); }}
@@ -1164,16 +1197,17 @@ export default function App() {
       </div>
     </div>
   );
+  if (!isLoggedIn) return <Navigate to="/login" replace />;
 
   return (
     <div className="app-layout">
       {/* SIDEBAR */}
       <aside className="sidebar">
-        <div className="brand-box"><Bird size={24} color="#7c3aed" /> THERIS OS</div>
+        <div className="brand-box"><Bird size={24} color="#0EA5E9" /> THERIS OS</div>
         <div className="nav-section">
           {(['SUPER_ADMIN', 'GESTOR', 'ADMIN', 'APPROVER'].includes(systemProfile)) ? (
             <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { navigate('/'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Visão Geral</div>
+              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { navigate('/dashboard'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Visão Geral</div>
               {systemProfile !== 'APPROVER' && (
                 <>
                   <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => navigate('/people')}><Users size={18} /> Gestão de Pessoas</div>
@@ -1182,11 +1216,17 @@ export default function App() {
               )}
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => navigate('/history')}><FileText size={18} /> Relatório</div>
               <div className={`nav-item ${activeTab === 'AUDIT_LOG' ? 'active' : ''}`} onClick={() => { navigate('/audit-log'); setAuditLogFilters({}); }}><Clock size={18} /> Histórico</div>
+              {systemProfile === 'SUPER_ADMIN' && (
+                <div className={`nav-item ${activeTab === 'LOGIN_ATTEMPTS' ? 'active' : ''}`} onClick={() => navigate('/login-attempts')}><Shield size={18} /> Tentativas de Login</div>
+              )}
+              {systemProfile === 'SUPER_ADMIN' && (
+                <div className={`nav-item ${activeTab === 'ACTIVE_SESSIONS' ? 'active' : ''}`} onClick={() => navigate('/active-sessions')}><Monitor size={18} /> Sessões Ativas</div>
+              )}
               <div className={`nav-item ${activeTab === 'TICKETS' ? 'active' : ''}`} onClick={() => navigate('/tickets')}><MessageSquare size={18} /> Gestão de Chamados</div>
             </>
           ) : (
             <>
-              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { navigate('/'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Meu Painel</div>
+              <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { navigate('/dashboard'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Meu Painel</div>
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => navigate('/history')}><FileText size={18} /> Relatório</div>
               <div className={`nav-item ${activeTab === 'MY_TICKETS' ? 'active' : ''}`} onClick={() => { navigate('/my-tickets'); setSelectedChamadoId(null); setChamadoDetail(null); }}><MessageSquare size={18} /> Chamados relacionados</div>
             </>
@@ -1205,7 +1245,7 @@ export default function App() {
       {/* MAIN CANVAS */}
       <main className="main-area">
         <header className="header-bar">
-          <div className="page-title">Pagina: <span>{collaboratorId ? 'DETALHES DO COLABORADOR' : activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab === 'MY_TICKETS' ? 'CHAMADOS RELACIONADOS' : activeTab === 'AUDIT_LOG' ? 'HISTÓRICO DE MUDANÇAS' : activeTab}</span></div>
+          <div className="page-title">Pagina: <span>{collaboratorId ? 'DETALHES DO COLABORADOR' : activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab === 'MY_TICKETS' ? 'CHAMADOS RELACIONADOS' : activeTab === 'AUDIT_LOG' ? 'HISTÓRICO DE MUDANÇAS' : activeTab === 'LOGIN_ATTEMPTS' ? 'TENTATIVAS DE LOGIN' : activeTab === 'ACTIVE_SESSIONS' ? 'SESSÕES ATIVAS' : activeTab}</span></div>
         </header>
 
         <div className="content-scroll">
@@ -1229,9 +1269,9 @@ export default function App() {
           {/* CONTEÚDO PADRÃO (quando não está em /collaborators/:id) */}
           {!collaboratorId && activeTab === 'DASHBOARD' && (
             <div className="bento-grid fade-in">
-              <div className="card-base cell-hero" style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #09090b 100%)', borderColor: '#312e81' }}>
+              <div className="card-base cell-hero" style={{ background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)', borderColor: '#334155' }}>
                 <h1 style={{ fontSize: '28px', color: 'white', marginBottom: 10 }}>Olá, {currentUser?.name.split(' ')[0]}</h1>
-                <p style={{ color: '#a5b4fc' }}>Painel de controle operacional ativo.</p>
+                <p style={{ color: '#94a3b8' }}>Painel de controle operacional ativo.</p>
               </div>
 
               <div className="card-base cell-date">
@@ -1242,12 +1282,12 @@ export default function App() {
               {/* Viewer: meu perfil (card completo, igual CollaboratorDetails, sem botão Editar) */}
               {systemProfile === 'VIEWER' && currentUser && (
                 <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
-                  <h3 style={{ color: '#a78bfa', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h3 style={{ color: '#38BDF8', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Users size={18} /> Meu perfil
                   </h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-                      <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg, #6d28d9 0%, #4c1d95 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: 'white' }}>
+                      <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg, #0284C7 0%, #0EA5E9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: 'white' }}>
                         {(currentUser.name || '?').charAt(0).toUpperCase()}
                       </div>
                       <div>
@@ -1278,7 +1318,7 @@ export default function App() {
                       )}
                       <div>
                         <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>E-mail</div>
-                        <a href={`mailto:${currentUser.email}`} style={{ color: '#a78bfa', textDecoration: 'none' }}>{currentUser.email || '—'}</a>
+                        <a href={`mailto:${currentUser.email}`} style={{ color: '#38BDF8', textDecoration: 'none' }}>{currentUser.email || '—'}</a>
                       </div>
                       <div>
                         <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Gestor direto</div>
@@ -1331,7 +1371,7 @@ export default function App() {
                 </div>
                 {/* Viewer: Acessos Extraordinários (tabela Access isExtraordinary) */}
                 <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
-                  <h3 style={{ color: '#a78bfa', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h3 style={{ color: '#38BDF8', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Timer size={18} /> Acessos Extraordinários
                   </h3>
                   {viewerExtraordinaryTools.length === 0 ? (
@@ -1391,8 +1431,8 @@ export default function App() {
                           fontSize: 12,
                           fontWeight: 600,
                           border: '1px solid #27272a',
-                          background: actionNeededFilter === f ? (f === 'Infra' ? 'rgba(251, 191, 36, 0.2)' : f === 'Acessos' ? 'rgba(167, 139, 250, 0.2)' : f === 'Pessoas' ? 'rgba(52, 211, 153, 0.2)' : '#27272a') : '#18181b',
-                          color: actionNeededFilter === f ? (f === 'Infra' ? '#fbbf24' : f === 'Acessos' ? '#a78bfa' : f === 'Pessoas' ? '#34d399' : '#e4e4e7') : '#71717a',
+                          background: actionNeededFilter === f ? (f === 'Infra' ? 'rgba(251, 191, 36, 0.2)' : f === 'Acessos' ? 'rgba(14, 165, 233, 0.2)' : f === 'Pessoas' ? 'rgba(52, 211, 153, 0.2)' : '#334155') : '#1E293B',
+                          color: actionNeededFilter === f ? (f === 'Infra' ? '#fbbf24' : f === 'Acessos' ? '#38BDF8' : f === 'Pessoas' ? '#34d399' : '#e4e4e7') : '#71717a',
                           cursor: 'pointer',
                           transition: 'all 0.2s'
                         }}
@@ -1548,9 +1588,9 @@ export default function App() {
               <div className="tools-wrapper">
                 {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
                   <div className="tool-tile add-new" onClick={() => setIsCreateModalOpen(true)} style={{ border: '2px dashed #3f3f46', background: 'transparent' }}>
-                    <div className="tile-icon" style={{ background: 'transparent' }}><PlusCircle size={24} color="#a78bfa" /></div>
+                    <div className="tile-icon" style={{ background: 'transparent' }}><PlusCircle size={24} color="#0EA5E9" /></div>
                     <div className="tile-info">
-                      <h3 style={{ color: '#a78bfa' }}>Adicionar Ferramenta</h3>
+                      <h3 style={{ color: '#38BDF8' }}>Adicionar Ferramenta</h3>
                       <p>Cadastrar novo sistema</p>
                     </div>
                   </div>
@@ -1592,7 +1632,7 @@ export default function App() {
 
                 {/* BLOCK 1: OWNER */}
                 <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ fontSize: 10, color: '#a78bfa', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Owner (Dono)</div>
+                  <div style={{ fontSize: 10, color: '#38BDF8', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Owner (Dono)</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#2e1065', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 14 }}>
                       {selectedTool.owner?.name.charAt(0) || '?'}
@@ -1641,7 +1681,7 @@ export default function App() {
                 </div>
 
                 {/* BLOCK 4: DESCRIÇÃO */}
-                <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #18181b 0%, #09090b 100%)', borderLeft: '3px solid #a78bfa' }}>
+                <div className="card-base" style={{ flex: 1, padding: '20px', background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)', borderLeft: '3px solid #0EA5E9' }}>
                   <div style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>Descrição</div>
                   <div style={{ color: '#a1a1aa', fontSize: 14, lineHeight: '1.5', maxHeight: '60px', overflowY: 'auto' }}>
                     {selectedTool.description || "Gestão e automação de acessos via Theris OS."}
@@ -1811,7 +1851,7 @@ export default function App() {
                   onClick={() => setIsExtraordinaryOpen(prev => !prev)}
                   style={{
                     padding: '16px 20px',
-                    background: isExtraordinaryOpen ? 'rgba(167, 139, 250, 0.08)' : '#18181b',
+                    background: isExtraordinaryOpen ? 'rgba(14, 165, 233, 0.1)' : '#1E293B',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -1873,7 +1913,7 @@ export default function App() {
                               <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: `${statusColor(acc.status)}22`, color: statusColor(acc.status), fontWeight: 700, textTransform: 'uppercase' }}>
                                 {statusLabel(acc.status)}
                               </span>
-                              <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 600 }}>
+                              <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'rgba(14, 165, 233, 0.2)', color: '#38BDF8', fontWeight: 600 }}>
                                 {acc.level ?? '—'}
                               </span>
                               <div style={{ color: '#f4f4f5', fontSize: 13 }}>{duracaoTexto(acc.duration, acc.unit)}</div>
@@ -1908,7 +1948,7 @@ export default function App() {
                                 <div style={{ color: '#a1a1aa', fontSize: 12 }}>{req.requesterEmail ?? '—'}</div>
                               </div>
                               <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: '#22c55e22', color: '#22c55e', fontWeight: 700, textTransform: 'uppercase' }}>Aprovado</span>
-                              <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'rgba(124, 58, 237, 0.2)', color: '#a78bfa', fontWeight: 600 }}>{req.level}</span>
+                              <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'rgba(14, 165, 233, 0.2)', color: '#38BDF8', fontWeight: 600 }}>{req.level}</span>
                               <div style={{ color: '#f4f4f5', fontSize: 13 }}>Não informada</div>
                               <div style={{ color: '#a1a1aa', fontSize: 12 }}>{formatDataConcessao(req.approvedAt)}</div>
                               <span></span>
@@ -1943,8 +1983,8 @@ export default function App() {
                       onClick={() => setShowExportModal(true)}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                        background: 'rgba(167, 139, 250, 0.2)', border: '1px solid #7c3aed',
-                        color: '#a78bfa', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer'
+                        background: 'rgba(56, 189, 248, 0.2)', border: '1px solid #0EA5E9',
+                        color: '#38BDF8', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer'
                       }}
                     >
                       <Download size={14} /> Baixar Relatório
@@ -1975,7 +2015,7 @@ export default function App() {
                       style={{
                         padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', transition: 'all 0.2s',
                         background: reportCategoryFilter === f ? (f === 'TI_INFRA' ? 'rgba(251, 191, 36, 0.2)' : f === 'GESTAO_ACESSOS' ? 'rgba(34, 197, 94, 0.2)' : f === 'GESTAO_PESSOAS' ? 'rgba(167, 139, 250, 0.2)' : '#27272a') : 'transparent',
-                        color: reportCategoryFilter === f ? (f === 'TI_INFRA' ? '#fbbf24' : f === 'GESTAO_ACESSOS' ? '#22c55e' : f === 'GESTAO_PESSOAS' ? '#a78bfa' : 'white') : '#71717a',
+                        color: reportCategoryFilter === f ? (f === 'TI_INFRA' ? '#fbbf24' : f === 'GESTAO_ACESSOS' ? '#22c55e' : f === 'GESTAO_PESSOAS' ? '#38BDF8' : 'white') : '#71717a',
                         cursor: 'pointer'
                       }}
                     >
@@ -2035,14 +2075,14 @@ export default function App() {
                     className="input-base"
                     style={{ background: '#18181b', fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #27272a' }}
                   >
-                    <Settings size={14} color="#a78bfa" /> Personalizar filtro
+                    <Settings size={14} color="#0EA5E9" /> Personalizar filtro
                   </button>
                   {showFilterPanel && (
                     <div style={{
                       position: 'absolute', top: '100%', right: 0, marginTop: 8, zIndex: 100,
                       background: '#18181b', border: '1px solid #3f3f46', borderRadius: 12, padding: 16, minWidth: 320, boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
                     }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', marginBottom: 12 }}>Tipos de solicitação</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#38BDF8', marginBottom: 12 }}>Tipos de solicitação</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto', marginBottom: 16 }}>
                         {REQUEST_TYPE_OPTIONS.map(opt => (
                           <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#e4e4e7', fontSize: 12 }}>
@@ -2051,7 +2091,7 @@ export default function App() {
                           </label>
                         ))}
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', marginBottom: 8 }}>Colunas visíveis</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#38BDF8', marginBottom: 8 }}>Colunas visíveis</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         {COLUMN_OPTIONS.map(c => (
                           <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#e4e4e7', fontSize: 11 }}>
@@ -2205,7 +2245,7 @@ export default function App() {
                               <td style={{ padding: '16px' }}>
                                 <span style={{
                                   fontSize: 12,
-                                  color: category === 'Gestão de Ferramentas' ? '#a78bfa' :
+                                  color: category === 'Gestão de Ferramentas' ? '#38BDF8' :
                                     category === 'Gestão de Pessoas' ? '#34d399' :
                                       category === 'Infraestrutura & TI' ? '#fbbf24' : '#a1a1aa',
                                   fontWeight: 600
@@ -2250,8 +2290,8 @@ export default function App() {
                               <td style={{ padding: '16px' }}>
                                 {r.approver ? (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <Shield size={14} color="#a78bfa" />
-                                    <span style={{ color: '#a78bfa' }}>{r.approver.name}</span>
+                                    <Shield size={14} color="#0EA5E9" />
+                                    <span style={{ color: '#38BDF8' }}>{r.approver.name}</span>
                                   </div>
                                 ) : (
                                   <span style={{ color: '#52525b', fontStyle: 'italic' }}>Sistema / Automático</span>
@@ -2327,6 +2367,16 @@ export default function App() {
             />
           )}
 
+          {/* TENTATIVAS DE LOGIN (apenas SUPER_ADMIN) */}
+          {!collaboratorId && activeTab === 'LOGIN_ATTEMPTS' && systemProfile === 'SUPER_ADMIN' && currentUser && (
+            <LoginAttempts currentUserId={currentUser.id} />
+          )}
+
+          {/* SESSÕES ATIVAS (apenas SUPER_ADMIN) */}
+          {!collaboratorId && activeTab === 'ACTIVE_SESSIONS' && systemProfile === 'SUPER_ADMIN' && currentUser && (
+            <ActiveSessions currentUserId={currentUser.id} showToast={showToast} />
+          )}
+
           {/* GESTÃO DE CHAMADOS / CHAMADOS RELACIONADOS (Viewer) */}
           {!collaboratorId && (activeTab === 'TICKETS' || activeTab === 'MY_TICKETS') && (
             <div className="fade-in">
@@ -2356,7 +2406,7 @@ export default function App() {
                             if (chamadoDetail.status === 'PENDING_OWNER' && !ownerApprovedBy && !siApprovedBy) {
                               return (
                                 <div style={{ background: 'rgba(167, 139, 250, 0.15)', borderRadius: 12, padding: 16, border: '1px solid rgba(167, 139, 250, 0.4)' }}>
-                                  <span style={{ color: '#a78bfa', fontSize: 14 }}>🔒 Este chamado requer aprovação dupla: Owner/Sub-owner da ferramenta + Time de SI. Aguardando aprovação do Owner.</span>
+                                  <span style={{ color: '#38BDF8', fontSize: 14 }}>🔒 Este chamado requer aprovação dupla: Owner/Sub-owner da ferramenta + Time de SI. Aguardando aprovação do Owner.</span>
                                 </div>
                               );
                             }
@@ -2384,7 +2434,7 @@ export default function App() {
                             }
                             return null;
                           })()}
-                          <div style={{ padding: 12, background: '#18181b', borderRadius: 8, borderLeft: '3px solid #7c3aed' }}>
+                          <div style={{ padding: 12, background: '#1E293B', borderRadius: 8, borderLeft: '3px solid #0EA5E9' }}>
                             <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Abertura · {new Date(chamadoDetail.createdAt).toLocaleString('pt-BR')}</div>
                             <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               Solicitação criada · {chamadoDetail.type}
@@ -2440,7 +2490,7 @@ export default function App() {
                             <div key={c.id} style={{ padding: 12, background: '#18181b', borderRadius: 8 }}>
                               <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>
                                 {c.author?.name || 'Sistema'} · {new Date(c.createdAt).toLocaleString('pt-BR')}
-                                {c.kind !== 'COMMENT' && <span style={{ marginLeft: 8, color: '#a78bfa' }}>({c.kind === 'SOLUTION' ? 'Solução' : 'Tarefa agendada'})</span>}
+                                {c.kind !== 'COMMENT' && <span style={{ marginLeft: 8, color: '#38BDF8' }}>({c.kind === 'SOLUTION' ? 'Solução' : 'Tarefa agendada'})</span>}
                               </div>
                               <div style={{ fontSize: 13, color: '#e4e4e7', whiteSpace: 'pre-wrap' }}>{c.body}</div>
                             </div>
@@ -2448,7 +2498,7 @@ export default function App() {
                           {(chamadoDetail.attachments || []).map(a => (
                             <div key={a.id} style={{ padding: 12, background: '#18181b', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
                               <FileText size={18} color="#71717a" />
-                              <a href={a.fileUrl.startsWith('http') ? a.fileUrl : `${API_URL}${a.fileUrl}`} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', fontSize: 13 }}>{a.filename}</a>
+                              <a href={a.fileUrl.startsWith('http') ? a.fileUrl : `${API_URL}${a.fileUrl}`} target="_blank" rel="noopener noreferrer" style={{ color: '#38BDF8', fontSize: 13 }}>{a.filename}</a>
                               <span style={{ fontSize: 11, color: '#52525b' }}>{a.uploadedBy?.name} · {new Date(a.createdAt).toLocaleString('pt-BR')}</span>
                             </div>
                           ))}
@@ -2470,7 +2520,7 @@ export default function App() {
                                   </select>
                                   {chamadoCommentKind === 'SOLUTION' && (chamadoDetail as { canAddSolution?: boolean }).canAddSolution === false && (chamadoDetail as { solutionBlockReason?: string }).solutionBlockReason && (
                                     <div style={{ background: 'rgba(167, 139, 250, 0.15)', borderRadius: 12, padding: 16, marginBottom: 12, border: '1px solid rgba(167, 139, 250, 0.4)' }}>
-                                      <span style={{ color: '#a78bfa', fontSize: 14 }}>🔒 {(chamadoDetail as { solutionBlockReason: string }).solutionBlockReason}</span>
+                                      <span style={{ color: '#38BDF8', fontSize: 14 }}>🔒 {(chamadoDetail as { solutionBlockReason: string }).solutionBlockReason}</span>
                                     </div>
                                   )}
                                   {chamadoCommentKind === 'SCHEDULED_TASK' && (
@@ -2501,7 +2551,7 @@ export default function App() {
                                   onChange={e => setChamadoCommentInput(e.target.value)}
                                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleAddComment()}
                                 />
-                                <button type="button" className="btn-mini" style={{ background: solutionBlocked ? '#4c1d95' : '#7c3aed', opacity: solutionBlocked ? 0.6 : 1, cursor: solutionBlocked ? 'not-allowed' : 'pointer' }} onClick={handleAddComment} disabled={solutionBlocked}>Enviar</button>
+                                <button type="button" className="btn-mini" style={{ background: solutionBlocked ? '#0284C7' : '#0EA5E9', opacity: solutionBlocked ? 0.6 : 1, cursor: solutionBlocked ? 'not-allowed' : 'pointer' }} onClick={handleAddComment} disabled={solutionBlocked}>Enviar</button>
                               </div>
                                 );
                               })()}
@@ -2655,7 +2705,7 @@ export default function App() {
                     style={{
                       padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s',
                       background: ticketCategoryTab === cat ? (cat === 'Infra' ? 'rgba(251, 191, 36, 0.2)' : cat === 'Acessos' ? 'rgba(167, 139, 250, 0.2)' : cat === 'Pessoas' ? 'rgba(34, 197, 94, 0.2)' : '#27272a') : 'transparent',
-                      color: ticketCategoryTab === cat ? (cat === 'Infra' ? '#fbbf24' : cat === 'Acessos' ? '#a78bfa' : cat === 'Pessoas' ? '#22c55e' : 'white') : '#71717a'
+                      color: ticketCategoryTab === cat ? (cat === 'Infra' ? '#fbbf24' : cat === 'Acessos' ? '#38BDF8' : cat === 'Pessoas' ? '#22c55e' : 'white') : '#71717a'
                     }}
                   >
                     {cat}
@@ -2668,7 +2718,7 @@ export default function App() {
                     className="input-base"
                     style={{ background: showTicketFilterPanel ? '#27272a' : '#18181b', fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #27272a', cursor: 'pointer' }}
                   >
-                    <Filter size={14} color="#a78bfa" /> Filtros
+                    <Filter size={14} color="#0EA5E9" /> Filtros
                   </button>
                 </div>
               </div>
@@ -2676,7 +2726,7 @@ export default function App() {
               {/* Painel de filtros */}
               {showTicketFilterPanel && (
                 <div className="card-base" style={{ marginBottom: 16, padding: 20, background: '#18181b', border: '1px solid #27272a' }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', marginBottom: 12 }}>Filtros combinados</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#38BDF8', marginBottom: 12 }}>Filtros combinados</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
                     <div>
                       <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 4 }}>Status</label>
@@ -2762,7 +2812,7 @@ export default function App() {
                         </div>
                         <button
                           className="btn-mini"
-                          style={{ background: '#7c3aed', color: 'white', padding: '10px 20px' }}
+                          style={{ background: '#0EA5E9', color: 'white', padding: '10px 20px' }}
                           onClick={() => setSelectedChamadoId(r.id)}
                         >
                           Acessar chamado

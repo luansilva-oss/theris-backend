@@ -37,10 +37,23 @@ const getAuditLog = async (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
     try {
         const where = {};
-        if (entidadeId)
-            where.entidadeId = entidadeId;
-        if (entidadeTipo)
-            where.entidadeTipo = entidadeTipo;
+        // Histórico do perfil do colaborador: incluir eventos User + Request AEX onde o usuário é o solicitante
+        if (entidadeTipo === 'User' && entidadeId) {
+            const requestIds = await prisma.request.findMany({
+                where: { requesterId: entidadeId },
+                select: { id: true },
+            }).then(rows => rows.map(r => r.id));
+            where.OR = [
+                { entidadeTipo: 'User', entidadeId },
+                ...(requestIds.length > 0 ? [{ entidadeTipo: 'Request', entidadeId: { in: requestIds } }] : []),
+            ];
+        }
+        else {
+            if (entidadeId)
+                where.entidadeId = entidadeId;
+            if (entidadeTipo)
+                where.entidadeTipo = entidadeTipo;
+        }
         if (tipo)
             where.tipo = tipo;
         if (search && search.trim())

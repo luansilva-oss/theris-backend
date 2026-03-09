@@ -140,7 +140,7 @@ function OrgChart({ users, onEditUser, onManagerChange }) {
             return;
         setEdges((eds) => {
             const otherEdges = eds.filter((e) => e.target !== params.target);
-            return (0, react_2.addEdge)({ ...params, type: 'smoothstep', style: { stroke: '#a78bfa', strokeWidth: 2 } }, otherEdges);
+            return (0, react_2.addEdge)({ ...params, type: 'smoothstep', style: { stroke: '#0EA5E9', strokeWidth: 2 } }, otherEdges);
         });
         if (params.target && params.source) {
             onManagerChange(params.target, params.source);
@@ -151,7 +151,7 @@ function OrgChart({ users, onEditUser, onManagerChange }) {
                 style: { stroke: '#4c1d95', strokeWidth: 2 },
             }, children: [(0, jsx_runtime_1.jsx)(react_2.Background, { gap: 28, color: "#2e1065", variant: react_2.BackgroundVariant.Dots, style: { opacity: 0.4 } }), (0, jsx_runtime_1.jsx)(react_2.Panel, { position: "bottom-left", style: { margin: 15 }, children: (0, jsx_runtime_1.jsx)(react_2.Controls, { showInteractive: false, style: {
                             background: '#1e1b4b',
-                            border: '1px solid #7c3aed',
+                            border: '1px solid #0EA5E9',
                             padding: 4,
                             borderRadius: 10,
                             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
@@ -170,12 +170,12 @@ function OrgChart({ users, onEditUser, onManagerChange }) {
                         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                         margin: 15,
                         cursor: 'default'
-                    }, children: (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', flexDirection: 'column', gap: 14 }, children: [(0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }, onClick: () => setIsLegendCollapsed(!isLegendCollapsed), children: [(0, jsx_runtime_1.jsx)("div", { style: { fontSize: 11, fontWeight: 800, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: 1.5 }, children: !isLegendCollapsed && 'Legenda de Estrutura' }), isLegendCollapsed ? (0, jsx_runtime_1.jsx)(lucide_react_1.ChevronRight, { size: 18, color: "#a78bfa" }) : (0, jsx_runtime_1.jsx)(lucide_react_1.ChevronDown, { size: 18, color: "#a78bfa" })] }), !isLegendCollapsed && ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 }, children: [
+                    }, children: (0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', flexDirection: 'column', gap: 14 }, children: [(0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }, onClick: () => setIsLegendCollapsed(!isLegendCollapsed), children: [(0, jsx_runtime_1.jsx)("div", { style: { fontSize: 11, fontWeight: 800, color: '#38BDF8', textTransform: 'uppercase', letterSpacing: 1.5 }, children: !isLegendCollapsed && 'Legenda de Estrutura' }), isLegendCollapsed ? (0, jsx_runtime_1.jsx)(lucide_react_1.ChevronRight, { size: 18, color: "#0EA5E9" }) : (0, jsx_runtime_1.jsx)(lucide_react_1.ChevronDown, { size: 18, color: "#0EA5E9" })] }), !isLegendCollapsed && ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsx)("div", { style: { display: 'flex', flexDirection: 'column', gap: 10 }, children: [
                                             { color: '#fbbf24', label: 'Gestores e C-Level' },
                                             { color: '#10b981', label: 'Comercial / Vendas' },
                                             { color: '#3b82f6', label: 'Produto / Tecnologia' },
                                             { color: '#f472b6', label: 'Pessoas / Performance' },
-                                            { color: '#8b5cf6', label: 'Financeiro / Outros' },
+                                            { color: '#0EA5E9', label: 'Financeiro / Outros' },
                                             { color: '#ef4444', label: 'Marketing / Growth' },
                                         ].map((item, idx) => ((0, jsx_runtime_1.jsxs)("div", { style: { display: 'flex', alignItems: 'center', gap: 12 }, children: [(0, jsx_runtime_1.jsx)("div", { style: {
                                                         width: 14,
@@ -190,6 +190,6 @@ function OrgChart({ users, onEditUser, onManagerChange }) {
                                             borderRadius: '8px',
                                             border: '1px solid rgba(167, 139, 250, 0.2)'
                                         }, children: (0, jsx_runtime_1.jsxs)("div", { style: { fontSize: 10, color: '#9ca3af', lineHeight: 1.5 }, children: ["\uD83D\uDCA1 ", (0, jsx_runtime_1.jsx)("strong", { children: "Dica:" }), " Arraste entre os c\u00EDrculos para mudar a hierarquia. Role para dar zoom."] }) })] }))] }) }), (0, jsx_runtime_1.jsx)(react_2.MiniMap, { style: { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 10 }, maskColor: "rgba(0, 0, 0, 0.5)", nodeColor: (node) => {
-                        return node.data.isRoot ? '#fbbf24' : '#7c3aed';
+                        return node.data.isRoot ? '#fbbf24' : '#0EA5E9';
                     } })] }) }));
 }

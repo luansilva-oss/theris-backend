@@ -5,13 +5,23 @@ const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
 const config_1 = require("../config");
-const TIPO_OPTIONS = ['Todos', 'ROLE_CREATED', 'ROLE_DELETED', 'ROLE_DEPARTMENT_CHANGE', 'USER_KBS_CHANGE', 'USER_STATUS_CHANGE'];
-const ENTIDADE_OPTIONS = ['Role', 'User', 'Department', 'Unit'];
+const TIPO_OPTIONS = [
+    'Todos',
+    'ROLE_CREATED', 'ROLE_DELETED', 'ROLE_DEPARTMENT_CHANGE', 'USER_KBS_CHANGE', 'USER_STATUS_CHANGE',
+    'AEX_CREATED', 'AEX_OWNER_APPROVED', 'AEX_OWNER_REJECTED', 'AEX_SI_APPROVED', 'AEX_SI_REJECTED', 'AEX_APPROVED', 'AEX_AUTO_REJECTED',
+];
+const ENTIDADE_OPTIONS = ['Role', 'User', 'Department', 'Unit', 'Request'];
 function getBadgeColor(tipo) {
+    if (tipo === 'AEX_CREATED')
+        return '#3b82f6';
+    if (['AEX_OWNER_APPROVED', 'AEX_SI_APPROVED', 'AEX_APPROVED'].includes(tipo))
+        return '#22c55e';
+    if (['AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED'].includes(tipo))
+        return '#ef4444';
     if (tipo.startsWith('ROLE_'))
         return '#3b82f6';
     if (tipo.startsWith('USER_'))
-        return '#8b5cf6';
+        return '#0EA5E9';
     if (tipo.startsWith('DEPARTMENT_'))
         return '#eab308';
     if (tipo.startsWith('UNIT_'))
@@ -19,7 +29,9 @@ function getBadgeColor(tipo) {
     return '#71717a';
 }
 function getEntityLabel(item) {
-    const name = item.dadosDepois?.name ?? item.dadosAntes?.name ?? item.entidadeId.slice(0, 8);
+    const d = item.dadosDepois;
+    const a = item.dadosAntes;
+    const name = d?.name ?? a?.name ?? d?.ferramenta ?? d?.toolName ?? item.entidadeId.slice(0, 8);
     return `${item.entidadeTipo} • ${name}`;
 }
 const SENSITIVE_KEYS = new Set([

@@ -240,3 +240,26 @@ model RequestAttachment {
   mimeType     String?
   createdAt    DateTime @default(now())
 }
+
+// Sessão por usuário: timeout por inatividade (60 min)
+model Session {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  lastActivity DateTime @default(now())
+  createdAt    DateTime @default(now())
+}
+
+// Log de tentativas de login (sem senhas/tokens)
+model LoginAttempt {
+  id         String   @id @default(uuid())
+  email      String?
+  ipAddress  String
+  userAgent  String?
+  success    Boolean
+  failReason String?  // USER_NOT_FOUND, MFA_INVALID, MFA_EXPIRED, MFA_SEND_FAILED, RATE_LIMITED, GOOGLE_AUTH_FAILED
+  createdAt  DateTime @default(now())
+
+  @@index([email])
+  @@index([ipAddress])
+  @@index([createdAt])
+}

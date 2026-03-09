@@ -546,7 +546,9 @@ const createSolicitacao = async (req, res) => {
         let approverId = null;
         let currentApproverRole = 'MANAGER';
         let status = 'PENDENTE_GESTOR';
-        // ROTA A: ACESSO EXTRAORDINÁRIO — Owner aprova primeiro (PENDING_OWNER)
+        const toolNameAex = detailsObj?.tool || detailsObj?.toolName;
+        const accessLevelAex = detailsObj?.target || detailsObj?.targetValue;
+        // ROTA A: ACESSO EXTRAORDINÁRIO — sempre 2 etapas: Owner aprova → SI aprova
         if (isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) {
             status = 'PENDING_OWNER';
             currentApproverRole = 'TOOL_OWNER';
@@ -598,8 +600,6 @@ const createSolicitacao = async (req, res) => {
                 currentApproverRole = 'SI_ANALYST';
             }
         }
-        const toolNameAex = detailsObj?.tool || detailsObj?.toolName;
-        const accessLevelAex = detailsObj?.target || detailsObj?.targetValue;
         const newRequest = await prisma.request.create({
             data: {
                 requesterId: safeRequesterId,
@@ -616,15 +616,39 @@ const createSolicitacao = async (req, res) => {
                 ...(accessLevelAex && { accessLevel: String(accessLevelAex) })
             }
         });
+        if ((isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) && toolNameAex) {
+            const { registrarMudanca } = await Promise.resolve().then(() => __importStar(require('../lib/auditLog')));
+            const period = detailsObj.accessPeriodRaw || (detailsObj.duration != null && detailsObj.unit ? `${detailsObj.duration} ${detailsObj.unit}` : null) || null;
+            await registrarMudanca({
+                tipo: 'AEX_CREATED',
+                entidadeTipo: 'Request',
+                entidadeId: newRequest.id,
+                descricao: 'Solicitação de Acesso Extraordinário criada',
+                dadosDepois: { ferramenta: toolNameAex, nivel: accessLevelAex, periodo: period || undefined, justificativa: justification || undefined },
+                autorId: safeRequesterId
+            });
+        }
         const { notifyTicketEvent } = await Promise.resolve().then(() => __importStar(require('../services/ticketEventService')));
         notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {}).catch(() => { });
         if ((isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) && toolNameAex) {
-            const requester = await prisma.user.findUnique({ where: { id: safeRequesterId }, select: { name: true } });
+            const requester = await prisma.user.findUnique({ where: { id: safeRequesterId }, select: { name: true, email: true } });
             const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
-            const { sendAexCreationDMs } = await Promise.resolve().then(() => __importStar(require('../services/aexOwnerService')));
+            const { sendAexCreationDMs, sendAexRequesterCreatedDM } = await Promise.resolve().then(() => __importStar(require('../services/aexOwnerService')));
             const app = getSlackApp();
             if (app?.client) {
-                sendAexCreationDMs(app.client, newRequest.id, String(toolNameAex), String(accessLevelAex || '—'), requester?.name || 'Solicitante', String(justification || '')).catch((err) => console.error('[AEX] Erro ao enviar DMs:', err));
+                const dur = detailsObj.duration != null ? String(detailsObj.duration) : null;
+                const unit = detailsObj.unit || '';
+                const period = detailsObj.accessPeriodRaw || (dur && unit ? `${dur} ${unit}` : null) || '—';
+                sendAexCreationDMs(app.client, newRequest.id, String(toolNameAex), String(accessLevelAex || '—'), requester?.name || 'Solicitante', String(justification || ''), { period }).catch((err) => console.error('[AEX] Erro ao enviar DMs:', err));
+                if (requester?.email) {
+                    try {
+                        const lookup = await app.client.users.lookupByEmail({ email: requester.email });
+                        if (lookup.user?.id) {
+                            await sendAexRequesterCreatedDM(app.client, lookup.user.id, newRequest.id, String(toolNameAex), String(accessLevelAex || '—'));
+                        }
+                    }
+                    catch (_) { }
+                }
             }
         }
         return res.status(201).json(newRequest);
@@ -644,6 +668,7 @@ const getSolicitacoes = async (req, res) => {
     try {
         const { status, assigneeId, requester: requesterSearch, startDate, endDate, category } = req.query;
         const where = {};
+        const andClauses = [];
         // Privacidade VIEWER: retornar apenas chamados onde o usuário é solicitante, responsável ou aprovador
         const userId = req.headers['x-user-id']?.trim();
         if (userId) {
@@ -652,21 +677,31 @@ const getSolicitacoes = async (req, res) => {
                 select: { systemProfile: true }
             });
             if (currentUser?.systemProfile === 'VIEWER') {
-                where.OR = [
-                    { requesterId: userId },
-                    { assigneeId: userId },
-                    { approverId: userId }
-                ];
+                andClauses.push({
+                    OR: [
+                        { requesterId: userId },
+                        { assigneeId: userId },
+                        { approverId: userId }
+                    ]
+                });
             }
         }
         if (status && status !== 'ALL') {
             if (status === 'PENDENTE') {
-                where.status = { startsWith: 'PENDENTE' };
+                andClauses.push({
+                    OR: [
+                        { status: { startsWith: 'PENDENTE' } },
+                        { status: 'PENDING_OWNER' },
+                        { status: 'PENDING_SI' }
+                    ]
+                });
             }
             else {
                 where.status = status;
             }
         }
+        if (andClauses.length > 0)
+            where.AND = andClauses;
         if (assigneeId) {
             where.assigneeId = assigneeId;
         }
@@ -727,10 +762,16 @@ const getMyTickets = async (req, res) => {
         const { status, startDate, endDate, category } = req.query;
         const where = { requesterId: userId.trim() };
         if (status && status !== 'ALL') {
-            if (status === 'PENDENTE')
-                where.status = { startsWith: 'PENDENTE' };
-            else
+            if (status === 'PENDENTE') {
+                where.OR = [
+                    { status: { startsWith: 'PENDENTE' } },
+                    { status: 'PENDING_OWNER' },
+                    { status: 'PENDING_SI' }
+                ];
+            }
+            else {
                 where.status = status;
+            }
         }
         if (startDate || endDate) {
             where.createdAt = {};
@@ -820,6 +861,44 @@ const updateSolicitacao = async (req, res) => {
                 });
             }
         }
+        // AEX: controle de fechamento — ambas as partes devem aprovar, e quem aprovou não pode fechar
+        const isAex = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary);
+        const ownerApprovedBy = request.ownerApprovedBy;
+        const siApprovedBy = request.siApprovedBy;
+        const isAexPendingSI = request.status === 'PENDING_SI' && isAex;
+        if (action === 'APROVADO' && isAex) {
+            if (!ownerApprovedBy) {
+                return res.status(403).json({
+                    error: 'PARTIAL_APPROVAL',
+                    message: 'Este chamado requer aprovação das duas partes. Aguardando aprovação pendente para encerrar.'
+                });
+            }
+            if (isAexPendingSI && approverId) {
+                try {
+                    const approverUser = await prisma.user.findUnique({
+                        where: { id: approverId },
+                        select: { email: true }
+                    });
+                    if (approverUser?.email) {
+                        const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+                        const app = getSlackApp();
+                        if (app?.client) {
+                            const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+                            const approverSlackId = lookup.user?.id;
+                            if (approverSlackId && approverSlackId === ownerApprovedBy) {
+                                return res.status(403).json({
+                                    error: 'SAME_APPROVER',
+                                    message: 'Você já aprovou este chamado na etapa anterior. O fechamento deve ser feito pela outra parte.'
+                                });
+                            }
+                        }
+                    }
+                }
+                catch (e) {
+                    console.error('[AEX] Erro ao verificar ownerApprovedBy:', e);
+                }
+            }
+        }
         // Se for reprovado, encerra imediatamente
         if (action === 'REPROVADO') {
             const updated = await prisma.request.update({
@@ -831,25 +910,62 @@ const updateSolicitacao = async (req, res) => {
                     updatedAt: new Date()
                 }
             });
+            if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
+                const { registrarMudanca } = await Promise.resolve().then(() => __importStar(require('../lib/auditLog')));
+                await registrarMudanca({
+                    tipo: 'AEX_SI_REJECTED',
+                    entidadeTipo: 'Request',
+                    entidadeId: id,
+                    descricao: 'Time de SI reprovou a solicitação AEX',
+                    dadosAntes: { status: request.status },
+                    dadosDepois: { status: 'REJECTED', siRejectedBy: approverId },
+                    autorId: approverId ?? undefined
+                });
+            }
             if (request.requester.email) {
-                // Para rejeição de Acesso, busca o nome do Owner da ferramenta
-                let ownerName;
-                const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
-                if (ACCESS_TYPES.includes(request.type)) {
+                const toolNameAex = request.toolName || (() => { try {
+                    const d = JSON.parse(request.details || '{}');
+                    return d.tool || d.toolName || '—';
+                }
+                catch {
+                    return '—';
+                } })();
+                if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
                     try {
-                        const det = JSON.parse(request.details || '{}');
-                        const toolName = det.tool || det.toolName || (det.info ? det.info.split(': ')[1] : null);
-                        if (toolName) {
-                            const tool = await prisma.tool.findFirst({
-                                where: { name: { contains: toolName, mode: 'insensitive' } },
-                                include: { owner: true, subOwner: true }
-                            });
-                            ownerName = tool?.owner?.name || tool?.subOwner?.name || undefined;
+                        const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+                        const { sendAexRejectedBySIDM } = await Promise.resolve().then(() => __importStar(require('../services/aexOwnerService')));
+                        const app = getSlackApp();
+                        if (app?.client) {
+                            const lookup = await app.client.users.lookupByEmail({ email: request.requester.email });
+                            if (lookup.user?.id) {
+                                await sendAexRejectedBySIDM(app.client, lookup.user.id, id, toolNameAex);
+                            }
                         }
                     }
-                    catch (_) { }
+                    catch (e) {
+                        console.error('[AEX] Erro ao notificar rejeição SI:', e);
+                        (0, slackService_1.sendSlackNotification)(request.requester.email, 'REPROVADO', adminNote || 'Reprovado.', request.type, undefined, request.details);
+                    }
                 }
-                (0, slackService_1.sendSlackNotification)(request.requester.email, 'REPROVADO', adminNote || 'Reprovado pelo administrador.', request.type, ownerName, request.details);
+                else {
+                    let ownerName;
+                    const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA'];
+                    if (ACCESS_TYPES.includes(request.type)) {
+                        try {
+                            const det = JSON.parse(request.details || '{}');
+                            const toolName = det.tool || det.toolName || (det.info ? det.info.split(': ')[1] : null);
+                            if (toolName) {
+                                const tool = await prisma.tool.findFirst({
+                                    where: { name: { contains: toolName, mode: 'insensitive' } },
+                                    include: { owner: true, subOwner: true }
+                                });
+                                ownerName = tool?.owner?.name || tool?.subOwner?.name || undefined;
+                            }
+                        }
+                        catch (_) { }
+                    }
+                    (0, slackService_1.sendSlackNotification)(request.requester.email, 'REPROVADO', adminNote || 'Reprovado pelo administrador.', request.type, ownerName, request.details);
+                }
             }
             return res.json(updated);
         }
@@ -896,20 +1012,69 @@ const updateSolicitacao = async (req, res) => {
                 }
             }
         }
-        // APROVAÇÃO FINAL
+        // APROVAÇÃO FINAL — para AEX, registrar siApprovedBy
         const updatedDetails = {
             ...JSON.parse(request.details || '{}'),
             adminNote: adminNote || 'Aprovação final concedida.'
         };
+        if (isAex && isAexPendingSI) {
+            const { registrarMudanca } = await Promise.resolve().then(() => __importStar(require('../lib/auditLog')));
+            let siApprovedBySlack;
+            if (approverId) {
+                try {
+                    const approverUser = await prisma.user.findUnique({ where: { id: approverId }, select: { email: true } });
+                    if (approverUser?.email) {
+                        const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+                        const app = getSlackApp();
+                        if (app?.client) {
+                            const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+                            siApprovedBySlack = lookup.user?.id;
+                        }
+                    }
+                }
+                catch (_) { }
+            }
+            await registrarMudanca({
+                tipo: 'AEX_SI_APPROVED',
+                entidadeTipo: 'Request',
+                entidadeId: id,
+                descricao: 'Time de SI aprovou a solicitação AEX',
+                dadosAntes: { status: 'PENDING_SI' },
+                dadosDepois: { status: 'APPROVED', siApprovedBy: siApprovedBySlack },
+                autorId: approverId ?? undefined
+            });
+        }
+        const updateData = {
+            status: 'APROVADO',
+            adminNote: adminNote || 'Aprovado.',
+            approverId: approverId,
+            details: JSON.stringify(updatedDetails),
+            updatedAt: new Date()
+        };
+        if (isAex && isAexPendingSI && approverId) {
+            try {
+                const approverUser = await prisma.user.findUnique({
+                    where: { id: approverId },
+                    select: { email: true }
+                });
+                if (approverUser?.email) {
+                    const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+                    const app = getSlackApp();
+                    if (app?.client) {
+                        const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+                        const approverSlackId = lookup.user?.id;
+                        if (approverSlackId) {
+                            updateData.siApprovedBy = approverSlackId;
+                            updateData.siApprovedAt = new Date();
+                        }
+                    }
+                }
+            }
+            catch (_) { }
+        }
         const updatedRequest = await prisma.request.update({
             where: { id },
-            data: {
-                status: 'APROVADO',
-                adminNote: adminNote || 'Aprovado.',
-                approverId: approverId,
-                details: JSON.stringify(updatedDetails),
-                updatedAt: new Date()
-            }
+            data: updateData
         });
         // Notificação Slack (AEX e CHANGE_ROLE usam mensagem específica após execução)
         const isAexApproval = action === 'APROVADO' && (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary);
@@ -953,13 +1118,21 @@ const updateSolicitacao = async (req, res) => {
                     catch {
                         return '—';
                     } })();
+                    const reqAny = request;
+                    const periodo = reqAny.accessPeriodRaw || (reqAny.extraordinaryDuration != null && reqAny.extraordinaryUnit ? `${reqAny.extraordinaryDuration} ${reqAny.extraordinaryUnit}` : undefined);
                     await registrarMudanca({
                         tipo: 'AEX_APPROVED',
-                        entidadeTipo: 'Request',
-                        entidadeId: id,
-                        descricao: `Acesso extraordinário concedido: ${request.requester?.name || 'Solicitante'} → ${toolNameAex} (${accessLevelAex})`,
-                        dadosAntes: { status: 'PENDING_SI' },
-                        dadosDepois: { status: 'APROVADO' },
+                        entidadeTipo: 'User',
+                        entidadeId: request.requesterId || id,
+                        descricao: `Acesso extraordinário concedido: ${toolNameAex} - ${accessLevelAex}`,
+                        dadosDepois: {
+                            ferramenta: toolNameAex,
+                            nivel: accessLevelAex,
+                            periodo,
+                            ownerApprovedBy: reqAny.ownerApprovedBy,
+                            siApprovedBy: updatedRequest.siApprovedBy,
+                            requestId: id
+                        },
                         autorId: approverId || undefined
                     });
                     if (request.requester?.email) {
@@ -971,7 +1144,7 @@ const updateSolicitacao = async (req, res) => {
                                 const lookup = await app.client.users.lookupByEmail({ email: request.requester.email });
                                 const requesterSlackId = lookup.user?.id;
                                 if (requesterSlackId) {
-                                    await sendAexApprovedBySIDM(app.client, requesterSlackId, toolNameAex, accessLevelAex);
+                                    await sendAexApprovedBySIDM(app.client, requesterSlackId, id, toolNameAex, accessLevelAex);
                                 }
                             }
                             catch (e) {
@@ -1065,7 +1238,54 @@ const getSolicitacaoById = async (req, res) => {
             return res.status(404).json({ error: 'Solicitação não encontrada' });
         if (viewerContext && userId && request.requesterId !== userId)
             return res.status(403).json({ error: 'Acesso negado a este chamado.' });
-        return res.json(request);
+        // AEX PENDING_SI: indicar se Owner é do time de SI (para exibir aviso no painel)
+        let ownerIsSIMember = false;
+        if (request.status === 'PENDING_SI' && (request.toolName || EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary)) {
+            const toolName = request.toolName;
+            if (toolName) {
+                const { isOwnerSIMember } = await Promise.resolve().then(() => __importStar(require('../services/aexOwnerService')));
+                ownerIsSIMember = await isOwnerSIMember(toolName);
+            }
+        }
+        // AEX: canAddSolution — bloqueio de "Adicionar uma solução" até aprovação dupla completa
+        let canAddSolution = true;
+        let solutionBlockReason = null;
+        const isAexDetail = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary);
+        if (isAexDetail && request.status !== 'APROVADO' && request.status !== 'REPROVADO') {
+            if (request.status === 'PENDING_OWNER') {
+                canAddSolution = false;
+                solutionBlockReason = 'Não é possível adicionar uma solução ainda. Aguardando aprovação do Owner/Sub-owner da ferramenta antes que o Time de SI possa encerrar este chamado.';
+            }
+            else if (request.status === 'PENDING_SI') {
+                const ownerApprovedBy = request.ownerApprovedBy;
+                if (ownerApprovedBy && userId) {
+                    const viewer = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+                    const isSI = viewer?.email && SI_BYPASS_APPROVER_EMAILS.includes(viewer.email.toLowerCase());
+                    let isOwner = false;
+                    if (viewer?.email) {
+                        try {
+                            const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+                            const app = getSlackApp();
+                            if (app?.client) {
+                                const lookup = await app.client.users.lookupByEmail({ email: viewer.email });
+                                if (lookup.user?.id === ownerApprovedBy)
+                                    isOwner = true;
+                            }
+                        }
+                        catch (_) { }
+                    }
+                    if (isOwner) {
+                        canAddSolution = false;
+                        solutionBlockReason = 'Você já aprovou como Owner/Sub-owner. A solução final deve ser adicionada pelo Time de Segurança da Informação.';
+                    }
+                    else if (!isSI) {
+                        canAddSolution = false;
+                        solutionBlockReason = 'A solução final deve ser adicionada pelo Time de Segurança da Informação.';
+                    }
+                }
+            }
+        }
+        return res.json({ ...request, ownerIsSIMember, canAddSolution, solutionBlockReason });
     }
     catch (error) {
         console.error('SOLICITACOES ERROR (getSolicitacaoById):', error);
@@ -1081,10 +1301,45 @@ exports.getSolicitacaoById = getSolicitacaoById;
 const updateSolicitacaoMetadata = async (req, res) => {
     const { id } = req.params;
     const { status, assigneeId, scheduledAt } = req.body;
+    const userId = req.headers['x-user-id']?.trim();
     try {
         const existing = await prisma.request.findUnique({ where: { id }, include: { requester: true, assignee: true } });
         if (!existing)
             return res.status(404).json({ error: 'Solicitação não encontrada' });
+        const isAex = existing.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) && existing.isExtraordinary);
+        const ownerApprovedBy = existing.ownerApprovedBy;
+        let siApprovedBy = existing.siApprovedBy;
+        if (status !== undefined && String(status) === 'APROVADO' && isAex) {
+            if (!ownerApprovedBy) {
+                return res.status(403).json({
+                    error: 'PARTIAL_APPROVAL',
+                    message: 'Este chamado requer aprovação das duas partes. Aguardando aprovação do Owner.'
+                });
+            }
+            if (!siApprovedBy) {
+                // Permitir que SI defina APROVADO ao adicionar solução — preencher siApprovedBy
+                if (!userId) {
+                    return res.status(401).json({ error: 'Usuário não identificado.' });
+                }
+                const approverUser = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+                const isSI = approverUser?.email && SI_BYPASS_APPROVER_EMAILS.includes(approverUser.email.toLowerCase());
+                if (!isSI) {
+                    return res.status(403).json({
+                        error: 'PARTIAL_APPROVAL',
+                        message: 'Este chamado requer aprovação das duas partes. Use o botão Aprovar no fluxo de aprovação.'
+                    });
+                }
+                try {
+                    const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+                    const app = getSlackApp();
+                    if (app?.client && approverUser?.email) {
+                        const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+                        siApprovedBy = lookup.user?.id ?? undefined;
+                    }
+                }
+                catch (_) { }
+            }
+        }
         const data = {};
         if (status !== undefined)
             data.status = String(status);
@@ -1092,6 +1347,11 @@ const updateSolicitacaoMetadata = async (req, res) => {
             data.assigneeId = assigneeId || null;
         if (scheduledAt !== undefined)
             data.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+        // Ao SI adicionar solução em AEX PENDING_SI: preencher siApprovedBy/siApprovedAt (acima já validado)
+        if (status === 'APROVADO' && isAex && siApprovedBy && !existing.siApprovedBy) {
+            data.siApprovedBy = siApprovedBy;
+            data.siApprovedAt = new Date();
+        }
         const updated = await prisma.request.update({
             where: { id },
             data,
@@ -1154,13 +1414,21 @@ const updateSolicitacaoMetadata = async (req, res) => {
                     catch {
                         return '—';
                     } })();
+                    const exAny = existing;
+                    const periodo = exAny.accessPeriodRaw || (exAny.extraordinaryDuration != null && exAny.extraordinaryUnit ? `${exAny.extraordinaryDuration} ${exAny.extraordinaryUnit}` : undefined);
                     await registrarMudanca({
                         tipo: 'AEX_APPROVED',
-                        entidadeTipo: 'Request',
-                        entidadeId: id,
-                        descricao: `Acesso extraordinário concedido: ${existing.requester?.name || 'Solicitante'} → ${toolNameAex} (${accessLevelAex})`,
-                        dadosAntes: { status: existing.status },
-                        dadosDepois: { status: 'APROVADO' }
+                        entidadeTipo: 'User',
+                        entidadeId: existing.requesterId || id,
+                        descricao: `Acesso extraordinário concedido: ${toolNameAex} - ${accessLevelAex}`,
+                        dadosDepois: {
+                            ferramenta: toolNameAex,
+                            nivel: accessLevelAex,
+                            periodo,
+                            ownerApprovedBy: exAny.ownerApprovedBy,
+                            siApprovedBy: exAny.siApprovedBy,
+                            requestId: id
+                        },
                     });
                     if (existing.requester?.email) {
                         const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
@@ -1170,7 +1438,7 @@ const updateSolicitacaoMetadata = async (req, res) => {
                             try {
                                 const lookup = await app.client.users.lookupByEmail({ email: existing.requester.email });
                                 if (lookup.user?.id) {
-                                    await sendAexApprovedBySIDM(app.client, lookup.user.id, toolNameAex, accessLevelAex);
+                                    await sendAexApprovedBySIDM(app.client, lookup.user.id, id, toolNameAex, accessLevelAex);
                                 }
                             }
                             catch (e) {
@@ -1200,16 +1468,63 @@ exports.updateSolicitacaoMetadata = updateSolicitacaoMetadata;
 const createComment = async (req, res) => {
     const { id } = req.params;
     const { body, kind } = req.body;
+    const authorId = req.headers['x-user-id']?.trim() || req.body.authorId || null;
     if (!body || !String(body).trim())
         return res.status(400).json({ error: 'Conteúdo do comentário é obrigatório' });
     try {
         const request = await prisma.request.findUnique({ where: { id } });
         if (!request)
             return res.status(404).json({ error: 'Solicitação não encontrada' });
+        // AEX: bloquear solução enquanto aprovação dupla não estiver completa
+        const isAex = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary);
+        if (isAex && (kind === 'SOLUTION' || kind === 'solution')) {
+            const status = request.status;
+            const ownerApprovedBy = request.ownerApprovedBy;
+            if (status === 'PENDING_OWNER') {
+                return res.status(403).json({
+                    error: 'AEX_SOLUTION_BLOCKED',
+                    message: 'Não é possível adicionar uma solução ainda. Aguardando aprovação do Owner/Sub-owner da ferramenta antes que o Time de SI possa encerrar este chamado.'
+                });
+            }
+            if (status === 'PENDING_SI' && ownerApprovedBy) {
+                if (!authorId) {
+                    return res.status(401).json({ error: 'Usuário não identificado.' });
+                }
+                const author = await prisma.user.findUnique({ where: { id: authorId }, select: { email: true } });
+                const isSI = author?.email && SI_BYPASS_APPROVER_EMAILS.includes(author.email.toLowerCase());
+                // Verificar se o autor é o Owner (já aprovou) — não pode fechar
+                let isOwner = false;
+                if (author?.email) {
+                    try {
+                        const { getSlackApp } = await Promise.resolve().then(() => __importStar(require('../services/slackService')));
+                        const app = getSlackApp();
+                        if (app?.client) {
+                            const lookup = await app.client.users.lookupByEmail({ email: author.email });
+                            const authorSlackId = lookup.user?.id;
+                            if (authorSlackId === ownerApprovedBy)
+                                isOwner = true;
+                        }
+                    }
+                    catch (_) { }
+                }
+                if (isOwner) {
+                    return res.status(403).json({
+                        error: 'AEX_SOLUTION_BLOCKED',
+                        message: 'Você já aprovou como Owner/Sub-owner. A solução final deve ser adicionada pelo Time de Segurança da Informação.'
+                    });
+                }
+                if (!isSI) {
+                    return res.status(403).json({
+                        error: 'AEX_SOLUTION_BLOCKED',
+                        message: 'A solução final deve ser adicionada pelo Time de Segurança da Informação.'
+                    });
+                }
+            }
+        }
         const comment = await prisma.requestComment.create({
             data: {
                 requestId: id,
-                authorId: req.body.authorId || null,
+                authorId,
                 body: String(body).trim(),
                 kind: kind === 'SOLUTION' || kind === 'SCHEDULED_TASK' ? kind : 'COMMENT'
             },
@@ -1310,7 +1625,7 @@ function getCategoryForType(type) {
     }
     return 'Geral';
 }
-function formatDetailsForCsv(details, type, actionDate) {
+function formatDetailsForCsv(details, type, actionDate, accessPeriodRaw) {
     try {
         const d = typeof details === 'string' ? JSON.parse(details || '{}') : (details || {});
         const parts = [];
@@ -1326,6 +1641,8 @@ function formatDetailsForCsv(details, type, actionDate) {
             parts.push(`Ferramenta: ${d.tool}`);
         if (d.target)
             parts.push(`Nível: ${d.target}`);
+        if (accessPeriodRaw)
+            parts.push(`Período: ${accessPeriodRaw}`);
         if (actionDate) {
             const dt = typeof actionDate === 'string' ? new Date(actionDate) : actionDate;
             parts.push(`Data de Ação: ${dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`);
@@ -1407,7 +1724,7 @@ const exportRequestsCsv = async (req, res) => {
     for (const r of requests) {
         const category = getCategoryForType(r.type);
         const subject = SUBJECT_MAP[r.type] || r.type;
-        const detailsStr = formatDetailsForCsv(r.details, r.type, r.actionDate);
+        const detailsStr = formatDetailsForCsv(r.details, r.type, r.actionDate, r.accessPeriodRaw);
         const adminNote = r.adminNote || '';
         const row = [];
         for (const c of colArr) {

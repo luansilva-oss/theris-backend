@@ -126,7 +126,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                             }}
                         >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <Building2 size={22} color="#8b5cf6" />
+                                <Building2 size={22} color="#0EA5E9" />
                                 <span style={{ fontWeight: 700, color: '#f4f4f5', fontSize: '16px' }}>UNIDADE: {unitName}</span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -134,7 +134,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                     <button onClick={(e) => { e.stopPropagation(); onAddDepartmentToUnit(unitEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }} title="Adicionar departamento"><Plus size={18} color="#22c55e" /></button>
                                 )}
                                 {onEditUnit && unitId && (
-                                    <button onClick={(e) => { e.stopPropagation(); onEditUnit(unitEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }} title="Editar unidade"><Pencil size={18} color="#a78bfa" /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); onEditUnit(unitEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }} title="Editar unidade"><Pencil size={18} color="#0EA5E9" /></button>
                                 )}
                                 {onDeleteUnit && unitId && (
                                     <button onClick={(e) => { e.stopPropagation(); onDeleteUnit(unitEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }} title="Excluir unidade"><Trash2 size={18} color="#ef4444" /></button>
@@ -172,7 +172,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                     {deptEntity && (
                                                         <>
                                                             {onAddRole && (
-                                                                <button onClick={(e) => { e.stopPropagation(); onAddRole(deptEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.8 }} title="Adicionar cargo"><Plus size={14} color="#a78bfa" /></button>
+                                                                <button onClick={(e) => { e.stopPropagation(); onAddRole(deptEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.8 }} title="Adicionar cargo"><Plus size={14} color="#0EA5E9" /></button>
                                                             )}
                                                             <button onClick={(e) => { e.stopPropagation(); onEditDepartment(deptEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }} title="Editar departamento"><Pencil size={14} color="#71717a" /></button>
                                                             <button onClick={(e) => { e.stopPropagation(); onDeleteDepartment(deptEntity); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', opacity: 0.6 }} title="Excluir departamento"><Trash2 size={14} color="#ef4444" /></button>
@@ -216,7 +216,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                             <button onClick={(e) => { e.stopPropagation(); onAddCollaborator(roleEntity as Role, { id: dept.id, name: deptName, unitId: dept.unitId, unit: dept.unit }); }} title="Adicionar colaborador" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.8 }}><UserPlus size={14} color="#22c55e" /></button>
                                                                         )}
                                                                         {onEditRole && roleEntity && (
-                                                                            <button onClick={(e) => { e.stopPropagation(); onEditRole(roleEntity); }} title="Editar cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.8 }}><Pencil size={14} color="#a78bfa" /></button>
+                                                                            <button onClick={(e) => { e.stopPropagation(); onEditRole(roleEntity); }} title="Editar cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.8 }}><Pencil size={14} color="#0EA5E9" /></button>
                                                                         )}
                                                                         {onDeleteRole && roleEntity && (
                                                                             <button onClick={(e) => { e.stopPropagation(); onDeleteRole(roleEntity); }} title="Excluir cargo" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.8 }}><Trash2 size={14} color="#ef4444" /></button>
