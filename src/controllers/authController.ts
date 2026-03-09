@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { sendMfaEmail } from '../services/emailService';
 import { getClientIp, getClientUserAgent } from '../lib/requestContext';
 import { sendSuspiciousIpAlertToSI } from '../services/suspiciousIpSlackAlert';
+import { registrarMudanca } from '../lib/auditLog';
 
 const prisma = new PrismaClient();
 
@@ -11,21 +12,31 @@ async function logLoginAttempt(params: {
   email?: string | null;
   success: boolean;
   failReason?: string | null;
+  userId?: string | null;
 }) {
-  const { req, email, success, failReason } = params;
+  const { req, email, success, failReason, userId } = params;
   const clientIp = getClientIp(req);
+  const userAgent = getClientUserAgent(req);
   try {
     await prisma.loginAttempt.create({
       data: {
         email: email ?? null,
         ipAddress: clientIp,
-        userAgent: getClientUserAgent(req),
+        userAgent: userAgent ?? undefined,
         success,
         failReason: failReason ?? null,
       },
     });
 
     if (!success) {
+      await registrarMudanca({
+        tipo: 'LOGIN_FAILED',
+        entidadeTipo: 'User',
+        entidadeId: userId ?? 'LOGIN_ATTEMPT',
+        descricao: `Tentativa de login com falha: ${failReason ?? 'DESCONHECIDO'}`,
+        dadosDepois: { ip: clientIp, email: email ?? null, failReason: failReason ?? null },
+        autorId: undefined,
+      }).catch((e) => console.error('[logLoginAttempt] HistoricoMudanca:', e));
       const recentFails = await prisma.loginAttempt.count({
         where: {
           ipAddress: clientIp,
@@ -71,7 +82,7 @@ export const googleLogin = async (req: Request, res: Response) => {
     });
 
     if (!googleRes.ok) {
-      await logLoginAttempt({ req, email: req.body?.email ?? null, success: false, failReason: 'GOOGLE_AUTH_FAILED' });
+      await logLoginAttempt({ req, email: req.body?.email ?? null, success: false, failReason: 'GOOGLE_AUTH_FAILED', userId: undefined });
       return res.status(401).json({ error: 'Token Google inválido' });
     }
 
@@ -81,7 +92,7 @@ export const googleLogin = async (req: Request, res: Response) => {
 
     // 2. Verificar Domínio (Segurança)
     if (!email.endsWith('@grupo-3c.com')) {
-      await logLoginAttempt({ req, email, success: false, failReason: 'DOMAIN_DENIED' });
+      await logLoginAttempt({ req, email, success: false, failReason: 'DOMAIN_DENIED', userId: undefined });
       return res.status(403).json({ error: 'Acesso restrito ao domínio corporativo.' });
     }
 
@@ -137,7 +148,7 @@ export const googleLogin = async (req: Request, res: Response) => {
       }
     }
 
-    await logLoginAttempt({ req, email, success: true });
+    await logLoginAttempt({ req, email, success: true, userId: user.id });
     return res.json({
       user,
       profile: systemProfile,
@@ -146,7 +157,7 @@ export const googleLogin = async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error(error);
-    await logLoginAttempt({ req, email: null, success: false, failReason: 'GOOGLE_AUTH_FAILED' });
+    await logLoginAttempt({ req, email: null, success: false, failReason: 'GOOGLE_AUTH_FAILED', userId: undefined });
     return res.status(500).json({ error: 'Erro no login Google' });
   }
 };
@@ -158,7 +169,7 @@ export const sendMfa = async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
-      await logLoginAttempt({ req, email: null, success: false, failReason: 'USER_NOT_FOUND' });
+      await logLoginAttempt({ req, email: null, success: false, failReason: 'USER_NOT_FOUND', userId: undefined });
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
 
@@ -175,10 +186,18 @@ export const sendMfa = async (req: Request, res: Response) => {
     // Envia Email
     await sendMfaEmail(user.email, code);
 
-    await logLoginAttempt({ req, email: user.email, success: true });
+    await logLoginAttempt({ req, email: user.email, success: true, userId: user.id });
+    await registrarMudanca({
+      tipo: 'MFA_SENT',
+      entidadeTipo: 'User',
+      entidadeId: user.id,
+      descricao: 'Código MFA enviado por e-mail',
+      dadosDepois: { ip: getClientIp(req) },
+      autorId: user.id,
+    }).catch((e) => console.error('[sendMfa] HistoricoMudanca:', e));
     res.json({ message: 'Código enviado' });
   } catch (error) {
-    await logLoginAttempt({ req, email: null, success: false, failReason: 'MFA_SEND_FAILED' });
+    await logLoginAttempt({ req, email: null, success: false, failReason: 'MFA_SEND_FAILED', userId: undefined });
     res.status(500).json({ error: 'Erro ao enviar MFA' });
   }
 };
@@ -191,12 +210,30 @@ export const verifyMfa = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
 
     if (!user || user.mfaCode !== code) {
-      await logLoginAttempt({ req, email: user?.email ?? null, success: false, failReason: 'MFA_INVALID' });
+      await logLoginAttempt({ req, email: user?.email ?? null, success: false, failReason: 'MFA_INVALID', userId: user?.id ?? undefined });
+      if (user) {
+        await registrarMudanca({
+          tipo: 'MFA_FAILED',
+          entidadeTipo: 'User',
+          entidadeId: user.id,
+          descricao: 'Falha na verificação MFA: MFA_INVALID',
+          dadosDepois: { ip: getClientIp(req), failReason: 'MFA_INVALID' },
+          autorId: user.id,
+        }).catch((e) => console.error('[verifyMfa] HistoricoMudanca:', e));
+      }
       return res.status(400).json({ error: 'Código inválido', valid: false });
     }
 
     if (user.mfaExpiresAt && new Date() > user.mfaExpiresAt) {
-      await logLoginAttempt({ req, email: user.email, success: false, failReason: 'MFA_EXPIRED' });
+      await logLoginAttempt({ req, email: user.email, success: false, failReason: 'MFA_EXPIRED', userId: user.id });
+      await registrarMudanca({
+        tipo: 'MFA_FAILED',
+        entidadeTipo: 'User',
+        entidadeId: user.id,
+        descricao: 'Falha na verificação MFA: MFA_EXPIRED',
+        dadosDepois: { ip: getClientIp(req), failReason: 'MFA_EXPIRED' },
+        autorId: user.id,
+      }).catch((e) => console.error('[verifyMfa] HistoricoMudanca:', e));
       return res.status(400).json({ error: 'Código expirado', valid: false });
     }
 
@@ -213,7 +250,15 @@ export const verifyMfa = async (req: Request, res: Response) => {
       update: { lastActivity: new Date() },
     });
 
-    await logLoginAttempt({ req, email: user.email, success: true });
+    await logLoginAttempt({ req, email: user.email, success: true, userId: user.id });
+    await registrarMudanca({
+      tipo: 'LOGIN_SUCCESS',
+      entidadeTipo: 'User',
+      entidadeId: user.id,
+      descricao: 'Login realizado com sucesso',
+      dadosDepois: { ip: getClientIp(req), userAgent: getClientUserAgent(req) ?? undefined },
+      autorId: user.id,
+    }).catch((e) => console.error('[verifyMfa] HistoricoMudanca:', e));
     res.json({ valid: true });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao verificar MFA' });

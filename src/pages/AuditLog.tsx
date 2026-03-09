@@ -15,17 +15,27 @@ interface AuditItem {
   createdAt: string;
 }
 
-const TIPO_OPTIONS = [
-  'Todos',
-  'ROLE_CREATED', 'ROLE_DELETED', 'ROLE_DEPARTMENT_CHANGE', 'USER_KBS_CHANGE', 'USER_STATUS_CHANGE',
-  'AEX_CREATED', 'AEX_OWNER_APPROVED', 'AEX_OWNER_REJECTED', 'AEX_SI_APPROVED', 'AEX_SI_REJECTED', 'AEX_APPROVED', 'AEX_AUTO_REJECTED',
+const TIPO_OPTIONS_GROUPS: { label: string; options: string[] }[] = [
+  { label: 'Todos os eventos', options: ['Todos'] },
+  { label: 'Autenticação', options: ['LOGIN_SUCCESS', 'LOGIN_FAILED', 'SESSION_EXPIRED', 'MFA_SENT', 'MFA_FAILED'] },
+  { label: 'Gestão de Pessoas', options: ['USER_CREATED', 'USER_UPDATED', 'USER_ACTIVATED', 'USER_ROLE_CHANGED', 'USER_MANAGER_CHANGED', 'USER_OFFBOARDED', 'USER_KBS_CHANGE', 'USER_STATUS_CHANGE'] },
+  { label: 'Estrutura', options: ['DEPARTMENT_CREATED', 'DEPARTMENT_UPDATED', 'DEPARTMENT_DELETED', 'UNIT_CREATED', 'UNIT_UPDATED', 'UNIT_DELETED', 'ROLE_CREATED', 'ROLE_UPDATED', 'ROLE_DELETED', 'ROLE_DEPARTMENT_CHANGE', 'KBS_UPDATED'] },
+  { label: 'Acessos (AEX)', options: ['AEX_CREATED', 'AEX_OWNER_APPROVED', 'AEX_OWNER_REJECTED', 'AEX_SI_APPROVED', 'AEX_SI_REJECTED', 'AEX_APPROVED', 'AEX_AUTO_REJECTED'] },
+  { label: 'Chamados', options: ['TICKET_CREATED', 'TICKET_ASSIGNED', 'TICKET_COMMENTED', 'TICKET_RESOLVED', 'TICKET_REOPENED'] },
+  { label: 'Sessões', options: ['SESSION_REVOKED', 'BULK_SESSION_REVOKED', 'SESSION_EXPIRED'] },
+  { label: 'Sistema', options: ['REPORT_EXPORTED', 'CHANGE_ROLE'] },
 ];
-const ENTIDADE_OPTIONS = ['Role', 'User', 'Department', 'Unit', 'Request'];
+const ENTIDADE_OPTIONS = ['Role', 'User', 'Department', 'Unit', 'Request', 'System'];
 
 function getBadgeColor(tipo: string): string {
-  if (tipo === 'AEX_CREATED') return '#3b82f6';
-  if (['AEX_OWNER_APPROVED', 'AEX_SI_APPROVED', 'AEX_APPROVED'].includes(tipo)) return '#22c55e';
-  if (['AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED'].includes(tipo)) return '#ef4444';
+  const verde = ['LOGIN_SUCCESS', 'USER_CREATED', 'USER_ACTIVATED', 'AEX_APPROVED', 'TICKET_RESOLVED', 'DEPARTMENT_CREATED', 'UNIT_CREATED', 'ROLE_CREATED', 'KBS_UPDATED'];
+  const vermelho = ['LOGIN_FAILED', 'MFA_FAILED', 'SESSION_EXPIRED', 'USER_OFFBOARDED', 'AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED', 'DEPARTMENT_DELETED', 'UNIT_DELETED', 'ROLE_DELETED', 'SESSION_REVOKED', 'BULK_SESSION_REVOKED', 'TICKET_REOPENED'];
+  const azul = ['AEX_CREATED', 'TICKET_CREATED', 'MFA_SENT', 'CHANGE_ROLE'];
+  const amarelo = ['USER_UPDATED', 'USER_ROLE_CHANGED', 'USER_MANAGER_CHANGED', 'TICKET_ASSIGNED', 'TICKET_COMMENTED', 'DEPARTMENT_UPDATED', 'UNIT_UPDATED', 'ROLE_UPDATED', 'AEX_OWNER_APPROVED', 'AEX_SI_APPROVED', 'REPORT_EXPORTED'];
+  if (verde.includes(tipo)) return '#22c55e';
+  if (vermelho.includes(tipo)) return '#ef4444';
+  if (azul.includes(tipo)) return '#0EA5E9';
+  if (amarelo.includes(tipo)) return '#eab308';
   if (tipo.startsWith('ROLE_')) return '#3b82f6';
   if (tipo.startsWith('USER_')) return '#0EA5E9';
   if (tipo.startsWith('DEPARTMENT_')) return '#eab308';
@@ -167,11 +177,17 @@ export const AuditLog: React.FC<AuditLogProps> = ({ initialEntidadeId, initialEn
         </div>
         <select
           className="form-input"
-          style={{ width: 'auto', minWidth: 180 }}
+          style={{ width: 'auto', minWidth: 200 }}
           value={filtros.tipo}
           onChange={e => setFiltros(prev => ({ ...prev, tipo: e.target.value }))}
         >
-          {TIPO_OPTIONS.map(o => <option key={o} value={o}>{o === 'Todos' ? 'Tipo: Todos' : o}</option>)}
+          {TIPO_OPTIONS_GROUPS.map(gr => (
+            <optgroup key={gr.label} label={gr.label}>
+              {gr.options.map(o => (
+                <option key={o} value={o}>{o === 'Todos' ? 'Todos os eventos' : o}</option>
+              ))}
+            </optgroup>
+          ))}
         </select>
         <select
           className="form-input"

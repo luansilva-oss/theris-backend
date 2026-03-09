@@ -138,6 +138,18 @@ export const revokeAllSessions = async (req: Request, res: Response) => {
     });
   }
 
+  const { getClientIp } = await import('../lib/requestContext');
+  await prisma.historicoMudanca.create({
+    data: {
+      tipo: 'BULK_SESSION_REVOKED',
+      entidadeTipo: 'System',
+      entidadeId: 'sessions',
+      descricao: `${sessions.length} sessões revogadas em massa`,
+      dadosDepois: { totalRevogadas: sessions.length, ip: getClientIp(req) },
+      autorId: callerId,
+    },
+  }).catch(() => {});
+
   return res.json({ success: true, count: sessions.length });
 };
 

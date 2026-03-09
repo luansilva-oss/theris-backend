@@ -607,8 +607,22 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       }
     });
 
+    const requesterForAudit = await prisma.user.findUnique({ where: { id: safeRequesterId }, select: { name: true } });
+    const { registrarMudanca } = await import('../lib/auditLog');
+    await registrarMudanca({
+      tipo: 'TICKET_CREATED',
+      entidadeTipo: 'Request',
+      entidadeId: newRequest.id,
+      descricao: `Chamado criado: ${detailsString.slice(0, 80)}${detailsString.length > 80 ? '...' : ''}`,
+      dadosDepois: {
+        categoria: safeType,
+        assunto: detailsString.slice(0, 200),
+        solicitante: requesterForAudit?.name ?? safeRequesterId,
+      },
+      autorId: safeRequesterId,
+    }).catch(() => {});
+
     if ((isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) && toolNameAex) {
-      const { registrarMudanca } = await import('../lib/auditLog');
       const period = detailsObj.accessPeriodRaw || (detailsObj.duration != null && detailsObj.unit ? `${detailsObj.duration} ${detailsObj.unit}` : null) || null;
       await registrarMudanca({
         tipo: 'AEX_CREATED',
@@ -1345,8 +1359,45 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     if (status !== undefined && status !== existing.status) notifyTicketEvent(id, 'STATUS_CHANGED', { from: existing.status, to: status }).catch(() => {});
     if (assigneeId !== undefined && assigneeId !== existing.assigneeId) notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId }).catch(() => {});
 
-    // Automação: se o status foi alterado para APROVADO, executar regras (desligamento, onboarding, acesso extraordinário, CHANGE_ROLE)
     const newStatus = (status !== undefined ? String(status) : existing.status) || '';
+    const { registrarMudanca } = await import('../lib/auditLog');
+    if (assigneeId !== undefined && assigneeId !== existing.assigneeId) {
+      const newAssignee = assigneeId ? await prisma.user.findUnique({ where: { id: assigneeId }, select: { name: true } }) : null;
+      await registrarMudanca({
+        tipo: 'TICKET_ASSIGNED',
+        entidadeTipo: 'Request',
+        entidadeId: id,
+        descricao: `Responsável atribuído: ${newAssignee?.name ?? '—'}`,
+        dadosAntes: { responsavel: existing.assignee?.name ?? null },
+        dadosDepois: { responsavel: newAssignee?.name ?? null },
+        autorId: userId ?? undefined,
+      }).catch(() => {});
+    }
+    if (status !== undefined && status !== existing.status) {
+      if (['RESOLVIDO', 'CONCLUIDO'].includes(newStatus)) {
+        await registrarMudanca({
+          tipo: 'TICKET_RESOLVED',
+          entidadeTipo: 'Request',
+          entidadeId: id,
+          descricao: `Chamado encerrado: ${existing.details?.slice(0, 60) ?? id}...`,
+          dadosAntes: { status: existing.status },
+          dadosDepois: { status: 'RESOLVIDO' },
+          autorId: userId ?? undefined,
+        }).catch(() => {});
+      } else if (['RESOLVIDO', 'CONCLUIDO'].includes(existing.status)) {
+        await registrarMudanca({
+          tipo: 'TICKET_REOPENED',
+          entidadeTipo: 'Request',
+          entidadeId: id,
+          descricao: 'Chamado reaberto',
+          dadosAntes: { status: 'RESOLVIDO' },
+          dadosDepois: { status: newStatus || 'ABERTO' },
+          autorId: userId ?? undefined,
+        }).catch(() => {});
+      }
+    }
+
+    // Automação: se o status foi alterado para APROVADO, executar regras (desligamento, onboarding, acesso extraordinário, CHANGE_ROLE)
     if (newStatus === 'APROVADO') {
       if (existing.type === 'CHANGE_ROLE') {
         try {
@@ -1494,6 +1545,16 @@ export const createComment = async (req: Request, res: Response) => {
       },
       include: { author: { select: { id: true, name: true, email: true } } }
     });
+
+    const { registrarMudanca } = await import('../lib/auditLog');
+    await registrarMudanca({
+      tipo: 'TICKET_COMMENTED',
+      entidadeTipo: 'Request',
+      entidadeId: id,
+      descricao: 'Comentário adicionado ao chamado',
+      dadosDepois: { autor: comment.author?.name ?? '—', preview: comment.body.slice(0, 100) },
+      autorId: authorId ?? undefined,
+    }).catch(() => {});
 
     const { notifyTicketEvent } = await import('../services/ticketEventService');
     notifyTicketEvent(id, 'COMMENT_ADDED', { commentId: comment.id, kind: comment.kind, body: comment.body.slice(0, 200) }).catch(() => {});
@@ -1721,6 +1782,22 @@ export const exportRequestsCsv = async (req: Request, res: Response) => {
   const d1 = new Date(startDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
   const d2 = new Date(endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
   const filename = `relatorio_${catLabel}_${d1}_${d2}.csv`;
+
+  const { registrarMudanca } = await import('../lib/auditLog');
+  const { getClientIp } = await import('../lib/requestContext');
+  await registrarMudanca({
+    tipo: 'REPORT_EXPORTED',
+    entidadeTipo: 'System',
+    entidadeId: 'report',
+    descricao: 'Relatório exportado',
+    dadosDepois: {
+      categoria: catArr.join(','),
+      periodo: { de: startDate, ate: endDate },
+      colunas: colArr,
+      ip: getClientIp(req),
+    },
+    autorId: userId,
+  }).catch(() => {});
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

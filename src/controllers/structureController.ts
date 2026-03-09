@@ -30,6 +30,14 @@ export const createUnit = async (req: Request, res: Response) => {
     if (!name || !String(name).trim()) return res.status(400).json({ error: "Nome da unidade é obrigatório." });
     try {
         const unit = await prisma.unit.create({ data: { name: String(name).trim() } });
+        await registrarMudanca({
+            tipo: 'UNIT_CREATED',
+            entidadeTipo: 'Unit',
+            entidadeId: unit.id,
+            descricao: `Unidade "${unit.name}" criada`,
+            dadosDepois: { nome: unit.name },
+            autorId: getAutorId(req),
+        }).catch(() => {});
         return res.status(201).json(unit);
     } catch (error: any) {
         if (error?.code === 'P2002') return res.status(409).json({ error: "Já existe uma unidade com esse nome." });
@@ -42,7 +50,18 @@ export const updateUnit = async (req: Request, res: Response) => {
     const { name } = req.body;
     if (!name || !String(name).trim()) return res.status(400).json({ error: "Nome da unidade é obrigatório." });
     try {
+        const oldUnit = await prisma.unit.findUnique({ where: { id } });
+        if (!oldUnit) return res.status(404).json({ error: "Unidade não encontrada." });
         const unit = await prisma.unit.update({ where: { id }, data: { name: String(name).trim() } });
+        await registrarMudanca({
+            tipo: 'UNIT_UPDATED',
+            entidadeTipo: 'Unit',
+            entidadeId: id,
+            descricao: `Unidade "${unit.name}" atualizada`,
+            dadosAntes: { nome: oldUnit.name },
+            dadosDepois: { nome: unit.name },
+            autorId: getAutorId(req),
+        }).catch(() => {});
         return res.json(unit);
     } catch (error: any) {
         if (error?.code === 'P2025') return res.status(404).json({ error: "Unidade não encontrada." });
@@ -67,6 +86,14 @@ export const deleteUnit = async (req: Request, res: Response) => {
         });
         if (!unit) return res.status(404).json({ error: "Unidade não encontrada." });
         if (unit.departments.length === 0) {
+            await registrarMudanca({
+                tipo: 'UNIT_DELETED',
+                entidadeTipo: 'Unit',
+                entidadeId: id,
+                descricao: `Unidade "${unit.name}" excluída`,
+                dadosAntes: { nome: unit.name },
+                autorId: getAutorId(req),
+            }).catch(() => {});
             await prisma.unit.delete({ where: { id } });
             return res.json({ success: true });
         }
@@ -194,6 +221,14 @@ export const createDepartment = async (req: Request, res: Response) => {
     if (!unitId) return res.status(400).json({ error: "unitId é obrigatório." });
     try {
         const dept = await prisma.department.create({ data: { name, unitId } });
+        await registrarMudanca({
+            tipo: 'DEPARTMENT_CREATED',
+            entidadeTipo: 'Department',
+            entidadeId: dept.id,
+            descricao: `Departamento "${dept.name}" criado`,
+            dadosDepois: { nome: dept.name, unitId: dept.unitId },
+            autorId: getAutorId(req),
+        }).catch(() => {});
         return res.json(dept);
     } catch (error) {
         return res.status(500).json({ error: "Erro ao criar departamento." });
@@ -211,6 +246,15 @@ export const updateDepartment = async (req: Request, res: Response) => {
         if (name !== undefined) data.name = name;
         if (unitId !== undefined) data.unitId = unitId;
         const dept = await prisma.department.update({ where: { id }, data });
+        await registrarMudanca({
+            tipo: 'DEPARTMENT_UPDATED',
+            entidadeTipo: 'Department',
+            entidadeId: id,
+            descricao: `Departamento "${dept.name}" atualizado`,
+            dadosAntes: { nome: oldDept.name, unitId: oldDept.unitId },
+            dadosDepois: { nome: dept.name, unitId: dept.unitId },
+            autorId: getAutorId(req),
+        }).catch(() => {});
 
         // Com FK, users.departmentId já aponta para este departamento; renomear dept não exige update em User
         return res.json(dept);
@@ -261,6 +305,15 @@ export const deleteDepartment = async (req: Request, res: Response) => {
 
         // 2. Limpar cargos (roles) vinculados
         await prisma.role.deleteMany({ where: { departmentId: id } });
+
+        await registrarMudanca({
+            tipo: 'DEPARTMENT_DELETED',
+            entidadeTipo: 'Department',
+            entidadeId: id,
+            descricao: `Departamento "${deptToDelete.name}" excluído`,
+            dadosAntes: { nome: deptToDelete.name },
+            autorId: getAutorId(req),
+        }).catch(() => {});
 
         // 3. Excluir o departamento
         await prisma.department.delete({ where: { id } });
@@ -375,6 +428,17 @@ export const updateRole = async (req: Request, res: Response) => {
             where: { id },
             data: Object.keys(data).length ? data : undefined
         });
+        if (Object.keys(data).length > 0) {
+            await registrarMudanca({
+                tipo: 'ROLE_UPDATED',
+                entidadeTipo: 'Role',
+                entidadeId: id,
+                descricao: `Cargo "${role.name}" atualizado`,
+                dadosAntes: { name: oldRole.name, code: oldRole.code, departmentId: oldRole.departmentId },
+                dadosDepois: { name: role.name, code: role.code, departmentId: role.departmentId },
+                autorId: getAutorId(req),
+            }).catch(() => {});
+        }
 
         // Sync jobTitle for users linked by roleId or by jobTitle+departmentId
         if (oldRole.name !== name && name) {
@@ -542,8 +606,9 @@ export const updateRoleKit = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { items } = req.body as { items: { toolCode: string; toolName: string; accessLevelDesc?: string; criticality?: string; isCritical?: boolean }[] };
     try {
-        const role = await prisma.role.findUnique({ where: { id } });
+        const role = await prisma.role.findUnique({ where: { id }, include: { kitItems: true } });
         if (!role) return res.status(404).json({ error: "Cargo não encontrado." });
+        const kitAnterior = role.kitItems?.map((k: any) => ({ toolName: k.toolName, toolCode: k.toolCode })) ?? [];
 
         await prisma.roleKitItem.deleteMany({ where: { roleId: id } });
         if (Array.isArray(items) && items.length > 0) {
@@ -562,6 +627,16 @@ export const updateRoleKit = async (req: Request, res: Response) => {
             where: { id },
             include: { kitItems: true }
         });
+        const kitNovo = updated?.kitItems?.map((k: any) => ({ toolName: k.toolName, toolCode: k.toolCode })) ?? [];
+        await registrarMudanca({
+            tipo: 'KBS_UPDATED',
+            entidadeTipo: 'Role',
+            entidadeId: id,
+            descricao: `Kit Básico do cargo "${role.name}" atualizado`,
+            dadosAntes: { ferramentas: kitAnterior },
+            dadosDepois: { ferramentas: kitNovo },
+            autorId: getAutorId(req),
+        }).catch(() => {});
         return res.json(updated);
     } catch (error) {
         return res.status(500).json({ error: "Erro ao atualizar kit do cargo." });
