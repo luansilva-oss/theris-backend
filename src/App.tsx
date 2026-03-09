@@ -154,6 +154,16 @@ function getStatusLabel(status: string): string {
   return status;
 }
 
+function getRequestStatusBadgeStyle(status: string): { label: string; bg: string; color: string } {
+  const s = (status || '').toUpperCase();
+  if (s === 'PENDENTE_OWNER' || s === 'PENDING_OWNER') return { label: getStatusLabel(status), bg: 'rgba(249, 115, 22, 0.2)', color: '#f97316' };
+  if (s === 'PENDENTE_SI' || s === 'PENDING_SI') return { label: getStatusLabel(status), bg: 'rgba(14, 165, 233, 0.2)', color: '#0EA5E9' };
+  if (s === 'APROVADO') return { label: getStatusLabel(status), bg: 'rgba(34, 197, 94, 0.2)', color: '#22c55e' };
+  if (s === 'REPROVADO') return { label: getStatusLabel(status), bg: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' };
+  if (s === 'RESOLVIDO' || s === 'EM_ATENDIMENTO' || s === 'CONCLUIDO' || s === 'AGENDADO') return { label: getStatusLabel(status), bg: 'rgba(21, 128, 61, 0.2)', color: '#15803d' };
+  return { label: getStatusLabel(status), bg: 'rgba(100, 116, 139, 0.2)', color: '#64748b' };
+}
+
 function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 'Infra'; categoryColor: string; title: string; lines: { label: string; value: string }[] } {
   let detailsObj: Record<string, unknown> = {};
   try {
@@ -1993,72 +2003,68 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 15, marginBottom: 20, alignItems: 'center' }}>
+              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, marginBottom: 20, alignItems: 'center' }}>
                 {/* BUSCA */}
-                <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 0 }}>
                   <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#71717a' }} />
                   <input
                     type="text"
                     placeholder={systemProfile === 'VIEWER' ? "Buscar em seus pedidos..." : "Buscar por nome do solicitante ou ID..."}
                     className="input-base"
-                    style={{ paddingLeft: 40, background: '#18181b', width: '100%' }}
+                    style={{ paddingLeft: 40, background: '#18181b', width: '100%', height: 40 }}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                 </div>
-
                 {/* FILTRO CATEGORIA */}
-                <div style={{ display: 'flex', gap: 4, background: '#18181b', borderRadius: 8, padding: 4, border: '1px solid #27272a' }}>
+                <div style={{ display: 'flex', gap: 4, background: '#18181b', borderRadius: 8, padding: 4, border: '1px solid #27272a', height: 40, alignItems: 'center' }}>
                   {(['ALL', 'GESTAO_PESSOAS', 'GESTAO_ACESSOS', 'TI_INFRA'] as const).map(f => (
                     <button
                       key={f}
                       onClick={() => setReportCategoryFilter(f)}
                       style={{
-                        padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: 'none', transition: 'all 0.2s',
+                        height: 32,
+                        padding: '0 12px',
+                        borderRadius: 6,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        border: 'none',
+                        transition: 'all 0.2s',
                         background: reportCategoryFilter === f ? (f === 'TI_INFRA' ? 'rgba(251, 191, 36, 0.2)' : f === 'GESTAO_ACESSOS' ? 'rgba(34, 197, 94, 0.2)' : f === 'GESTAO_PESSOAS' ? 'rgba(167, 139, 250, 0.2)' : '#27272a') : 'transparent',
                         color: reportCategoryFilter === f ? (f === 'TI_INFRA' ? '#fbbf24' : f === 'GESTAO_ACESSOS' ? '#22c55e' : f === 'GESTAO_PESSOAS' ? '#38BDF8' : 'white') : '#71717a',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
                       }}
                     >
                       {f === 'ALL' ? 'TODOS' : f === 'GESTAO_PESSOAS' ? 'GESTÃO DE PESSOAS' : f === 'GESTAO_ACESSOS' ? 'GESTÃO DE ACESSOS' : 'TI / INFRA'}
                     </button>
                   ))}
                 </div>
-
-                {/* FILTRO PERÍODO */}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer', fontSize: 11, color: '#71717a' }}>
-                    <span style={{ marginBottom: 4 }}>De</span>
-                    <input
-                      type="date"
-                      value={reportPeriodStart}
-                      onChange={e => setReportPeriodStart(e.target.value)}
-                      className="input-base"
-                      style={{ padding: '6px 10px', background: '#18181b', fontSize: 12, cursor: 'pointer', minWidth: 140 }}
-                    />
-                  </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer', fontSize: 11, color: '#71717a' }}>
-                    <span style={{ marginBottom: 4 }}>Até</span>
-                    <input
-                      type="date"
-                      value={reportPeriodEnd}
-                      onChange={e => setReportPeriodEnd(e.target.value)}
-                      className="input-base"
-                      style={{ padding: '6px 10px', background: '#18181b', fontSize: 12, cursor: 'pointer', minWidth: 140 }}
-                    />
-                  </label>
-                  <button
-                    onClick={applyReportFilters}
-                    style={{ marginTop: 18, padding: '8px 16px', background: '#3f3f46', border: '1px solid #52525b', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    Filtrar
-                  </button>
-                </div>
-
-                {/* FILTRO STATUS */}
+                <span style={{ fontSize: 11, color: '#94A3B8', whiteSpace: 'nowrap' }}>De</span>
+                <input
+                  type="date"
+                  value={reportPeriodStart}
+                  onChange={e => setReportPeriodStart(e.target.value)}
+                  className="input-base"
+                  style={{ height: 40, background: '#18181b', fontSize: 12, cursor: 'pointer', minWidth: 130 }}
+                />
+                <span style={{ fontSize: 11, color: '#94A3B8', whiteSpace: 'nowrap' }}>Até</span>
+                <input
+                  type="date"
+                  value={reportPeriodEnd}
+                  onChange={e => setReportPeriodEnd(e.target.value)}
+                  className="input-base"
+                  title="Até"
+                  style={{ height: 40, background: '#18181b', fontSize: 12, cursor: 'pointer', minWidth: 130 }}
+                />
+                <button
+                  onClick={applyReportFilters}
+                  style={{ height: 40, padding: '0 16px', background: '#3f3f46', border: '1px solid #52525b', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Filtrar
+                </button>
                 <select
                   className="input-base"
-                  style={{ width: 'auto', background: '#18181b', fontSize: 12, padding: '4px 10px' }}
+                  style={{ height: 40, background: '#18181b', fontSize: 12, padding: '0 10px', minWidth: 140 }}
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
                 >
@@ -2067,14 +2073,12 @@ export default function App() {
                   <option value="APROVADO">Concluído / Aprovado</option>
                   <option value="REPROVADO">Recusado / Reprovado</option>
                 </select>
-
-                {/* PERSONALIZAR VISUALIZAÇÃO */}
-                <div style={{ position: 'relative' }}>
+                <div style={{ position: 'relative', flexShrink: 0 }}>
                   <button
                     type="button"
                     onClick={() => setShowFilterPanel(prev => !prev)}
                     className="input-base"
-                    style={{ background: '#18181b', fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #27272a' }}
+                    style={{ height: 40, background: '#18181b', fontSize: 12, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #27272a' }}
                   >
                     <Settings size={14} color="#0EA5E9" /> Personalizar filtro
                   </button>
@@ -2793,34 +2797,63 @@ export default function App() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ overflowX: 'auto' }}>
                 {ticketList.length === 0 ? (
                   <div className="card-base" style={{ textAlign: 'center', color: '#52525b', padding: 48, borderStyle: 'dashed' }}>
                     Nenhum chamado encontrado com os filtros aplicados.
                   </div>
                 ) : (
-                  ticketList.map(r => {
-                    const card = getRequestCardContent(r);
-                    return (
-                      <div key={r.id} className="card-base" style={{ padding: 20, border: '1px solid #27272a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-                        <div style={{ flex: 1, minWidth: 200 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: card.categoryColor, textTransform: 'uppercase' }}>{card.category}</span>
-                            <span style={{ color: '#e4e4e7', fontWeight: 600 }}>{card.title}</span>
-                          </div>
-                          <div style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 4 }}>{r.requester?.name} · {new Date(r.createdAt).toLocaleString('pt-BR')}</div>
-                          <div style={{ fontSize: 12, color: '#71717a' }}>Status: {getStatusLabel(r.status)}</div>
-                        </div>
-                        <button
-                          className="btn-mini"
-                          style={{ background: '#0EA5E9', color: 'white', padding: '10px 20px' }}
-                          onClick={() => setSelectedChamadoId(r.id)}
-                        >
-                          Acessar chamado
-                        </button>
-                      </div>
-                    );
-                  })
+                  <table style={{ width: '100%', borderCollapse: 'collapse', background: '#0f172a' }}>
+                    <thead>
+                      <tr style={{ background: '#1E293B', borderBottom: '1px solid #334155' }}>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' }}>Categoria</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' }}>Assunto</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' }}>Solicitante</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' }}>Data</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' }}>Status</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' }}>Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ticketList.map(r => {
+                        const card = getRequestCardContent(r);
+                        const statusStyle = getRequestStatusBadgeStyle(r.status);
+                        const categoryShort = card.category === 'Acessos' ? 'ACESSOS' : card.category === 'Pessoas' ? 'PESSOAS' : 'INFRA';
+                        const dateStr = r.createdAt ? new Date(r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+                        return (
+                          <tr
+                            key={r.id}
+                            style={{
+                              height: 52,
+                              borderBottom: '1px solid #1e293b',
+                              transition: 'background 0.15s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#1e293b'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            <td style={{ padding: '0 16px' }}>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: card.categoryColor, textTransform: 'uppercase' }}>{categoryShort}</span>
+                            </td>
+                            <td style={{ padding: '0 16px', color: '#e4e4e7', fontWeight: 500 }}>{card.title}</td>
+                            <td style={{ padding: '0 16px', color: '#94A3B8' }}>{r.requester?.name ?? '—'}</td>
+                            <td style={{ padding: '0 16px', color: '#94A3B8', fontSize: 12 }}>{dateStr}</td>
+                            <td style={{ padding: '0 16px' }}>
+                              <span style={{ display: 'inline-block', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: statusStyle.bg, color: statusStyle.color }}>{statusStyle.label}</span>
+                            </td>
+                            <td style={{ padding: '0 16px', textAlign: 'right' }}>
+                              <button
+                                type="button"
+                                style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, background: '#0EA5E9', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                                onClick={() => setSelectedChamadoId(r.id)}
+                              >
+                                Acessar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 )}
               </div>
                 </>

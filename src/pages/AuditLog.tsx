@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Clock, Search, X, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Clock, Search, X, FileText } from 'lucide-react';
 import { API_URL } from '../config';
 
 interface AuditItem {
@@ -310,18 +310,18 @@ export const AuditLog: React.FC<AuditLogProps> = ({ initialEntidadeId, initialEn
                 onClick={() => setOffset(Math.max(0, offset - limit))}
                 disabled={offset === 0}
                 className="form-input"
-                style={{ padding: '6px 12px', cursor: offset === 0 ? 'not-allowed' : 'pointer', opacity: offset === 0 ? 0.5 : 1 }}
+                style={{ minWidth: 100, padding: '8px 12px', textAlign: 'center', cursor: offset === 0 ? 'not-allowed' : 'pointer', opacity: offset === 0 ? 0.5 : 1 }}
               >
-                <ChevronLeft size={16} /> Anterior
+                Anterior
               </button>
               <button
                 type="button"
                 onClick={() => setOffset(offset + limit)}
                 disabled={offset + limit >= total}
                 className="form-input"
-                style={{ padding: '6px 12px', cursor: offset + limit >= total ? 'not-allowed' : 'pointer', opacity: offset + limit >= total ? 0.5 : 1 }}
+                style={{ minWidth: 100, padding: '8px 12px', textAlign: 'center', cursor: offset + limit >= total ? 'not-allowed' : 'pointer', opacity: offset + limit >= total ? 0.5 : 1 }}
               >
-                Próxima <ChevronRight size={16} />
+                Próximo
               </button>
             </div>
           </div>
