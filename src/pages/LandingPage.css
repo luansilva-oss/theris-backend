@@ -104,11 +104,12 @@
   background: #0284C7;
 }
 
-/* ---- HERO (100vh, centralizado) ---- */
+/* ---- HERO (100vh, layout centralizado em coluna única — sem two-column, sem login) ---- */
 .landing-hero {
   position: relative;
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 100px 24px 80px;
@@ -126,8 +127,12 @@
 .landing-hero-content {
   position: relative;
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
   max-width: 720px;
+  width: 100%;
 }
 
 .landing-hero-badge {

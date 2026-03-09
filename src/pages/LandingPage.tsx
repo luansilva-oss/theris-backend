@@ -1,3 +1,7 @@
+/**
+ * Landing page institucional. Apenas conteúdo de marketing + botão "Entrar" que navega para /login.
+ * Nenhum componente de login é importado ou renderizado aqui.
+ */
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Users, FileText, ArrowRight, ExternalLink } from 'lucide-react';

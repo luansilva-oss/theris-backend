@@ -1095,6 +1095,7 @@ export default function App() {
   };
 
   // --- RENDER ---
+  // / → apenas LandingPage (institucional, sem login). /login → apenas tela de login (sem conteúdo da landing).
   if (pathname === '/' && isLoggedIn) return <Navigate to="/dashboard" replace />;
   if (pathname === '/' && !isLoggedIn) return <LandingPage />;
   if (pathname === '/login' && isLoggedIn) return <Navigate to="/dashboard" replace />;
