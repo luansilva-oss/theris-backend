@@ -27,6 +27,14 @@ const createUnit = async (req, res) => {
         return res.status(400).json({ error: "Nome da unidade é obrigatório." });
     try {
         const unit = await prisma.unit.create({ data: { name: String(name).trim() } });
+        await (0, auditLog_1.registrarMudanca)({
+            tipo: 'UNIT_CREATED',
+            entidadeTipo: 'Unit',
+            entidadeId: unit.id,
+            descricao: `Unidade "${unit.name}" criada`,
+            dadosDepois: { nome: unit.name },
+            autorId: getAutorId(req),
+        }).catch(() => { });
         return res.status(201).json(unit);
     }
     catch (error) {
@@ -42,7 +50,19 @@ const updateUnit = async (req, res) => {
     if (!name || !String(name).trim())
         return res.status(400).json({ error: "Nome da unidade é obrigatório." });
     try {
+        const oldUnit = await prisma.unit.findUnique({ where: { id } });
+        if (!oldUnit)
+            return res.status(404).json({ error: "Unidade não encontrada." });
         const unit = await prisma.unit.update({ where: { id }, data: { name: String(name).trim() } });
+        await (0, auditLog_1.registrarMudanca)({
+            tipo: 'UNIT_UPDATED',
+            entidadeTipo: 'Unit',
+            entidadeId: id,
+            descricao: `Unidade "${unit.name}" atualizada`,
+            dadosAntes: { nome: oldUnit.name },
+            dadosDepois: { nome: unit.name },
+            autorId: getAutorId(req),
+        }).catch(() => { });
         return res.json(unit);
     }
     catch (error) {
@@ -71,6 +91,14 @@ const deleteUnit = async (req, res) => {
         if (!unit)
             return res.status(404).json({ error: "Unidade não encontrada." });
         if (unit.departments.length === 0) {
+            await (0, auditLog_1.registrarMudanca)({
+                tipo: 'UNIT_DELETED',
+                entidadeTipo: 'Unit',
+                entidadeId: id,
+                descricao: `Unidade "${unit.name}" excluída`,
+                dadosAntes: { nome: unit.name },
+                autorId: getAutorId(req),
+            }).catch(() => { });
             await prisma.unit.delete({ where: { id } });
             return res.json({ success: true });
         }
@@ -206,6 +234,14 @@ const createDepartment = async (req, res) => {
         return res.status(400).json({ error: "unitId é obrigatório." });
     try {
         const dept = await prisma.department.create({ data: { name, unitId } });
+        await (0, auditLog_1.registrarMudanca)({
+            tipo: 'DEPARTMENT_CREATED',
+            entidadeTipo: 'Department',
+            entidadeId: dept.id,
+            descricao: `Departamento "${dept.name}" criado`,
+            dadosDepois: { nome: dept.name, unitId: dept.unitId },
+            autorId: getAutorId(req),
+        }).catch(() => { });
         return res.json(dept);
     }
     catch (error) {
@@ -226,6 +262,15 @@ const updateDepartment = async (req, res) => {
         if (unitId !== undefined)
             data.unitId = unitId;
         const dept = await prisma.department.update({ where: { id }, data });
+        await (0, auditLog_1.registrarMudanca)({
+            tipo: 'DEPARTMENT_UPDATED',
+            entidadeTipo: 'Department',
+            entidadeId: id,
+            descricao: `Departamento "${dept.name}" atualizado`,
+            dadosAntes: { nome: oldDept.name, unitId: oldDept.unitId },
+            dadosDepois: { nome: dept.name, unitId: dept.unitId },
+            autorId: getAutorId(req),
+        }).catch(() => { });
         // Com FK, users.departmentId já aponta para este departamento; renomear dept não exige update em User
         return res.json(dept);
     }
@@ -277,6 +322,14 @@ const deleteDepartment = async (req, res) => {
         }
         // 2. Limpar cargos (roles) vinculados
         await prisma.role.deleteMany({ where: { departmentId: id } });
+        await (0, auditLog_1.registrarMudanca)({
+            tipo: 'DEPARTMENT_DELETED',
+            entidadeTipo: 'Department',
+            entidadeId: id,
+            descricao: `Departamento "${deptToDelete.name}" excluído`,
+            dadosAntes: { nome: deptToDelete.name },
+            autorId: getAutorId(req),
+        }).catch(() => { });
         // 3. Excluir o departamento
         await prisma.department.delete({ where: { id } });
         return res.json({ success: true });
@@ -384,6 +437,17 @@ const updateRole = async (req, res) => {
             where: { id },
             data: Object.keys(data).length ? data : undefined
         });
+        if (Object.keys(data).length > 0) {
+            await (0, auditLog_1.registrarMudanca)({
+                tipo: 'ROLE_UPDATED',
+                entidadeTipo: 'Role',
+                entidadeId: id,
+                descricao: `Cargo "${role.name}" atualizado`,
+                dadosAntes: { name: oldRole.name, code: oldRole.code, departmentId: oldRole.departmentId },
+                dadosDepois: { name: role.name, code: role.code, departmentId: role.departmentId },
+                autorId: getAutorId(req),
+            }).catch(() => { });
+        }
         // Sync jobTitle for users linked by roleId or by jobTitle+departmentId
         if (oldRole.name !== name && name) {
             await prisma.user.updateMany({
@@ -550,9 +614,10 @@ const updateRoleKit = async (req, res) => {
     const { id } = req.params;
     const { items } = req.body;
     try {
-        const role = await prisma.role.findUnique({ where: { id } });
+        const role = await prisma.role.findUnique({ where: { id }, include: { kitItems: true } });
         if (!role)
             return res.status(404).json({ error: "Cargo não encontrado." });
+        const kitAnterior = role.kitItems?.map((k) => ({ toolName: k.toolName, toolCode: k.toolCode })) ?? [];
         await prisma.roleKitItem.deleteMany({ where: { roleId: id } });
         if (Array.isArray(items) && items.length > 0) {
             await prisma.roleKitItem.createMany({
@@ -570,6 +635,16 @@ const updateRoleKit = async (req, res) => {
             where: { id },
             include: { kitItems: true }
         });
+        const kitNovo = updated?.kitItems?.map((k) => ({ toolName: k.toolName, toolCode: k.toolCode })) ?? [];
+        await (0, auditLog_1.registrarMudanca)({
+            tipo: 'KBS_UPDATED',
+            entidadeTipo: 'Role',
+            entidadeId: id,
+            descricao: `Kit Básico do cargo "${role.name}" atualizado`,
+            dadosAntes: { ferramentas: kitAnterior },
+            dadosDepois: { ferramentas: kitNovo },
+            autorId: getAutorId(req),
+        }).catch(() => { });
         return res.json(updated);
     }
     catch (error) {

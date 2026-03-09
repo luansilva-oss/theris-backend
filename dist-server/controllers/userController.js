@@ -162,6 +162,7 @@ const manualAddUser = async (req, res) => {
             });
             return res.status(200).json({ ...existing, roleId: role.id, department: department.name, departmentId: department.id, jobTitle: role.name, unit: department.unit?.name ?? null, unitId, isActive: true });
         }
+        const adminId = req.headers['x-user-id']?.trim();
         const created = await prisma.user.create({
             data: {
                 name: nameStr || emailStr.split('@')[0],
@@ -177,6 +178,20 @@ const manualAddUser = async (req, res) => {
                 unitRef: { select: { id: true, name: true } }
             }
         });
+        await (0, auditLog_1.registrarMudanca)({
+            tipo: 'USER_CREATED',
+            entidadeTipo: 'User',
+            entidadeId: created.id,
+            descricao: `Colaborador ${created.name} cadastrado`,
+            dadosDepois: {
+                nome: created.name,
+                email: created.email,
+                cargo: created.jobTitle,
+                departamento: created.departmentId,
+                perfil: created.systemProfile ?? 'VIEWER',
+            },
+            autorId: adminId ?? undefined,
+        }).catch(() => { });
         return res.status(201).json(created);
     }
     catch (error) {
@@ -383,9 +398,10 @@ const updateUser = async (req, res) => {
         const oldUser = await prisma.user.findUnique({
             where: { id },
             select: {
-                name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true, managerId: true,
+                name: true, jobTitle: true, departmentId: true, unitId: true, roleId: true, isActive: true, managerId: true, systemProfile: true,
                 departmentRef: { select: { name: true } },
-                unitRef: { select: { name: true } }
+                unitRef: { select: { name: true } },
+                manager: { select: { name: true } },
             }
         });
         const newDeptId = departmentId !== undefined ? toNullIfEmpty(departmentId) : oldUser?.departmentId;
@@ -481,6 +497,42 @@ const updateUser = async (req, res) => {
                 dadosDepois: { isActive: updatedUser.isActive },
                 autorId: requesterId,
             });
+            if (isActive === true && oldUser.isActive === false) {
+                await (0, auditLog_1.registrarMudanca)({
+                    tipo: 'USER_ACTIVATED',
+                    entidadeTipo: 'User',
+                    entidadeId: id,
+                    descricao: `Colaborador ${updatedUser.name} reativado`,
+                    dadosAntes: { isActive: false },
+                    dadosDepois: { isActive: true },
+                    autorId: requesterId,
+                }).catch(() => { });
+            }
+        }
+        // Auditoria: perfil de sistema alterado
+        if (systemProfile !== undefined && oldUser && oldUser.systemProfile !== undefined && systemProfile !== oldUser.systemProfile) {
+            await (0, auditLog_1.registrarMudanca)({
+                tipo: 'USER_ROLE_CHANGED',
+                entidadeTipo: 'User',
+                entidadeId: id,
+                descricao: 'Perfil de sistema alterado',
+                dadosAntes: { systemProfile: oldUser.systemProfile },
+                dadosDepois: { systemProfile: updatedUser.systemProfile },
+                autorId: requesterId,
+            }).catch(() => { });
+        }
+        // Auditoria: gestor direto alterado
+        if (resolvedManagerId !== undefined && oldUser && resolvedManagerId !== oldUser.managerId) {
+            const newManager = updatedUser.managerId ? await prisma.user.findUnique({ where: { id: updatedUser.managerId }, select: { name: true } }) : null;
+            await (0, auditLog_1.registrarMudanca)({
+                tipo: 'USER_MANAGER_CHANGED',
+                entidadeTipo: 'User',
+                entidadeId: id,
+                descricao: 'Gestor direto alterado',
+                dadosAntes: { managerId: oldUser.managerId, gestorNome: oldUser.manager?.name ?? null },
+                dadosDepois: { managerId: updatedUser.managerId, gestorNome: newManager?.name ?? null },
+                autorId: requesterId,
+            }).catch(() => { });
         }
         console.log('[updateUser] Updated result:', JSON.stringify({ id: updatedUser.id, departmentId: updatedUser.departmentId, unitId: updatedUser.unitId, roleId: updatedUser.roleId }));
         return res.json(updatedUser);

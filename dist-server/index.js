@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
+const express_rate_limit_1 = require("express-rate-limit");
 const client_1 = require("@prisma/client");
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
@@ -46,21 +47,50 @@ const solicitacaoController_1 = require("./controllers/solicitacaoController");
 const authController_1 = require("./controllers/authController");
 const toolController_1 = require("./controllers/toolController");
 const userController_1 = require("./controllers/userController");
-// NOVO: Importar o controlador de reset
 const adminController_1 = require("./controllers/adminController");
+const sessionTimeout_1 = require("./middleware/sessionTimeout");
 const structureController = __importStar(require("./controllers/structureController"));
 const auditLogController_1 = require("./controllers/auditLogController");
 const structureSync_1 = require("./services/structureSync"); // Import sync service
 const passwordReminderCron_1 = require("./jobs/passwordReminderCron");
+const cleanupSessions_1 = require("./crons/cleanupSessions");
 // Slack
 const slackService_1 = require("./services/slackService");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const prisma = new client_1.PrismaClient();
+// --- HTTPS FORÇADO (produção: redirecionar HTTP → HTTPS) ---
+app.use((req, res, next) => {
+    const proto = req.headers['x-forwarded-proto'];
+    const isHttps = proto === 'https' || (Array.isArray(proto) && proto[0] === 'https');
+    if (process.env.NODE_ENV === 'production' && !isHttps) {
+        return res.redirect(301, `https://${req.headers.host}${req.url}`);
+    }
+    next();
+});
+// --- SECURITY HEADERS (landing e todas as respostas) ---
+app.use((_req, res, next) => {
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com; " +
+        "img-src 'self' data: https:; " +
+        "connect-src 'self' https: wss:; " +
+        "frame-src 'self' https://accounts.google.com; " +
+        "frame-ancestors 'none'; " +
+        "base-uri 'self';");
+    next();
+});
 // Auto-sync structure on startup
 (0, structureSync_1.syncStructureFromUsers)();
 // Cron: lembrete de troca de senha a cada 90 dias (DM Slack às 09:00)
 (0, passwordReminderCron_1.startPasswordReminderCron)();
+// Cron: limpeza de sessões (> 24h) e tentativas de login (> 90 dias), 1x/dia às 03:00 (Brasília)
+(0, cleanupSessions_1.startCleanupSessionsCron)();
 // --- CORS ---
 app.use((0, cors_1.default)({
     origin: [
@@ -86,16 +116,40 @@ app.use('/api/slack', slackService_1.slackReceiver.router);
 // --- JSON MIDDLEWARE (limite maior para upload base64 de anexos) ---
 app.use(express_1.default.json({ limit: '15mb' }));
 // ============================================================
+// --- RATE LIMITING (auth: anti brute-force) ---
+// ============================================================
+const authRateLimiter = (0, express_rate_limit_1.rateLimit)({
+    windowMs: 15 * 60 * 1000, // 15 min
+    max: 15, // login + send-mfa + verify-mfa + algumas tentativas
+    message: { error: 'Muitas tentativas. Tente novamente em alguns minutos.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use('/api/login', authRateLimiter);
+app.use('/api/auth', authRateLimiter);
+// ============================================================
 // --- ROTAS DE AUTENTICAÇÃO ---
 // ============================================================
 app.post('/api/login/google', authController_1.googleLogin);
 app.post('/api/auth/send-mfa', authController_1.sendMfa);
 app.post('/api/auth/verify-mfa', authController_1.verifyMfa);
 // ============================================================
-// --- ROTAS ADMINISTRATIVAS (EMERGÊNCIA) ---
+// --- SESSION TIMEOUT (60 min inatividade) — rotas autenticadas ---
 // ============================================================
-// Roda este link no navegador para resetar o catálogo de ferramentas
+app.use((req, res, next) => {
+    const p = req.path;
+    if (p.startsWith('/api/login') || p.startsWith('/api/auth') || p.startsWith('/api/slack') || p.startsWith('/api/webhooks'))
+        return next();
+    (0, sessionTimeout_1.checkSessionTimeout)(req, res, next);
+});
+// ============================================================
+// --- ROTAS ADMINISTRATIVAS ---
+// ============================================================
 app.get('/api/admin/reset-tools', adminController_1.resetCatalog);
+app.get('/api/admin/login-attempts', adminController_1.getLoginAttempts);
+app.get('/api/admin/sessions', adminController_1.getSessions);
+app.delete('/api/admin/sessions/:userId', adminController_1.revokeSession);
+app.delete('/api/admin/sessions', adminController_1.revokeAllSessions);
 // ============================================================
 // --- ROTAS DE DADOS ---
 // ============================================================

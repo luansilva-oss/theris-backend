@@ -6,12 +6,18 @@ const react_1 = require("react");
 const lucide_react_1 = require("lucide-react");
 const config_1 = require("../config");
 function getBadgeColor(tipo) {
-    if (tipo === 'AEX_CREATED')
-        return '#3b82f6';
-    if (['AEX_OWNER_APPROVED', 'AEX_SI_APPROVED', 'AEX_APPROVED'].includes(tipo))
+    const verde = ['LOGIN_SUCCESS', 'USER_CREATED', 'USER_ACTIVATED', 'AEX_APPROVED', 'TICKET_RESOLVED', 'DEPARTMENT_CREATED', 'UNIT_CREATED', 'ROLE_CREATED', 'KBS_UPDATED'];
+    const vermelho = ['LOGIN_FAILED', 'MFA_FAILED', 'SESSION_EXPIRED', 'USER_OFFBOARDED', 'AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED', 'DEPARTMENT_DELETED', 'UNIT_DELETED', 'ROLE_DELETED', 'SESSION_REVOKED', 'BULK_SESSION_REVOKED', 'TICKET_REOPENED'];
+    const azul = ['AEX_CREATED', 'TICKET_CREATED', 'MFA_SENT', 'CHANGE_ROLE'];
+    const amarelo = ['USER_UPDATED', 'USER_ROLE_CHANGED', 'USER_MANAGER_CHANGED', 'TICKET_ASSIGNED', 'TICKET_COMMENTED', 'DEPARTMENT_UPDATED', 'UNIT_UPDATED', 'ROLE_UPDATED', 'AEX_OWNER_APPROVED', 'AEX_SI_APPROVED', 'REPORT_EXPORTED'];
+    if (verde.includes(tipo))
         return '#22c55e';
-    if (['AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED'].includes(tipo))
+    if (vermelho.includes(tipo))
         return '#ef4444';
+    if (azul.includes(tipo))
+        return '#0EA5E9';
+    if (amarelo.includes(tipo))
+        return '#eab308';
     if (tipo.startsWith('ROLE_'))
         return '#3b82f6';
     if (tipo.startsWith('USER_'))
