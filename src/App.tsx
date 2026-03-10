@@ -2356,23 +2356,32 @@ export default function App() {
           {/* AUDITORIA */}
           {!collaboratorId && activeTab === 'HISTORY' && (
             <div className="fade-in">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-                <h2 style={{ color: 'white', fontSize: 20, margin: 0 }}>Relatório de Chamados</h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <div style={{ fontSize: 12, color: '#71717a' }}>
-                    {systemProfile === 'VIEWER' ? 'Seus registros' : 'Total de Registros'}: {
-                      requests.filter(r => {
-                        if (r.status === 'PENDENTE') return false;
-                        if (systemProfile === 'VIEWER') return r?.requester?.id === currentUser?.id;
-                        return true;
-                      }).length
-                    }
-                  </div>
+              <h2 style={{ color: 'white', fontSize: 20, margin: 0, marginBottom: 12 }}>Relatório de Chamados</h2>
+              {/* Header: Total à esquerda, Personalizar Colunas + Baixar à direita */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, position: 'relative' }}>
+                <div style={{ fontSize: 12, color: '#71717a' }}>
+                  {systemProfile === 'VIEWER' ? 'Seus registros' : 'Total de Registros'}: {
+                    requests.filter(r => {
+                      if (r.status === 'PENDENTE') return false;
+                      if (systemProfile === 'VIEWER') return r?.requester?.id === currentUser?.id;
+                      return true;
+                    }).length
+                  }
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilterPanel(prev => !prev)}
+                    className="input-base"
+                    style={{ height: 40, background: '#18181b', fontSize: 12, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #27272a', borderRadius: 8, cursor: 'pointer', color: '#e4e4e7' }}
+                  >
+                    <Settings size={14} color="#0EA5E9" /> Personalizar Colunas
+                  </button>
                   {systemProfile === 'SUPER_ADMIN' && (
                     <button
                       onClick={() => setShowExportModal(true)}
                       style={{
-                        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+                        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', height: 40,
                         background: 'rgba(56, 189, 248, 0.2)', border: '1px solid #0EA5E9',
                         color: '#38BDF8', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer'
                       }}
@@ -2380,85 +2389,6 @@ export default function App() {
                       <Download size={14} /> Baixar Relatório
                     </button>
                   )}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-start', marginBottom: 20 }}>
-                {/* BUSCA */}
-                <div style={{ flex: '1 1 200px', minWidth: 0 }}>
-                  <input
-                    type="text"
-                    placeholder={systemProfile === 'VIEWER' ? "Buscar em seus pedidos..." : "Buscar por nome do solicitante ou ID..."}
-                    className="input-base"
-                    style={{ padding: '8px 16px', background: '#18181b', width: '100%', height: 40, borderRadius: 8, boxSizing: 'border-box' }}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-                {/* FILTRO CATEGORIA */}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {(['ALL', 'GESTAO_PESSOAS', 'GESTAO_ACESSOS', 'TI_INFRA'] as const).map(f => (
-                    <button
-                      key={f}
-                      onClick={() => setReportCategoryFilter(f)}
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        border: 'none',
-                        transition: 'all 0.2s',
-                        background: reportCategoryFilter === f ? (f === 'TI_INFRA' ? 'rgba(251, 191, 36, 0.2)' : f === 'GESTAO_ACESSOS' ? 'rgba(34, 197, 94, 0.2)' : f === 'GESTAO_PESSOAS' ? 'rgba(167, 139, 250, 0.2)' : '#27272a') : 'transparent',
-                        color: reportCategoryFilter === f ? (f === 'TI_INFRA' ? '#fbbf24' : f === 'GESTAO_ACESSOS' ? '#22c55e' : f === 'GESTAO_PESSOAS' ? '#38BDF8' : 'white') : '#71717a',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {f === 'ALL' ? 'Todos' : f === 'GESTAO_PESSOAS' ? 'Pessoas' : f === 'GESTAO_ACESSOS' ? 'Acessos' : 'Infra'}
-                    </button>
-                  ))}
-                </div>
-                <span style={{ fontSize: 11, color: '#94A3B8', whiteSpace: 'nowrap' }}>De</span>
-                <input
-                  type="date"
-                  value={reportPeriodStart}
-                  onChange={e => setReportPeriodStart(e.target.value)}
-                  className="input-base"
-                  style={{ height: 40, background: '#18181b', fontSize: 12, cursor: 'pointer', minWidth: 130 }}
-                />
-                <span style={{ fontSize: 11, color: '#94A3B8', whiteSpace: 'nowrap' }}>Até</span>
-                <input
-                  type="date"
-                  value={reportPeriodEnd}
-                  onChange={e => setReportPeriodEnd(e.target.value)}
-                  className="input-base"
-                  title="Até"
-                  style={{ height: 40, background: '#18181b', fontSize: 12, cursor: 'pointer', minWidth: 130 }}
-                />
-                <button
-                  onClick={applyReportFilters}
-                  style={{ height: 40, padding: '0 16px', background: '#3f3f46', border: '1px solid #52525b', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                >
-                  Filtrar
-                </button>
-                <select
-                  className="input-base"
-                  style={{ height: 40, background: '#18181b', fontSize: 12, padding: '0 10px', minWidth: 140 }}
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
-                >
-                  <option value="ALL">Status: Todos</option>
-                  <option value="PENDENTE">Ação Pendente</option>
-                  <option value="APROVADO">Concluído / Aprovado</option>
-                  <option value="REPROVADO">Recusado / Reprovado</option>
-                </select>
-                <div style={{ position: 'relative', flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowFilterPanel(prev => !prev)}
-                    className="input-base"
-                    style={{ height: 40, background: '#18181b', fontSize: 12, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #27272a' }}
-                  >
-                    <Settings size={14} color="#0EA5E9" /> Personalizar filtro
-                  </button>
                   {showFilterPanel && (
                     <div style={{
                       position: 'absolute', top: '100%', right: 0, marginTop: 8, zIndex: 100,
@@ -2485,6 +2415,72 @@ export default function App() {
                     </div>
                   )}
                 </div>
+              </div>
+              {/* Barra de filtros: uma linha horizontal (nowrap; wrap em &lt;1024px via CSS) */}
+              <div className="report-filters-bar" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                <input
+                  type="text"
+                  placeholder={systemProfile === 'VIEWER' ? "Buscar em seus pedidos..." : "Buscar por nome do solicitante ou ID..."}
+                  className="input-base"
+                  style={{ minWidth: 180, flex: 1, height: 40, padding: '8px 12px', background: '#18181b', fontSize: 12, borderRadius: 8, boxSizing: 'border-box' }}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <input
+                  type="date"
+                  placeholder="De"
+                  value={reportPeriodStart}
+                  onChange={e => setReportPeriodStart(e.target.value)}
+                  className="input-base"
+                  title="De"
+                  style={{ width: 130, flexShrink: 0, height: 40, background: '#18181b', fontSize: 12, cursor: 'pointer' }}
+                />
+                <input
+                  type="date"
+                  value={reportPeriodEnd}
+                  onChange={e => setReportPeriodEnd(e.target.value)}
+                  className="input-base"
+                  placeholder="Até"
+                  title="Até"
+                  style={{ width: 130, flexShrink: 0, height: 40, background: '#18181b', fontSize: 12, cursor: 'pointer' }}
+                />
+                <select
+                  className="input-base"
+                  style={{ width: 130, flexShrink: 0, height: 40, background: '#18181b', fontSize: 12, padding: '0 10px' }}
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                >
+                  <option value="ALL">Status: Todos</option>
+                  <option value="PENDENTE">Ação Pendente</option>
+                  <option value="APROVADO">Concluído / Aprovado</option>
+                  <option value="REPROVADO">Recusado / Reprovado</option>
+                </select>
+                {(['ALL', 'GESTAO_PESSOAS', 'GESTAO_ACESSOS', 'TI_INFRA'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setReportCategoryFilter(f)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      border: 'none',
+                      transition: 'all 0.2s',
+                      background: reportCategoryFilter === f ? (f === 'TI_INFRA' ? 'rgba(251, 191, 36, 0.2)' : f === 'GESTAO_ACESSOS' ? 'rgba(34, 197, 94, 0.2)' : f === 'GESTAO_PESSOAS' ? 'rgba(167, 139, 250, 0.2)' : '#27272a') : 'transparent',
+                      color: reportCategoryFilter === f ? (f === 'TI_INFRA' ? '#fbbf24' : f === 'GESTAO_ACESSOS' ? '#22c55e' : f === 'GESTAO_PESSOAS' ? '#38BDF8' : 'white') : '#71717a',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {f === 'ALL' ? 'Todos' : f === 'GESTAO_PESSOAS' ? 'Pessoas' : f === 'GESTAO_ACESSOS' ? 'Acessos' : 'Infra'}
+                  </button>
+                ))}
+                <button
+                  onClick={applyReportFilters}
+                  style={{ height: 40, padding: '0 16px', flexShrink: 0, background: '#3f3f46', border: '1px solid #52525b', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Filtrar
+                </button>
               </div>
 
               <div className="card-base" style={{ padding: 0, overflowX: 'auto' }}>
