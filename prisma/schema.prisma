@@ -31,10 +31,12 @@ model Department {
 model Role {
   id           String        @id @default(uuid())
   name         String
-  code         String?       @unique  // Ex: KBS-BO-1 (Código do cargo no board)
+  code         String?       // Ex: KBS-BO-1 (Código do cargo no board); mesmo código pode existir em departamentos diferentes
   departmentId String
   department   Department    @relation(fields: [departmentId], references: [id])
   kitItems     RoleKitItem[]
+
+  @@unique([code, departmentId]) // mesmo KBS em departamentos diferentes permitido; duplicata no mesmo departamento impedida
 }
 
 model RoleKitItem {
