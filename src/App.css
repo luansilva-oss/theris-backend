@@ -519,16 +519,57 @@ html {
   margin-bottom: 24px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 0;
 }
-.dashboard-personal-block-title {
-  font-size: 18px;
-  font-weight: 700;
+.dashboard-personal-block-section {
+  margin-bottom: 24px;
+}
+.dashboard-personal-block-section:last-child {
+  margin-bottom: 0;
+}
+.dashboard-personal-block-section.card-base {
+  padding: 24px;
+  border: 1px solid #27272a;
+}
+
+/* Grid compacto do perfil: 3 colunas → 2 em <1024px → 1 em <768px */
+.dashboard-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.dashboard-profile-field {
+  min-width: 0;
+}
+.dashboard-profile-label {
+  font-size: 11px;
+  color: #71717a;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.dashboard-profile-value {
+  font-weight: 600;
+  color: #f4f4f5;
+  font-size: 14px;
+}
+.dashboard-profile-value a {
   color: #38BDF8;
-  margin: 0 0 8px 0;
-  padding-bottom: 16px;
-  border-bottom: 1px solid rgba(56, 189, 248, 0.2);
-  letter-spacing: 0.5px;
+  text-decoration: none;
+}
+.dashboard-profile-grid-wrap.card-base {
+  padding: 24px;
+  border: 1px solid #27272a;
+}
+
+@media (max-width: 1023px) {
+  .dashboard-profile-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 767px) {
+  .dashboard-profile-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* --- DASHBOARD GRID (Estilo Bento) --- */

@@ -442,6 +442,8 @@ export default function App() {
   const [viewerKitTools, setViewerKitTools] = useState<{ id: string; toolName: string; toolCode: string; accessLevelDesc: string }[]>([]);
   /** Painel Viewer: acessos extraordinários (tabela Access com isExtraordinary) */
   const [viewerExtraordinaryTools, setViewerExtraordinaryTools] = useState<{ id: string; toolName: string; levelLabel: string }[]>([]);
+  /** Dashboard ADMIN/SUPER_ADMIN: AEX do usuário logado (GET my-tickets + filter tipo AEX) */
+  const [dashboardAexTickets, setDashboardAexTickets] = useState<Request[]>([]);
 
   // NOTIFICAÇÕES E CONFIRMAÇÕES
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -722,6 +724,24 @@ export default function App() {
         setViewerKitTools([]);
         setViewerExtraordinaryTools([]);
       });
+  }, [isLoggedIn, systemProfile, activeTab, currentUser?.id]);
+
+  /** Carrega AEX do usuário logado para o bloco AEX no Dashboard (ADMIN/SUPER_ADMIN) */
+  useEffect(() => {
+    const isAdminOrSuper = systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN';
+    if (!isLoggedIn || !isAdminOrSuper || activeTab !== 'DASHBOARD' || !currentUser?.id) {
+      if (!isAdminOrSuper) setDashboardAexTickets([]);
+      return;
+    }
+    const headers: HeadersInit = { 'x-user-id': currentUser.id };
+    fetch(`${API_URL}/api/solicitacoes/my-tickets`, { headers })
+      .then((res) => res.ok ? res.json() : [])
+      .then((list: Request[]) => {
+        const aexTypes = ['ACCESS_TOOL_EXTRA', 'EXTRAORDINARIO'];
+        const aex = list.filter((r) => aexTypes.includes(r.type) && r.status === 'APROVADO');
+        setDashboardAexTickets(aex);
+      })
+      .catch(() => setDashboardAexTickets([]));
   }, [isLoggedIn, systemProfile, activeTab, currentUser?.id]);
 
   const loadChamadoDetail = async () => {
@@ -1402,59 +1422,50 @@ export default function App() {
           {/* CONTEÚDO PADRÃO (quando não está em /collaborators/:id) */}
           {!collaboratorId && activeTab === 'DASHBOARD' && (
             <>
-              {/* Bloco pessoal – mesmo conteúdo do Meu Painel do Viewer; só ADMIN e SUPER_ADMIN */}
+              {/* Bloco pessoal – hierarquia: Header, Meu Perfil, KBU, KBS, AEX; só ADMIN e SUPER_ADMIN */}
               {(systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN') && currentUser && (
                 <div className="dashboard-personal-block">
-                  <h2 className="dashboard-personal-block-title">Minha Visão</h2>
-                  {/* Card Meu perfil (reutiliza estrutura do Meu Painel do Viewer) */}
-                  <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
-                    <h3 style={{ color: '#38BDF8', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Users size={18} /> Meu perfil
+                  {/* 1. Header: Olá, [Nome] + data atual */}
+                  <div className="dashboard-personal-block-section">
+                    <h1 style={{ fontSize: '28px', color: 'white', margin: 0, marginBottom: 4 }}>Olá, {currentUser.name?.split(' ')[0] ?? 'Usuário'}</h1>
+                    <p style={{ color: '#94a3b8', margin: 0, fontSize: 14 }}>{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  </div>
+
+                  {/* 2. Meu Perfil: grid compacto 3 colunas */}
+                  <div className="dashboard-personal-block-section card-base dashboard-profile-grid-wrap">
+                    <h3 style={{ color: '#38BDF8', marginBottom: 12, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Users size={18} /> Meu Perfil
                     </h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-                        <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg, #0284C7 0%, #0EA5E9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: 'white' }}>
-                          {(currentUser.name || '?').charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 18, fontWeight: 600, color: 'white', marginBottom: 4 }}>{currentUser.name || '—'}</div>
-                          <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: (currentUser as { isActive?: boolean }).isActive !== false ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: (currentUser as { isActive?: boolean }).isActive !== false ? '#22c55e' : '#ef4444' }}>
-                            {(currentUser as { isActive?: boolean }).isActive !== false ? 'Ativo' : 'Inativo'}
-                          </span>
-                        </div>
+                    <div className="dashboard-profile-grid">
+                      <div className="dashboard-profile-field">
+                        <div className="dashboard-profile-label">Cargo</div>
+                        <div className="dashboard-profile-value">{(currentUser as { role?: { name: string } }).role?.name || currentUser.jobTitle || '—'}</div>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
-                        <div>
-                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Cargo</div>
-                          <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{(currentUser as { role?: { name: string } }).role?.name || currentUser.jobTitle || '—'}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Departamento</div>
-                          <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{userDeptName(currentUser) || '—'}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Unidade</div>
-                          <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{(currentUser as { unitRef?: { name: string } }).unitRef?.name || '—'}</div>
-                        </div>
-                        {(currentUser as { role?: { code: string | null } }).role?.code && (
-                          <div>
-                            <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>KBS code</div>
-                            <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{((currentUser as { role?: { code: string } }).role?.code || '').split(/\s+e\s+/)[0]?.trim() || (currentUser as { role?: { code: string } }).role?.code}</div>
-                          </div>
-                        )}
-                        <div>
-                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>E-mail</div>
-                          <a href={`mailto:${currentUser.email}`} style={{ color: '#38BDF8', textDecoration: 'none' }}>{currentUser.email || '—'}</a>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Gestor direto</div>
-                          <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.manager?.name || '—'}</div>
-                        </div>
+                      <div className="dashboard-profile-field">
+                        <div className="dashboard-profile-label">Departamento</div>
+                        <div className="dashboard-profile-value">{userDeptName(currentUser) || '—'}</div>
+                      </div>
+                      <div className="dashboard-profile-field">
+                        <div className="dashboard-profile-label">Unidade</div>
+                        <div className="dashboard-profile-value">{(currentUser as { unitRef?: { name: string } }).unitRef?.name || '—'}</div>
+                      </div>
+                      <div className="dashboard-profile-field">
+                        <div className="dashboard-profile-label">KBS Code</div>
+                        <div className="dashboard-profile-value">{((currentUser as { role?: { code: string | null } }).role?.code || '').split(/\s+e\s+/)[0]?.trim() || (currentUser as { role?: { code: string } }).role?.code || '—'}</div>
+                      </div>
+                      <div className="dashboard-profile-field">
+                        <div className="dashboard-profile-label">E-mail</div>
+                        <div className="dashboard-profile-value"><a href={`mailto:${currentUser.email}`} style={{ color: '#38BDF8', textDecoration: 'none' }}>{currentUser.email || '—'}</a></div>
+                      </div>
+                      <div className="dashboard-profile-field">
+                        <div className="dashboard-profile-label">Gestor</div>
+                        <div className="dashboard-profile-value">{currentUser.manager?.name || '—'}</div>
                       </div>
                     </div>
                   </div>
-                  {/* KBU – Kit Básico Universal (mesmo conteúdo do Meu Painel) */}
-                  <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+
+                  {/* 3. KBU – Kit Básico Universal (uma única instância) */}
+                  <div className="dashboard-personal-block-section card-base">
                     <h3 style={{ color: '#38BDF8', marginBottom: 8, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Layers size={18} /> KBU – Kit Básico Universal
                     </h3>
@@ -1469,10 +1480,11 @@ export default function App() {
                       </ul>
                     )}
                   </div>
-                  {/* Meu Kit Básico (mesma tabela do Meu Painel do Viewer) */}
-                  <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+
+                  {/* 4. KBS – Meu Kit Básico */}
+                  <div className="dashboard-personal-block-section card-base">
                     <h3 style={{ color: '#22c55e', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Layers size={18} /> Meu Kit Básico
+                      <Layers size={18} /> KBS – Meu Kit Básico
                     </h3>
                     {viewerKitTools.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: '32px 24px', color: '#71717a', fontSize: 14, lineHeight: 1.5 }}>
@@ -1507,36 +1519,82 @@ export default function App() {
                       </div>
                     )}
                   </div>
+
+                  {/* 5. AEX – Acessos Extraordinários (ADMIN e SUPER_ADMIN apenas) */}
+                  <div className="dashboard-personal-block-section card-base">
+                    <h3 style={{ color: '#38BDF8', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Timer size={18} /> AEX – Acessos Extraordinários
+                    </h3>
+                    {dashboardAexTickets.length === 0 ? (
+                      <p style={{ textAlign: 'center', padding: '24px 16px', color: '#71717a', fontSize: 14, margin: 0 }}>Nenhum acesso extraordinário ativo no momento.</p>
+                    ) : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid #27272a', textAlign: 'left' }}>
+                              <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Ferramenta</th>
+                              <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Status</th>
+                              <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Data de solicitação</th>
+                              <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Data de expiração</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashboardAexTickets.map((r) => {
+                              const toolName = (r as Request & { toolName?: string }).toolName ?? (() => {
+                                try {
+                                  const d = typeof r.details === 'string' ? JSON.parse(r.details || '{}') : r.details;
+                                  return d?.toolName ?? d?.tool ?? d?.ferramenta ?? '—';
+                                } catch { return '—'; }
+                              })();
+                              const created = new Date(r.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                              const days = (r as Request & { accessPeriodDays?: number }).accessPeriodDays;
+                              const expiresAt = days != null ? new Date(new Date(r.createdAt).getTime() + days * 24 * 60 * 60 * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+                              return (
+                                <tr key={r.id} style={{ borderBottom: '1px solid #1f1f22' }}>
+                                  <td style={{ padding: '14px 16px', color: '#e4e4e7', fontWeight: 500 }}>{toolName}</td>
+                                  <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{getStatusLabel(r.status)}</td>
+                                  <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{created}</td>
+                                  <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{expiresAt}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
               <div className="bento-grid fade-in">
-              <div className="card-base cell-hero" style={{ background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)', borderColor: '#334155' }}>
-                <h1 style={{ fontSize: '28px', color: 'white', marginBottom: 10 }}>Olá, {currentUser?.name.split(' ')[0]}</h1>
-                <p style={{ color: '#94a3b8' }}>Painel de controle operacional ativo.</p>
-              </div>
-
-              <div className="card-base cell-date">
-                <div style={{ fontSize: '42px', fontWeight: 800, color: 'white' }}>{new Date().getDate()}</div>
-                <div style={{ fontSize: '12px', textTransform: 'uppercase', color: '#a1a1aa' }}>{new Date().toLocaleDateString('pt-BR', { month: 'short' })}</div>
-              </div>
-
-              {/* KBU – Kit Básico Universal (todos os perfis no Meu Painel) */}
-              <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
-                <h3 style={{ color: '#38BDF8', marginBottom: 8, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Layers size={18} /> KBU – Kit Básico Universal
-                </h3>
-                <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 16, lineHeight: 1.5 }}>Este é o kit de ferramentas padrão de todos os colaboradores do Grupo 3C.</p>
-                {kbuTools.length === 0 ? (
-                  <p style={{ color: '#71717a', fontSize: 14 }}>Nenhuma ferramenta no KBU no momento.</p>
-                ) : (
-                  <ul style={{ margin: 0, paddingLeft: 20, color: '#e4e4e7', fontSize: 14, lineHeight: 1.8 }}>
-                    {kbuTools.map((f) => (
-                      <li key={f.id}>{f.nome}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              {/* Header + data e KBU só para VIEWER (ADMIN/SUPER_ADMIN têm no bloco Minha Visão) */}
+              {systemProfile === 'VIEWER' && (
+                <>
+                  <div className="card-base cell-hero" style={{ background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)', borderColor: '#334155' }}>
+                    <h1 style={{ fontSize: '28px', color: 'white', marginBottom: 10 }}>Olá, {currentUser?.name?.split(' ')[0]}</h1>
+                    <p style={{ color: '#94a3b8' }}>Painel de controle operacional ativo.</p>
+                  </div>
+                  <div className="card-base cell-date">
+                    <div style={{ fontSize: '42px', fontWeight: 800, color: 'white' }}>{new Date().getDate()}</div>
+                    <div style={{ fontSize: '12px', textTransform: 'uppercase', color: '#a1a1aa' }}>{new Date().toLocaleDateString('pt-BR', { month: 'short' })}</div>
+                  </div>
+                  <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+                    <h3 style={{ color: '#38BDF8', marginBottom: 8, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Layers size={18} /> KBU – Kit Básico Universal
+                    </h3>
+                    <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 16, lineHeight: 1.5 }}>Este é o kit de ferramentas padrão de todos os colaboradores do Grupo 3C.</p>
+                    {kbuTools.length === 0 ? (
+                      <p style={{ color: '#71717a', fontSize: 14 }}>Nenhuma ferramenta no KBU no momento.</p>
+                    ) : (
+                      <ul style={{ margin: 0, paddingLeft: 20, color: '#e4e4e7', fontSize: 14, lineHeight: 1.8 }}>
+                        {kbuTools.map((f) => (
+                          <li key={f.id}>{f.nome}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              )}
 
               {/* Viewer: meu perfil (card completo, igual CollaboratorDetails, sem botão Editar) */}
               {systemProfile === 'VIEWER' && currentUser && (
