@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import {
   LayoutDashboard, Server, FileText, LogOut, Bird,
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
-  Search, Lock, Layers, ChevronDown, ChevronRight,
+  Lock, Layers, ChevronDown, ChevronRight,
   Users, Building, Briefcase, // Ícone para Gestão de Pessoas
   Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare,   Filter, X, Download, Monitor
 } from 'lucide-react';
@@ -2382,30 +2382,28 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 8, marginBottom: 20, alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-start', marginBottom: 20 }}>
                 {/* BUSCA */}
-                <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 0 }}>
-                  <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#71717a' }} />
+                <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                   <input
                     type="text"
                     placeholder={systemProfile === 'VIEWER' ? "Buscar em seus pedidos..." : "Buscar por nome do solicitante ou ID..."}
                     className="input-base"
-                    style={{ paddingLeft: 40, background: '#18181b', width: '100%', height: 40 }}
+                    style={{ padding: '8px 16px', background: '#18181b', width: '100%', height: 40, borderRadius: 8, boxSizing: 'border-box' }}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                 </div>
                 {/* FILTRO CATEGORIA */}
-                <div style={{ display: 'flex', gap: 4, background: '#18181b', borderRadius: 8, padding: 4, border: '1px solid #27272a', height: 40, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {(['ALL', 'GESTAO_PESSOAS', 'GESTAO_ACESSOS', 'TI_INFRA'] as const).map(f => (
                     <button
                       key={f}
                       onClick={() => setReportCategoryFilter(f)}
                       style={{
-                        height: 32,
-                        padding: '0 12px',
-                        borderRadius: 6,
-                        fontSize: 11,
+                        padding: '8px 16px',
+                        borderRadius: 8,
+                        fontSize: 12,
                         fontWeight: 600,
                         border: 'none',
                         transition: 'all 0.2s',
