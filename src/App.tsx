@@ -695,10 +695,12 @@ export default function App() {
     if (isLoggedIn && (activeTab === 'TICKETS' || activeTab === 'MY_TICKETS')) loadTicketList();
   }, [isLoggedIn, activeTab, ticketCategoryTab]);
 
-  /** Carrega Meu Kit Básico e Acessos Extraordinários para perfil VIEWER no Dashboard */
+  /** Carrega Meu Kit Básico (e Acessos Extraordinários para VIEWER) no Dashboard: VIEWER usa no Meu Painel; ADMIN/SUPER_ADMIN usam no bloco Minha Visão */
   useEffect(() => {
-    if (!isLoggedIn || systemProfile !== 'VIEWER' || activeTab !== 'DASHBOARD' || !currentUser?.id) {
-      if (systemProfile !== 'VIEWER') {
+    const isViewer = systemProfile === 'VIEWER';
+    const isAdminOrSuper = systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN';
+    if (!isLoggedIn || activeTab !== 'DASHBOARD' || !currentUser?.id || (!isViewer && !isAdminOrSuper)) {
+      if (!isViewer && !isAdminOrSuper) {
         setViewerKitTools([]);
         setViewerExtraordinaryTools([]);
       }
@@ -710,10 +712,10 @@ export default function App() {
       .then((data) => {
         if (Array.isArray(data)) {
           setViewerKitTools(data);
-          setViewerExtraordinaryTools([]);
+          if (!isViewer) setViewerExtraordinaryTools([]);
         } else {
           setViewerKitTools(data.kitTools ?? []);
-          setViewerExtraordinaryTools(data.extraordinaryTools ?? []);
+          setViewerExtraordinaryTools(isViewer ? (data.extraordinaryTools ?? []) : []);
         }
       })
       .catch(() => {
@@ -997,6 +999,34 @@ export default function App() {
     } catch {
       showToast('Erro de rede.', 'error');
     }
+  };
+
+  const handleKbuRemoveFromModal = () => {
+    const item = kbuEditOwnerModal.id != null ? kbuTools.find(t => t.id === kbuEditOwnerModal.id) : null;
+    if (!item) return;
+    customConfirm({
+      title: 'Remover do KBU?',
+      message: `Remover "${item.nome}" do Kit Básico Universal?`,
+      isDestructive: true,
+      confirmLabel: 'Remover',
+      onConfirm: async () => {
+        try {
+          const headers: Record<string, string> = {};
+          if (currentUser?.id) headers['x-user-id'] = currentUser.id;
+          const res = await fetch(`${API_URL}/api/kbu/${item.id}`, { method: 'DELETE', headers });
+          if (res.ok) {
+            setKbuEditOwnerModal(prev => ({ ...prev, open: false }));
+            loadData();
+            showToast('Ferramenta removida do KBU.', 'success');
+          } else {
+            const data = await res.json().catch(() => ({}));
+            showToast(data?.error || 'Erro ao remover.', 'error');
+          }
+        } catch {
+          showToast('Erro de rede.', 'error');
+        }
+      }
+    });
   };
 
   const handleKbuRemove = async (item: KBUFerramenta) => {
@@ -1371,7 +1401,116 @@ export default function App() {
 
           {/* CONTEÚDO PADRÃO (quando não está em /collaborators/:id) */}
           {!collaboratorId && activeTab === 'DASHBOARD' && (
-            <div className="bento-grid fade-in">
+            <>
+              {/* Bloco pessoal – mesmo conteúdo do Meu Painel do Viewer; só ADMIN e SUPER_ADMIN */}
+              {(systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN') && currentUser && (
+                <div className="dashboard-personal-block">
+                  <h2 className="dashboard-personal-block-title">Minha Visão</h2>
+                  {/* Card Meu perfil (reutiliza estrutura do Meu Painel do Viewer) */}
+                  <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+                    <h3 style={{ color: '#38BDF8', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Users size={18} /> Meu perfil
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+                        <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg, #0284C7 0%, #0EA5E9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: 'white' }}>
+                          {(currentUser.name || '?').charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 18, fontWeight: 600, color: 'white', marginBottom: 4 }}>{currentUser.name || '—'}</div>
+                          <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: (currentUser as { isActive?: boolean }).isActive !== false ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)', color: (currentUser as { isActive?: boolean }).isActive !== false ? '#22c55e' : '#ef4444' }}>
+                            {(currentUser as { isActive?: boolean }).isActive !== false ? 'Ativo' : 'Inativo'}
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Cargo</div>
+                          <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{(currentUser as { role?: { name: string } }).role?.name || currentUser.jobTitle || '—'}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Departamento</div>
+                          <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{userDeptName(currentUser) || '—'}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Unidade</div>
+                          <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{(currentUser as { unitRef?: { name: string } }).unitRef?.name || '—'}</div>
+                        </div>
+                        {(currentUser as { role?: { code: string | null } }).role?.code && (
+                          <div>
+                            <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>KBS code</div>
+                            <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{((currentUser as { role?: { code: string } }).role?.code || '').split(/\s+e\s+/)[0]?.trim() || (currentUser as { role?: { code: string } }).role?.code}</div>
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>E-mail</div>
+                          <a href={`mailto:${currentUser.email}`} style={{ color: '#38BDF8', textDecoration: 'none' }}>{currentUser.email || '—'}</a>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 4 }}>Gestor direto</div>
+                          <div style={{ color: '#f4f4f5', fontWeight: 500 }}>{currentUser.manager?.name || '—'}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* KBU – Kit Básico Universal (mesmo conteúdo do Meu Painel) */}
+                  <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+                    <h3 style={{ color: '#38BDF8', marginBottom: 8, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Layers size={18} /> KBU – Kit Básico Universal
+                    </h3>
+                    <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 16, lineHeight: 1.5 }}>Este é o kit de ferramentas padrão de todos os colaboradores do Grupo 3C.</p>
+                    {kbuTools.length === 0 ? (
+                      <p style={{ color: '#71717a', fontSize: 14 }}>Nenhuma ferramenta no KBU no momento.</p>
+                    ) : (
+                      <ul style={{ margin: 0, paddingLeft: 20, color: '#e4e4e7', fontSize: 14, lineHeight: 1.8 }}>
+                        {kbuTools.map((f) => (
+                          <li key={f.id}>{f.nome}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  {/* Meu Kit Básico (mesma tabela do Meu Painel do Viewer) */}
+                  <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+                    <h3 style={{ color: '#22c55e', marginBottom: 16, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Layers size={18} /> Meu Kit Básico
+                    </h3>
+                    {viewerKitTools.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '32px 24px', color: '#71717a', fontSize: 14, lineHeight: 1.5 }}>
+                        Seu gestor ainda está configurando os acessos do seu cargo. Quando o kit básico for definido na Gestão de Pessoas, as ferramentas e níveis aparecerão aqui.
+                      </div>
+                    ) : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid #27272a', textAlign: 'left' }}>
+                              <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Ferramenta</th>
+                              <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Nível de Acesso</th>
+                              <th style={{ padding: '12px 16px', color: '#71717a', fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>Criticidade</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {viewerKitTools.map((row) => (
+                              <tr key={row.id} style={{ borderBottom: '1px solid #1f1f22' }}>
+                                <td style={{ padding: '14px 16px', color: '#e4e4e7', fontWeight: 500 }}>{row.toolName}</td>
+                                <td style={{ padding: '14px 16px', color: '#a1a1aa' }}>{(row as { levelLabel?: string }).levelLabel ?? row.accessLevelDesc}</td>
+                                <td style={{ padding: '14px 16px' }}>
+                                  {(row as { criticality?: string }).criticality ? (
+                                    <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
+                                      {(row as { criticality?: string }).criticality}
+                                    </span>
+                                  ) : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="bento-grid fade-in">
               <div className="card-base cell-hero" style={{ background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)', borderColor: '#334155' }}>
                 <h1 style={{ fontSize: '28px', color: 'white', marginBottom: 10 }}>Olá, {currentUser?.name.split(' ')[0]}</h1>
                 <p style={{ color: '#94a3b8' }}>Painel de controle operacional ativo.</p>
@@ -1380,6 +1519,23 @@ export default function App() {
               <div className="card-base cell-date">
                 <div style={{ fontSize: '42px', fontWeight: 800, color: 'white' }}>{new Date().getDate()}</div>
                 <div style={{ fontSize: '12px', textTransform: 'uppercase', color: '#a1a1aa' }}>{new Date().toLocaleDateString('pt-BR', { month: 'short' })}</div>
+              </div>
+
+              {/* KBU – Kit Básico Universal (todos os perfis no Meu Painel) */}
+              <div className="card-base" style={{ gridColumn: '1 / -1', padding: 24, border: '1px solid #27272a' }}>
+                <h3 style={{ color: '#38BDF8', marginBottom: 8, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Layers size={18} /> KBU – Kit Básico Universal
+                </h3>
+                <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 16, lineHeight: 1.5 }}>Este é o kit de ferramentas padrão de todos os colaboradores do Grupo 3C.</p>
+                {kbuTools.length === 0 ? (
+                  <p style={{ color: '#71717a', fontSize: 14 }}>Nenhuma ferramenta no KBU no momento.</p>
+                ) : (
+                  <ul style={{ margin: 0, paddingLeft: 20, color: '#e4e4e7', fontSize: 14, lineHeight: 1.8 }}>
+                    {kbuTools.map((f) => (
+                      <li key={f.id}>{f.nome}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               {/* Viewer: meu perfil (card completo, igual CollaboratorDetails, sem botão Editar) */}
@@ -1614,6 +1770,7 @@ export default function App() {
                 </div>
               </div>
             </div>
+            </>
           )}
 
           {/* GESTÃO DE PESSOAS INTERATIVA (LISTA EM CASCATA) */}
@@ -1714,21 +1871,16 @@ export default function App() {
                   <PlusCircle size={14} /> Adicionar ferramenta ao KBU
                 </button>
               )}
-              <div className="tools-wrapper">
+              <div className="kbu-grid">
                 {kbuTools.map((item) => (
-                  <div key={item.id} className="tool-tile kbu-tile">
-                    <span className="kbu-badge">Padrão Universal</span>
-                    <div className="tile-icon"><Server size={24} /></div>
-                    <div className="tile-info">
-                      <h3>{item.nome}</h3>
-                      <p>{item.owner ? `Responsável: ${item.owner}` : 'Sem responsável'}</p>
-                    </div>
-                    {systemProfile === 'SUPER_ADMIN' && (
-                      <div className="kbu-tile-actions">
-                        <button type="button" onClick={() => handleKbuOpenEditOwner(item)} className="btn-mini">Editar responsável</button>
-                        <button type="button" onClick={() => handleKbuRemove(item)} className="btn-mini kbu-btn-remove">Remover do KBU</button>
-                      </div>
-                    )}
+                  <div
+                    key={item.id}
+                    className="kbu-card"
+                    role={systemProfile === 'SUPER_ADMIN' ? 'button' : undefined}
+                    onClick={systemProfile === 'SUPER_ADMIN' ? () => handleKbuOpenEditOwner(item) : undefined}
+                  >
+                    <div className="kbu-card-name">{item.nome}</div>
+                    <span className="kbu-card-badge">Padrão Universal</span>
                   </div>
                 ))}
               </div>
@@ -3268,17 +3420,18 @@ export default function App() {
       )}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
 
-      {/* Modal Editar responsável KBU */}
+      {/* Modal KBU (SUPER_ADMIN): informações completas + editar responsável + Remover do KBU */}
       {kbuEditOwnerModal.open && (
         <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={() => setKbuEditOwnerModal(prev => ({ ...prev, open: false }))}>
           <div className="modal-content" style={{ maxWidth: '420px', padding: '24px' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: 600 }}>Editar responsável</h3>
+              <h3 style={{ color: 'white', margin: 0, fontSize: '18px', fontWeight: 600 }}>Ferramenta KBU</h3>
               <button type="button" onClick={() => setKbuEditOwnerModal(prev => ({ ...prev, open: false }))} className="btn-icon" aria-label="Fechar">
                 <X size={20} color="#71717a" />
               </button>
             </div>
-            <p style={{ color: '#a1a1aa', fontSize: '14px', marginBottom: '12px' }}>{kbuEditOwnerModal.nome}</p>
+            <p style={{ color: '#e4e4e7', fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>{kbuEditOwnerModal.nome}</p>
+            <label style={{ display: 'block', fontSize: 12, color: '#71717a', marginBottom: 6 }}>Responsável</label>
             <input
               type="text"
               placeholder="Nome ou e-mail do responsável"
@@ -3286,9 +3439,10 @@ export default function App() {
               onChange={e => setKbuEditOwnerInput(e.target.value)}
               style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', fontSize: 14, marginBottom: '20px', boxSizing: 'border-box' }}
             />
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setKbuEditOwnerModal(prev => ({ ...prev, open: false }))} className="btn-text" style={{ padding: '10px 20px', fontSize: '14px' }}>Cancelar</button>
-              <button type="button" onClick={handleKbuConfirmEditOwner} style={{ padding: '10px 20px', fontSize: '14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, background: '#0EA5E9', color: 'white' }}>Confirmar</button>
+              <button type="button" onClick={() => handleKbuRemoveFromModal()} style={{ padding: '10px 20px', fontSize: '14px', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.4)', cursor: 'pointer', fontWeight: 600, background: 'rgba(239, 68, 68, 0.1)', color: '#f87171' }}>Remover do KBU</button>
+              <button type="button" onClick={handleKbuConfirmEditOwner} style={{ padding: '10px 20px', fontSize: '14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, background: '#0EA5E9', color: 'white' }}>Salvar</button>
             </div>
           </div>
         </div>
