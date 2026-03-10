@@ -3139,7 +3139,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/" element={!isLoggedIn ? <LandingPage /> : <Navigate to="/dashboard" replace />} />
+      <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="*" element={renderNonLanding()} />
     </Routes>
   );
