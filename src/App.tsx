@@ -1930,20 +1930,20 @@ export default function App() {
                   />
                   <input
                     type="text"
-                    placeholder="Responsável: Nome (opcional)"
+                    placeholder="Nome do responsável"
                     value={newKbuOwnerNome}
                     onChange={(e) => setNewKbuOwnerNome(e.target.value)}
                     style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', minWidth: 140 }}
                   />
                   <input
                     type="text"
-                    placeholder="Responsável: E-mail (opcional)"
+                    placeholder="E-mail do responsável"
                     value={newKbuOwnerEmail}
                     onChange={(e) => setNewKbuOwnerEmail(e.target.value)}
                     style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', minWidth: 160 }}
                   />
                   <button type="button" onClick={handleKbuAdd} className="btn-mini" style={{ padding: '8px 16px' }}>Adicionar</button>
-                  <button type="button" onClick={() => { setShowAddKbuForm(false); setNewKbuNome(''); setNewKbuOwnerNome(''); setNewKbuOwnerEmail(''); }} style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 14 }}>Cancelar</button>
+                  <button type="button" onClick={() => { setShowAddKbuForm(false); setNewKbuNome(''); setNewKbuOwnerNome(''); setNewKbuOwnerEmail(''); }} className="btn-mini btn-mini-cancel" style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #334155', color: '#94A3B8' }}>Cancelar</button>
                 </div>
               )}
               {systemProfile === 'SUPER_ADMIN' && !showAddKbuForm && (
@@ -1955,14 +1955,16 @@ export default function App() {
                 {kbuTools.map((item) => (
                   <div
                     key={item.id}
-                    className="kbu-card"
+                    className="tool-tile"
                     role={systemProfile === 'SUPER_ADMIN' ? 'button' : undefined}
                     onClick={systemProfile === 'SUPER_ADMIN' ? () => handleKbuOpenEditOwner(item) : undefined}
+                    style={systemProfile !== 'SUPER_ADMIN' ? { cursor: 'default' } : undefined}
                   >
-                    <div className="kbu-card-name">{item.nome}</div>
-                    <span className="kbu-card-badge" title={item.ownerNome ?? 'Sem responsável'}>
-                      {item.ownerNome?.trim() ? item.ownerNome : 'Sem responsável'}
-                    </span>
+                    <div className="tile-icon"><Layers size={24} /></div>
+                    <div className="tile-info">
+                      <h3>{item.nome}</h3>
+                      <p>{item.ownerNome?.trim() || 'Sem responsável'}</p>
+                    </div>
                   </div>
                 ))}
               </div>

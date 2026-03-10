@@ -827,50 +827,24 @@ html {
   transform: translateY(-2px);
 }
 
-/* KBU – Catálogo: grid e cards somente leitura (clicável apenas para SUPER_ADMIN) */
+/* KBU – Catálogo: mesmo grid e estrutura dos cards de Sistemas Conectados (.tools-wrapper / .tool-tile) */
 .kbu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 20px;
   width: 100%;
 }
-.kbu-card {
+
+.kbu-grid .tool-tile:not([role="button"]):hover {
+  transform: none;
+  border-color: var(--border);
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
 }
-.kbu-card[role="button"] {
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.kbu-card[role="button"]:hover {
-  background: var(--bg-card-hover);
-  border-color: var(--primary);
-  transform: translateY(-2px);
-}
-.kbu-card-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: white;
-  margin: 0;
-}
-.kbu-card-badge {
-  font-size: 10px;
-  font-weight: 600;
-  color: #38BDF8;
-  background: rgba(56, 189, 248, 0.15);
-  padding: 2px 8px;
-  border-radius: 999px;
-  align-self: flex-start;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+/* Cancelar no form Adicionar KBU: mesmo tamanho/peso do Adicionar, estilo outline neutro */
+.btn-mini.btn-mini-cancel:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #52525b;
 }
 
 .tile-icon {
