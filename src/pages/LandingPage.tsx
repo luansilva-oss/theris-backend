@@ -1,43 +1,163 @@
+'use client';
 /**
- * Landing page institucional. Apenas conteúdo de marketing + botão "Entrar" que navega para /login.
- * Nenhum componente de login é importado ou renderizado aqui.
+ * Landing page — Theris IAM & RH.
+ * BackgroundCanvas usa useEffect + useRef (client-side).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Users, FileText, ExternalLink } from 'lucide-react';
 import './LandingPage.css';
 
 const DOC_URL = 'https://docs.google.com/document/d/1AY1-VBGEXMwO4aFTMEMFloM6jNPZGoSaeuId5xPUTBI/edit?tab=t.0';
 
-const PARTICLE_COUNT = 20;
+/* ── BackgroundCanvas: canvas animado (useEffect + useRef) ── */
+function BackgroundCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-function useParticles() {
-  return useMemo(() => {
-    return Array.from({ length: PARTICLE_COUNT }, (_, i) => ({
-      id: i,
-      left: Math.random() * 100,
-      top: Math.random() * 100,
-      delay: Math.random() * 5,
-      duration: 3 + Math.random() * 5,
-    }));
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let W: number, H: number;
+    const particles: Array<{
+      x: number;
+      y: number;
+      r: number;
+      vx: number;
+      vy: number;
+      alpha: number;
+      color: string;
+      reset: () => void;
+      update: () => void;
+      draw: () => void;
+    }> = [];
+
+    function resize() {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function drawGrid() {
+      const spacing = 60;
+      ctx.strokeStyle = 'rgba(56,189,248,0.04)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < W; x += spacing) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, H);
+        ctx.stroke();
+      }
+      for (let y = 0; y < H; y += spacing) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+    }
+
+    class Particle {
+      x = 0;
+      y = 0;
+      r = 0;
+      vx = 0;
+      vy = 0;
+      alpha = 0;
+      color = '';
+
+      reset() {
+        this.x = Math.random() * W;
+        this.y = Math.random() * H;
+        this.r = Math.random() * 1.5 + 0.5;
+        this.vx = (Math.random() - 0.5) * 0.3;
+        this.vy = (Math.random() - 0.5) * 0.3;
+        this.alpha = Math.random() * 0.5 + 0.1;
+        this.color = Math.random() > 0.5 ? '56,189,248' : '167,139,250';
+      }
+
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        if (this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${this.color},${this.alpha})`;
+        ctx.fill();
+      }
+    }
+
+    for (let i = 0; i < 80; i++) {
+      const p = new Particle();
+      p.reset();
+      particles.push(p);
+    }
+
+    let rafId: number;
+    function animate() {
+      ctx.clearRect(0, 0, W, H);
+      drawGrid();
+      const grad = ctx.createRadialGradient(W * 0.5, H * 0.3, 0, W * 0.5, H * 0.3, W * 0.5);
+      grad.addColorStop(0, 'rgba(56,189,248,0.04)');
+      grad.addColorStop(0.5, 'rgba(167,139,250,0.03)');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+      particles.forEach((p) => {
+        p.update();
+        p.draw();
+      });
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d < 100) {
+            ctx.strokeStyle = `rgba(56,189,248,${0.06 * (1 - d / 100)})`;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+      rafId = requestAnimationFrame(animate);
+    }
+    animate();
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      cancelAnimationFrame(rafId);
+    };
   }, []);
+
+  return <canvas id="bg-canvas" ref={canvasRef} className="landing-bg-canvas" aria-hidden />;
 }
+
+const FEATURES = [
+  { icon: '🏛️', title: 'Hierarquia Organizacional', desc: 'Estrutura de três níveis — Unidade, Departamento e Cargo — que reflete com precisão o organograma da empresa.', tag: 'Estrutura', iconClass: 'icon-cyan' },
+  { icon: '🔄', title: 'Pipeline de Pessoas', desc: 'Onboarding e offboarding automatizados via Slack. Ativação e desativação de colaboradores sem intervenção manual.', tag: 'Automação', iconClass: 'icon-purple' },
+  { icon: '🔐', title: 'Governança de Acessos', desc: 'Solicitação, aprovação e registro de acessos extraordinários com fluxo controlado pelo time de Segurança da Informação.', tag: 'Segurança', iconClass: 'icon-pink' },
+  { icon: '📦', title: 'Kit Básico por Cargo (KBS)', desc: 'Cada cargo carrega um conjunto padrão de ferramentas atribuídas automaticamente no momento do onboarding.', tag: 'IAM', iconClass: 'icon-cyan' },
+  { icon: '💬', title: 'Integração com Slack', desc: 'Comandos /pessoas e /acessos direto no Slack para disparar fluxos de RH e solicitar acessos em segundos.', tag: 'Integração', iconClass: 'icon-purple' },
+  { icon: '📋', title: 'Catálogo de Ferramentas', desc: 'Visibilidade total sobre quais ferramentas cada colaborador possui, com histórico de acessos extraordinários por usuário.', tag: 'Auditoria', iconClass: 'icon-pink' },
+];
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [navbarScrolled, setNavbarScrolled] = useState(false);
-  const particles = useParticles();
 
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'auto';
-    return () => { document.body.style.overflow = prev; };
-  }, []);
-
-  useEffect(() => {
-    const onScroll = () => setNavbarScrolled(window.scrollY > 40);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    return () => {
+      document.body.style.overflow = prev;
+    };
   }, []);
 
   const scrollTo = (id: string) => {
@@ -46,160 +166,88 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="landing-page" style={{ overflow: 'visible' }}>
-      {/* Partículas flutuantes */}
-      <div className="landing-particles" aria-hidden>
-        {particles.map((p) => (
-          <div
-            key={p.id}
-            className="landing-particle"
-            style={{
-              left: `${p.left}%`,
-              top: `${p.top}%`,
-              animationDelay: `${p.delay}s`,
-              animationDuration: `${p.duration}s`,
-            }}
-          />
-        ))}
-      </div>
+    <div className="landing-page">
+      <BackgroundCanvas />
 
-      {/* NAVBAR — full width, fixa */}
-      <nav className={`landing-nav ${navbarScrolled ? 'landing-nav--scrolled' : ''}`}>
-        <div className="landing-nav-inner">
-          <a href="#" className="landing-logo" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-            <img src="/favicon.png" alt="Theris" className="landing-logo-img" />
-            <span>THERIS</span>
-          </a>
-          <div className="landing-nav-links">
-            <button type="button" className="landing-nav-link" onClick={() => scrollTo('funcionalidades')}>Funcionalidades</button>
-            <button type="button" className="landing-nav-link" onClick={() => scrollTo('como-funciona')}>Como Funciona</button>
-            <button type="button" className="landing-nav-link" onClick={() => scrollTo('perfis')}>Perfis</button>
-            <button type="button" className="landing-nav-link" onClick={() => scrollTo('documentacao')}>Documentação</button>
-          </div>
-          <button type="button" className="landing-btn-entrar" onClick={() => navigate('/login')}>
-            Entrar
-          </button>
+      <nav className="landing-nav">
+        <div className="logo">Ther<span>is</span></div>
+        <div className="nav-links">
+          <a href="#features" onClick={(e) => { e.preventDefault(); scrollTo('features'); }}>Funcionalidades</a>
+          <a href="#cta" onClick={(e) => { e.preventDefault(); scrollTo('cta'); }}>Contato</a>
         </div>
+        <button type="button" className="btn-nav" onClick={() => navigate('/login')}>
+          Entrar
+        </button>
       </nav>
 
-      <section className="landing-hero">
-        <h1 className="landing-hero-title">
-          Sistema interno de{' '}
-          <span className="landing-gradient-text">Gestão de Identidades</span>
+      <section id="hero" className="landing-hero">
+        <div className="hero-badge">
+          <span className="badge-dot" aria-hidden />
+          IAM e RBAC · Grupo 3C
+        </div>
+        <h1>
+          Governança de<br />
+          <span className="glow-text">Identidades &amp; Pessoas</span>
+          <br />
+          em um só lugar.
         </h1>
-        <p className="landing-hero-sub">
-          Controle de acessos, aprovações e auditoria do Grupo 3C em um só lugar.
+        <p className="hero-sub">
+          O Theris unifica controle de acessos, gestão de colaboradores e automação de RH — com rastreabilidade total e integração nativa ao Slack.
         </p>
-        <button
-          type="button"
-          className="landing-btn-entrar landing-hero-cta"
-          onClick={() => navigate('/login')}
-        >
-          Acessar o Sistema →
-        </button>
+        <div className="hero-actions">
+          <a href="#features" className="btn-ghost" onClick={(e) => { e.preventDefault(); scrollTo('features'); }}>
+            Conhecer Funcionalidades
+          </a>
+        </div>
+        <div className="stats">
+          <div className="stat-item"><div className="stat-num">3</div><div className="stat-label">Níveis hierárquicos</div></div>
+          <div className="stat-item"><div className="stat-num">100%</div><div className="stat-label">Rastreabilidade de acessos</div></div>
+          <div className="stat-item"><div className="stat-num">0</div><div className="stat-label">Aprovações manuais perdidas</div></div>
+        </div>
       </section>
 
-      {/* FUNCIONALIDADES */}
-      <section id="funcionalidades" className="landing-section landing-section-func">
-        <p className="landing-label">FUNCIONALIDADES</p>
-        <h2 className="landing-section-title">
-          Um sistema completamente <span className="landing-gradient-text">integrado</span>
+      <div className="divider" aria-hidden />
+
+      <section id="features" className="landing-features">
+        <p className="section-label">O que o Theris oferece</p>
+        <h2 className="section-title">
+          Tudo que você precisa para<br />gerenciar acesso e pessoas
         </h2>
-        <p className="landing-section-lead">
-          Centralize identidades, acessos e aprovações com o Theris OS.
+        <p className="section-sub">
+          Do onboarding ao offboarding, do Kit Básico ao acesso extraordinário — o Theris cobre cada etapa com automação e auditoria.
         </p>
-        <div className="landing-cards-grid landing-cards-three">
-          {[
-            { icon: Lock, title: 'Controle de Acessos', desc: 'Gerencie quem tem acesso a quê. Kit Básico por cargo e Acessos Extraordinários com aprovação dupla.' },
-            { icon: Users, title: 'Gestão de Pessoas', desc: 'Onboarding, movimentações e desligamentos com automação completa e rastreabilidade total.' },
-            { icon: FileText, title: 'Auditoria Completa', desc: 'Histórico detalhado de todas as ações, relatórios CSV e conformidade com políticas de segurança.' },
-          ].map((item) => (
-            <div key={item.title} className="landing-card">
-              <div className="landing-card-icon">
-                <item.icon size={24} />
-              </div>
-              <h3>{item.title}</h3>
-              <p>{item.desc}</p>
+        <div className="cards">
+          {FEATURES.map((f) => (
+            <div key={f.title} className="card">
+              <div className={`card-icon ${f.iconClass}`}>{f.icon}</div>
+              <h3>{f.title}</h3>
+              <p>
+                {f.title === 'Integração com Slack' ? (
+                  <>Comandos <code>/pessoas</code> e <code>/acessos</code> direto no Slack para disparar fluxos de RH e solicitar acessos em segundos.</>
+                ) : (
+                  f.desc
+                )}
+              </p>
+              <span className="card-tag">{f.tag}</span>
             </div>
           ))}
         </div>
       </section>
 
-      {/* COMO FUNCIONA */}
-      <section id="como-funciona" className="landing-section landing-section-como">
-        <p className="landing-label">COMO FUNCIONA</p>
-        <h2 className="landing-section-title">
-          Do pedido ao acesso em minutos
-        </h2>
-        <div className="landing-steps-grid">
-          {[
-            { num: 1, title: 'Solicitação', desc: 'Colaborador solicita acesso via /acessos no Slack em segundos.' },
-            { num: 2, title: 'Aprovação Dupla', desc: 'Owner da ferramenta aprova via Slack. Time de SI aprova no painel.' },
-            { num: 3, title: 'Provisionamento', desc: 'Acesso concedido automaticamente no sistema. JumpCloud sincronizado.' },
-            { num: 4, title: 'Auditoria', desc: 'Tudo registrado: quem pediu, quem aprovou, quando e por quanto tempo.' },
-          ].map((step) => (
-            <div key={step.num} className="landing-step">
-              <h3>{step.title}</h3>
-              <p>{step.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* PERFIS */}
-      <section id="perfis" className="landing-section landing-section-perfis">
-        <p className="landing-label">PERFIS</p>
-        <h2 className="landing-section-title">
-          Perfis de Acesso
-        </h2>
-        <div className="landing-cards-grid landing-cards-four">
-          {[
-            { name: 'VIEWER', label: 'Colaborador padrão', desc: 'Visualiza seus acessos, acompanha chamados e solicita permissões extraordinárias.', color: '#64748B' },
-            { name: 'ADMIN', label: 'Gestores e Líderes', desc: 'Gerencia equipe, aprova chamados e configura estrutura organizacional.', color: '#0EA5E9' },
-            { name: 'SUPER_ADMIN', label: 'Time de SI', desc: 'Acesso total: aprovações, auditoria, relatórios e configurações do sistema.', color: '#7C3AED' },
-            { name: 'APPROVER', label: 'Owners de Ferramentas', desc: 'Aprova solicitações de Acesso Extraordinário para as ferramentas sob sua responsabilidade.', color: '#059669' },
-          ].map((profile) => (
-            <div
-              key={profile.name}
-              className="landing-profile-card"
-              style={{ ['--profile-color' as string]: profile.color }}
-            >
-              <div className="landing-profile-bar" />
-              <div className="landing-profile-badge">{profile.name}</div>
-              <h3>{profile.label}</h3>
-              <p>{profile.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* PROCEDIMENTO / DOCUMENTAÇÃO */}
-      <section id="documentacao" className="landing-section landing-section-doc">
-        <div className="landing-doc-wrap">
-          <div className="landing-doc-icon">
-            <FileText size={64} strokeWidth={1.5} />
-          </div>
-          <h2 className="landing-doc-title">Procedimento de Uso</h2>
-          <p className="landing-doc-lead">
-            Acesse o guia completo com instruções detalhadas para todos os perfis de usuário.
-          </p>
-          <a href={DOC_URL} target="_blank" rel="noopener noreferrer" className="landing-btn-doc">
-            Acessar Procedimento de Uso <ExternalLink size={20} />
+      <section id="cta" className="landing-cta">
+        <div className="cta-box">
+          <h2>
+            Pronto para levar a gestão<br />de acessos ao próximo nível?
+          </h2>
+          <p>Acesse a documentação oficial e aprenda a usar o Theris dentro do ecossistema do Grupo 3C.</p>
+          <a href={DOC_URL} target="_blank" rel="noopener noreferrer" className="btn-primary">
+            Acessar Documentação
           </a>
         </div>
       </section>
 
-      {/* FOOTER */}
       <footer className="landing-footer">
-        <div className="landing-footer-sep" />
-        <div className="landing-footer-inner">
-          <div className="landing-logo">
-            <img src="/favicon.png" alt="Theris" className="landing-logo-img" />
-            <span>THERIS OS</span>
-          </div>
-          <p className="landing-footer-copy">Grupo 3C © 2026</p>
-          <p className="landing-footer-dev">Desenvolvido pelo Time de Segurança da Informação</p>
-        </div>
+        Desenvolvido por <span>Theris · Grupo 3C</span> &nbsp;·&nbsp; Time de Segurança da Informação
       </footer>
     </div>
   );
