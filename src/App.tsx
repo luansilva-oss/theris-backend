@@ -31,7 +31,7 @@ import { CollaboratorDetails } from './pages/CollaboratorDetails';
 import { LoginAttempts } from './pages/LoginAttempts';
 import { ActiveSessions } from './pages/ActiveSessions';
 import LandingPage from './pages/LandingPage';
-import { useLocation, useParams, useNavigate, useSearchParams, Navigate } from 'react-router-dom';
+import { useLocation, useParams, useNavigate, useSearchParams, Navigate, Routes, Route } from 'react-router-dom';
 import { ToastContainer, Toast } from './components/ToastContainer';
 import { CustomConfirmModal } from './components/CustomConfirmModal';
 import { API_URL } from './config';
@@ -1105,11 +1105,10 @@ export default function App() {
   };
 
   // --- RENDER ---
-  // / → apenas LandingPage (institucional, sem login). /login → apenas tela de login (sem conteúdo da landing).
-  if (pathname === '/' && isLoggedIn) return <Navigate to="/dashboard" replace />;
-  if (pathname === '/' && !isLoggedIn) return <LandingPage />;
-  if (pathname === '/login' && isLoggedIn) return <Navigate to="/dashboard" replace />;
-  if (pathname === '/login' && !isLoggedIn) return (
+  // Rota / fora do layout: renderiza apenas LandingPage (ou redirect). Demais rotas em renderNonLanding.
+  const renderNonLanding = () => {
+    if (pathname === '/login' && isLoggedIn) return <Navigate to="/dashboard" replace />;
+    if (pathname === '/login' && !isLoggedIn) return (
     <div className="login-wrapper">
       <div className="login-marketing">
         <div className="marketing-content fade-in">
@@ -1208,9 +1207,9 @@ export default function App() {
       </div>
     </div>
   );
-  if (!isLoggedIn) return <Navigate to="/login" replace />;
+    if (!isLoggedIn) return <Navigate to="/login" replace />;
 
-  return (
+    return (
     <div className="app-layout">
       {/* SIDEBAR */}
       <aside className="sidebar">
@@ -3135,5 +3134,13 @@ export default function App() {
         confirmLabel={confirmConfig.confirmLabel}
       />
     </div >
+  );
+  };
+
+  return (
+    <Routes>
+      <Route path="/" element={!isLoggedIn ? <LandingPage /> : <Navigate to="/dashboard" replace />} />
+      <Route path="*" element={renderNonLanding()} />
+    </Routes>
   );
 }

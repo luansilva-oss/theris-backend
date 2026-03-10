@@ -27,19 +27,13 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Largura total: quebra herança de max-width/centering do pai (ex.: body flex + place-items: center) */
 .landing-page {
   background: var(--bg);
   color: var(--text);
   font-family: 'Inter', sans-serif;
   overflow-x: hidden;
-  width: 100vw;
-  min-width: 100vw;
+  width: 100%;
   min-height: 100vh;
-  /* Quebra qualquer max-width/centering do pai (ex.: body com display:flex; place-items:center) */
-  position: relative;
-  left: 50%;
-  margin-left: -50vw;
   box-sizing: border-box;
 }
 
