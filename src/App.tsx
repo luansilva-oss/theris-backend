@@ -125,6 +125,16 @@ interface Request {
   attachments?: RequestAttachment[];
 }
 
+interface KBUFerramenta {
+  id: string;
+  nome: string;
+  sigla?: string | null;
+  owner?: string | null;
+  ativo: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 type SystemProfile = 'SUPER_ADMIN' | 'ADMIN' | 'APPROVER' | 'VIEWER' | 'GESTOR';
 
 const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 Horas
@@ -307,6 +317,10 @@ export default function App() {
   const [roles, setRoles] = useState<any[]>([]); // Lista plana (derivada de units) para modais
 
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
+  const [kbuTools, setKbuTools] = useState<KBUFerramenta[]>([]);
+  const [showAddKbuForm, setShowAddKbuForm] = useState(false);
+  const [newKbuNome, setNewKbuNome] = useState('');
+  const [newKbuOwner, setNewKbuOwner] = useState('');
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
   const [expandedDept, setExpandedDept] = useState<string | null>(null);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
@@ -583,9 +597,10 @@ export default function App() {
     try {
       const headers: Record<string, string> = {};
       if (currentUser?.id) headers['x-user-id'] = currentUser.id;
-      const [resTools, resReqs] = await Promise.all([
+      const [resTools, resReqs, resKbu] = await Promise.all([
         fetch(`${API_URL}/api/tools`),
-        fetch(`${API_URL}/api/solicitacoes`, { headers })
+        fetch(`${API_URL}/api/solicitacoes`, { headers }),
+        fetch(`${API_URL}/api/kbu`)
       ]);
 
       if (resTools.ok) {
@@ -605,6 +620,7 @@ export default function App() {
         }
       }
       if (resReqs.ok) setRequests(await resReqs.json());
+      if (resKbu?.ok) setKbuTools(await resKbu.json());
 
       // Carrega usuários se estiver na aba de gestão ou Gestão de Chamados (para select Responsável)
       if (activeTab === 'PEOPLE' || activeTab === 'TICKETS') {
@@ -951,6 +967,76 @@ export default function App() {
         }
       }
     });
+  };
+
+  const handleKbuUpdateOwner = async (id: string, currentOwner: string) => {
+    const newOwner = window.prompt('Responsável (nome ou e-mail):', currentOwner || '');
+    if (newOwner === null) return;
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (currentUser?.id) headers['x-user-id'] = currentUser.id;
+      const res = await fetch(`${API_URL}/api/kbu/${id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ owner: newOwner.trim() || null })
+      });
+      if (res.ok) {
+        loadData();
+        showToast('Responsável atualizado.', 'success');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data?.error || 'Erro ao atualizar.', 'error');
+      }
+    } catch {
+      showToast('Erro de rede.', 'error');
+    }
+  };
+
+  const handleKbuRemove = async (item: KBUFerramenta) => {
+    if (!window.confirm(`Remover "${item.nome}" do Kit Básico Universal?`)) return;
+    try {
+      const headers: Record<string, string> = {};
+      if (currentUser?.id) headers['x-user-id'] = currentUser.id;
+      const res = await fetch(`${API_URL}/api/kbu/${item.id}`, { method: 'DELETE', headers });
+      if (res.ok) {
+        loadData();
+        showToast('Ferramenta removida do KBU.', 'success');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data?.error || 'Erro ao remover.', 'error');
+      }
+    } catch {
+      showToast('Erro de rede.', 'error');
+    }
+  };
+
+  const handleKbuAdd = async () => {
+    const nome = newKbuNome.trim();
+    if (!nome) {
+      showToast('Informe o nome da ferramenta.', 'warning');
+      return;
+    }
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (currentUser?.id) headers['x-user-id'] = currentUser.id;
+      const res = await fetch(`${API_URL}/api/kbu`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ nome, owner: newKbuOwner.trim() || null })
+      });
+      if (res.ok) {
+        setNewKbuNome('');
+        setNewKbuOwner('');
+        setShowAddKbuForm(false);
+        loadData();
+        showToast('Ferramenta adicionada ao KBU.', 'success');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data?.error || 'Erro ao adicionar.', 'error');
+      }
+    } catch {
+      showToast('Erro de rede.', 'error');
+    }
   };
 
   const handleDeleteUnit = async (unit: { id: string; name: string }) => {
@@ -1587,6 +1673,57 @@ export default function App() {
                   } : undefined}
                   onDeleteUnit={['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) ? handleDeleteUnit : undefined}
                 />
+              </div>
+            </div>
+          )}
+
+          {/* KBU — Kit Básico Universal (topo do Catálogo, visível para todos os perfis) */}
+          {!collaboratorId && activeTab === 'TOOLS' && !selectedTool && (
+            <div className="fade-in" style={{ marginBottom: 32 }}>
+              <h2 style={{ color: 'white', fontSize: 20, marginBottom: 12 }}>Kit Básico Universal (KBU)</h2>
+              <p style={{ color: '#94A3B8', fontSize: 14, marginBottom: 16 }}>Ferramentas padrão para todos os colaboradores.</p>
+              {systemProfile === 'SUPER_ADMIN' && showAddKbuForm && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+                  <input
+                    type="text"
+                    placeholder="Nome da ferramenta"
+                    value={newKbuNome}
+                    onChange={(e) => setNewKbuNome(e.target.value)}
+                    style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', minWidth: 180 }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Responsável (opcional)"
+                    value={newKbuOwner}
+                    onChange={(e) => setNewKbuOwner(e.target.value)}
+                    style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', minWidth: 160 }}
+                  />
+                  <button type="button" onClick={handleKbuAdd} className="btn-mini" style={{ padding: '8px 16px' }}>Adicionar</button>
+                  <button type="button" onClick={() => { setShowAddKbuForm(false); setNewKbuNome(''); setNewKbuOwner(''); }} style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 14 }}>Cancelar</button>
+                </div>
+              )}
+              {systemProfile === 'SUPER_ADMIN' && !showAddKbuForm && (
+                <button type="button" onClick={() => setShowAddKbuForm(true)} className="btn-mini" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <PlusCircle size={14} /> Adicionar ferramenta ao KBU
+                </button>
+              )}
+              <div className="tools-wrapper" style={{ marginBottom: 0 }}>
+                {kbuTools.map((item) => (
+                  <div key={item.id} className="tool-tile" style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', top: 8, right: 8, fontSize: 10, fontWeight: 600, color: '#38BDF8', background: 'rgba(56, 189, 248, 0.15)', padding: '2px 8px', borderRadius: 999 }}>Padrão Universal</span>
+                    <div className="tile-icon"><Server size={24} /></div>
+                    <div className="tile-info">
+                      <h3>{item.nome}</h3>
+                      <p style={{ fontSize: 12, color: '#64748b' }}>{item.owner ? `Responsável: ${item.owner}` : 'Sem responsável'}</p>
+                    </div>
+                    {systemProfile === 'SUPER_ADMIN' && (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                        <button type="button" onClick={() => handleKbuUpdateOwner(item.id, item.owner || '')} className="btn-mini" style={{ fontSize: 12, padding: '4px 10px' }}>Editar responsável</button>
+                        <button type="button" onClick={() => handleKbuRemove(item)} style={{ fontSize: 12, padding: '4px 10px', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 6, cursor: 'pointer' }}>Remover do KBU</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}

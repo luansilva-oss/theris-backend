@@ -6,12 +6,14 @@
     "dev:server": "npx tsx src/index.ts",
     "dev": "concurrently \"npm:dev:server\" \"vite\"",
     "build": "tsc && npx prisma generate",
-    "start": "node dist-server/index.js",
+    "build:prod": "npx prisma generate && npx vite build && npx tsc -p tsconfig.json && npx prisma migrate deploy && npx prisma db seed",
+    "start": "node dist/index.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "db:push": "npx prisma db push",
     "db:seed": "npx ts-node prisma/seed_master.ts",
-    "seed:master": "npx ts-node prisma/seed_master.ts"
+    "seed:master": "npx ts-node prisma/seed_master.ts",
+    "seed:kbu": "npx ts-node prisma/seed_kbu.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -49,7 +51,7 @@
     "vite": "^5.3.1"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed_master.ts"
+    "seed": "npx ts-node prisma/seed_master.ts"
   },
   "devDependencies": {
     "@types/dagre": "^0.7.53",

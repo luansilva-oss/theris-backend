@@ -16,9 +16,22 @@ function roleKey(unit: string, dept: string, job: string) {
   return `${unit}::${dept}::${job}`;
 }
 
+const KBU_NAMES = ['Ponto Mais', 'Convenia', 'Google Workspace', 'Slack', 'Simplybook', 'ClickUp', 'JumpCloud'];
+
 async function main() {
   if (!(prisma as any).unit) {
     throw new Error('Prisma client sem model Unit. Rode: npx prisma generate');
+  }
+
+  // Seed KBU (Kit Básico Universal) se a tabela estiver vazia (roda sempre que o seed é executado)
+  if ((prisma as any).kBUFerramenta) {
+    const kbuCount = await (prisma as any).kBUFerramenta.count();
+    if (kbuCount === 0) {
+      for (const nome of KBU_NAMES) {
+        await (prisma as any).kBUFerramenta.create({ data: { nome } });
+      }
+      console.log(`   KBU: ${KBU_NAMES.length} ferramentas criadas.`);
+    }
   }
 
   // PROTEÇÃO: não sobrescrever dados existentes (evita reset em produção a cada deploy).

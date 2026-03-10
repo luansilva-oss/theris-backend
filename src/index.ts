@@ -19,6 +19,7 @@ import {
 } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
+import { getKbu, putKbu, postKbu, deleteKbu } from './controllers/kbuController';
 import { getAllUsers, getMe, getUserById, getUserDetails, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
 import { resetCatalog, getLoginAttempts, getSessions, revokeSession, revokeAllSessions } from './controllers/adminController';
 import { checkSessionTimeout } from './middleware/sessionTimeout';
@@ -167,6 +168,11 @@ app.get('/api/audit-log', getAuditLog);
 // 2. Ferramentas
 app.get('/api/tools', getTools);
 app.get('/api/tools-and-levels', (_req: Request, res: Response) => res.json(getToolsAndLevelsMap()));
+
+app.get('/api/kbu', getKbu);
+app.put('/api/kbu/:id', putKbu);
+app.post('/api/kbu', postKbu);
+app.delete('/api/kbu/:id', deleteKbu);
 app.post('/api/tools', createTool);
 app.put('/api/tools/:id', updateTool); // Atualizar ferramenta (Grupo, Owner, Níveis)
 app.delete('/api/tools/:id', deleteTool); // EXCLUIR FERRAMENTA
@@ -215,7 +221,7 @@ app.patch('/api/solicitacoes/:id', updateSolicitacao);
 // ============================================================
 // --- SERVIR FRONTEND ---
 // ============================================================
-const frontendPath = path.resolve(__dirname, '../dist');
+const frontendPath = path.join(__dirname, 'client');
 app.use(express.static(frontendPath));
 
 app.get('*', (req, res) => {

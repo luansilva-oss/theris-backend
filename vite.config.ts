@@ -8,6 +8,6 @@ export default defineConfig({
     __VITE_API_URL__: JSON.stringify(process.env.VITE_API_URL || ''),
   },
   build: {
-    outDir: 'dist', // Pasta onde o site vai ser criado
+    outDir: 'dist/client', // Frontend separado do backend (backend em dist/)
   }
 })

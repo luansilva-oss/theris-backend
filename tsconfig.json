@@ -16,7 +16,7 @@
     // Configurações Relaxadas (para evitar erros de tipagem chatos)
     "strict": false,
     "noImplicitAny": false,
-    "outDir": "./dist-server",
+    "outDir": "./dist",
     "rootDir": "./src"
   },
   "include": [

@@ -249,6 +249,17 @@ model Session {
   createdAt    DateTime @default(now())
 }
 
+// Kit Básico Universal (KBU) — ferramentas padrão para todos os colaboradores
+model KBUFerramenta {
+  id        String   @id @default(uuid())
+  nome      String
+  sigla     String?
+  owner     String?  // Nome ou email do responsável
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // Log de tentativas de login (sem senhas/tokens)
 model LoginAttempt {
   id         String   @id @default(uuid())
