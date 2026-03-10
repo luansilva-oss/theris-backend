@@ -116,10 +116,12 @@ html {
   box-shadow: 0 0 14px var(--cyan-glow);
 }
 
-/* ── Hero ── */
-.landing-hero {
+/* ── Hero ── (min-height only; no fixed height so content is not cut on small screens) */
+.landing-hero,
+#hero {
   position: relative;
   z-index: 1;
+  height: auto;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -268,9 +270,12 @@ html {
 }
 
 /* ── Features ── */
-.landing-features {
+.landing-features,
+#features {
   position: relative;
   z-index: 1;
+  height: auto;
+  min-height: 0;
   padding: 7rem 4rem;
   max-width: 1200px;
   margin: 0 auto;
@@ -401,9 +406,12 @@ html {
 }
 
 /* ── CTA ── */
-.landing-cta {
+.landing-cta,
+#cta {
   position: relative;
   z-index: 1;
+  height: auto;
+  min-height: 0;
   text-align: center;
   padding: 6rem 2rem 8rem;
 }
