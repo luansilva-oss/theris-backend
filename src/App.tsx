@@ -1960,7 +1960,9 @@ export default function App() {
                     onClick={systemProfile === 'SUPER_ADMIN' ? () => handleKbuOpenEditOwner(item) : undefined}
                   >
                     <div className="kbu-card-name">{item.nome}</div>
-                    <span className="kbu-card-badge">Padrão Universal</span>
+                    <span className="kbu-card-badge" title={item.ownerNome ?? 'Sem responsável'}>
+                      {item.ownerNome?.trim() ? item.ownerNome : 'Sem responsável'}
+                    </span>
                   </div>
                 ))}
               </div>

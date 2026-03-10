@@ -867,6 +867,10 @@ html {
   padding: 2px 8px;
   border-radius: 999px;
   align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tile-icon {
