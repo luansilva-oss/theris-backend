@@ -25,12 +25,12 @@ export const putKbu = async (req: Request, res: Response) => {
   if (caller?.systemProfile !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Acesso negado. Apenas SUPER_ADMIN pode editar o KBU.' });
 
   const { id } = req.params;
-  const { nome, sigla, owner, ativo } = req.body;
+  const { nome, ownerNome, ownerEmail, ativo } = req.body;
   try {
-    const data: { nome?: string; sigla?: string; owner?: string; ativo?: boolean } = {};
+    const data: { nome?: string; ownerNome?: string | null; ownerEmail?: string | null; ativo?: boolean } = {};
     if (nome !== undefined) data.nome = nome;
-    if (sigla !== undefined) data.sigla = sigla;
-    if (owner !== undefined) data.owner = owner;
+    if (ownerNome !== undefined) data.ownerNome = ownerNome?.trim() || null;
+    if (ownerEmail !== undefined) data.ownerEmail = ownerEmail?.trim() || null;
     if (ativo !== undefined) data.ativo = ativo;
 
     const updated = await prisma.kBUFerramenta.update({
@@ -51,11 +51,16 @@ export const postKbu = async (req: Request, res: Response) => {
   const caller = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true } });
   if (caller?.systemProfile !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Acesso negado. Apenas SUPER_ADMIN pode editar o KBU.' });
 
-  const { nome, sigla, owner } = req.body;
+  const { nome, sigla, ownerNome, ownerEmail } = req.body;
   if (!nome || typeof nome !== 'string' || !nome.trim()) return res.status(400).json({ error: 'Campo nome é obrigatório.' });
   try {
     const created = await prisma.kBUFerramenta.create({
-      data: { nome: nome.trim(), sigla: sigla?.trim() || null, owner: owner?.trim() || null }
+      data: {
+        nome: nome.trim(),
+        sigla: sigla?.trim() || null,
+        ownerNome: ownerNome?.trim() || null,
+        ownerEmail: ownerEmail?.trim() || null
+      }
     });
     return res.status(201).json(created);
   } catch (error) {

@@ -129,7 +129,8 @@ interface KBUFerramenta {
   id: string;
   nome: string;
   sigla?: string | null;
-  owner?: string | null;
+  ownerNome?: string | null;
+  ownerEmail?: string | null;
   ativo: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -320,9 +321,9 @@ export default function App() {
   const [kbuTools, setKbuTools] = useState<KBUFerramenta[]>([]);
   const [showAddKbuForm, setShowAddKbuForm] = useState(false);
   const [newKbuNome, setNewKbuNome] = useState('');
-  const [newKbuOwner, setNewKbuOwner] = useState('');
-  const [kbuEditOwnerModal, setKbuEditOwnerModal] = useState<{ open: boolean; id: string | null; nome: string; currentOwner: string }>({ open: false, id: null, nome: '', currentOwner: '' });
-  const [kbuEditOwnerInput, setKbuEditOwnerInput] = useState('');
+  const [newKbuOwnerNome, setNewKbuOwnerNome] = useState('');
+  const [newKbuOwnerEmail, setNewKbuOwnerEmail] = useState('');
+  const [kbuEditOwnerModal, setKbuEditOwnerModal] = useState<{ open: boolean; id: string | null; nome: string; ownerNome: string; ownerEmail: string }>({ open: false, id: null, nome: '', ownerNome: '', ownerEmail: '' });
   const [expandedLevel, setExpandedLevel] = useState<string | null>(null);
   const [expandedDept, setExpandedDept] = useState<string | null>(null);
   const [expandedRole, setExpandedRole] = useState<string | null>(null);
@@ -994,8 +995,13 @@ export default function App() {
   };
 
   const handleKbuOpenEditOwner = (item: KBUFerramenta) => {
-    setKbuEditOwnerModal({ open: true, id: item.id, nome: item.nome, currentOwner: item.owner || '' });
-    setKbuEditOwnerInput(item.owner || '');
+    setKbuEditOwnerModal({
+      open: true,
+      id: item.id,
+      nome: item.nome,
+      ownerNome: item.ownerNome ?? '',
+      ownerEmail: item.ownerEmail ?? ''
+    });
   };
 
   const handleKbuConfirmEditOwner = async () => {
@@ -1006,11 +1012,15 @@ export default function App() {
       const res = await fetch(`${API_URL}/api/kbu/${kbuEditOwnerModal.id}`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify({ owner: kbuEditOwnerInput.trim() || null })
+        body: JSON.stringify({
+          nome: kbuEditOwnerModal.nome.trim(),
+          ownerNome: kbuEditOwnerModal.ownerNome.trim() || null,
+          ownerEmail: kbuEditOwnerModal.ownerEmail.trim() || null
+        })
       });
       if (res.ok) {
         loadData();
-        showToast('Responsável atualizado.', 'success');
+        showToast('Ferramenta KBU atualizada.', 'success');
         setKbuEditOwnerModal(prev => ({ ...prev, open: false }));
       } else {
         const data = await res.json().catch(() => ({}));
@@ -1079,11 +1089,16 @@ export default function App() {
       const res = await fetch(`${API_URL}/api/kbu`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ nome, owner: newKbuOwner.trim() || null })
+        body: JSON.stringify({
+          nome,
+          ownerNome: newKbuOwnerNome.trim() || null,
+          ownerEmail: newKbuOwnerEmail.trim() || null
+        })
       });
       if (res.ok) {
         setNewKbuNome('');
-        setNewKbuOwner('');
+        setNewKbuOwnerNome('');
+        setNewKbuOwnerEmail('');
         setShowAddKbuForm(false);
         loadData();
         showToast('Ferramenta adicionada ao KBU.', 'success');
@@ -1915,13 +1930,20 @@ export default function App() {
                   />
                   <input
                     type="text"
-                    placeholder="Responsável (opcional)"
-                    value={newKbuOwner}
-                    onChange={(e) => setNewKbuOwner(e.target.value)}
+                    placeholder="Responsável: Nome (opcional)"
+                    value={newKbuOwnerNome}
+                    onChange={(e) => setNewKbuOwnerNome(e.target.value)}
+                    style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', minWidth: 140 }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Responsável: E-mail (opcional)"
+                    value={newKbuOwnerEmail}
+                    onChange={(e) => setNewKbuOwnerEmail(e.target.value)}
                     style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', minWidth: 160 }}
                   />
                   <button type="button" onClick={handleKbuAdd} className="btn-mini" style={{ padding: '8px 16px' }}>Adicionar</button>
-                  <button type="button" onClick={() => { setShowAddKbuForm(false); setNewKbuNome(''); setNewKbuOwner(''); }} style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 14 }}>Cancelar</button>
+                  <button type="button" onClick={() => { setShowAddKbuForm(false); setNewKbuNome(''); setNewKbuOwnerNome(''); setNewKbuOwnerEmail(''); }} style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 14 }}>Cancelar</button>
                 </div>
               )}
               {systemProfile === 'SUPER_ADMIN' && !showAddKbuForm && (
@@ -3478,7 +3500,7 @@ export default function App() {
       )}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
 
-      {/* Modal KBU (SUPER_ADMIN): informações completas + editar responsável + Remover do KBU */}
+      {/* Modal KBU (SUPER_ADMIN): Nome da Ferramenta + Responsável (Nome e E-mail) + Cancelar / Remover do KBU / Salvar */}
       {kbuEditOwnerModal.open && (
         <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={() => setKbuEditOwnerModal(prev => ({ ...prev, open: false }))}>
           <div className="modal-content" style={{ maxWidth: '420px', padding: '24px' }} onClick={e => e.stopPropagation()}>
@@ -3488,18 +3510,33 @@ export default function App() {
                 <X size={20} color="#71717a" />
               </button>
             </div>
-            <p style={{ color: '#e4e4e7', fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>{kbuEditOwnerModal.nome}</p>
-            <label style={{ display: 'block', fontSize: 12, color: '#71717a', marginBottom: 6 }}>Responsável</label>
+            <label style={{ display: 'block', fontSize: 12, color: '#71717a', marginBottom: 6 }}>Nome da Ferramenta</label>
             <input
               type="text"
-              placeholder="Nome ou e-mail do responsável"
-              value={kbuEditOwnerInput}
-              onChange={e => setKbuEditOwnerInput(e.target.value)}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', fontSize: 14, marginBottom: '20px', boxSizing: 'border-box' }}
+              value={kbuEditOwnerModal.nome}
+              onChange={e => setKbuEditOwnerModal(prev => ({ ...prev, nome: e.target.value }))}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', fontSize: 14, marginBottom: '16px', boxSizing: 'border-box' }}
             />
+            <label style={{ display: 'block', fontSize: 12, color: '#71717a', marginBottom: 6 }}>Responsável</label>
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+              <input
+                type="text"
+                placeholder="Nome"
+                value={kbuEditOwnerModal.ownerNome}
+                onChange={e => setKbuEditOwnerModal(prev => ({ ...prev, ownerNome: e.target.value }))}
+                style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', fontSize: 14, boxSizing: 'border-box' }}
+              />
+              <input
+                type="text"
+                placeholder="E-mail"
+                value={kbuEditOwnerModal.ownerEmail}
+                onChange={e => setKbuEditOwnerModal(prev => ({ ...prev, ownerEmail: e.target.value }))}
+                style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 8, border: '1px solid #334155', background: '#1E293B', color: '#F0F9FF', fontSize: 14, boxSizing: 'border-box' }}
+              />
+            </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setKbuEditOwnerModal(prev => ({ ...prev, open: false }))} className="btn-text" style={{ padding: '10px 20px', fontSize: '14px' }}>Cancelar</button>
-              <button type="button" onClick={() => handleKbuRemoveFromModal()} style={{ padding: '10px 20px', fontSize: '14px', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.4)', cursor: 'pointer', fontWeight: 600, background: 'rgba(239, 68, 68, 0.1)', color: '#f87171' }}>Remover do KBU</button>
+              <button type="button" onClick={() => handleKbuRemoveFromModal()} style={{ padding: '10px 20px', fontSize: '14px', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.6)', cursor: 'pointer', fontWeight: 600, background: 'transparent', color: '#f87171' }}>Remover do KBU</button>
               <button type="button" onClick={handleKbuConfirmEditOwner} style={{ padding: '10px 20px', fontSize: '14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 600, background: '#0EA5E9', color: 'white' }}>Salvar</button>
             </div>
           </div>
