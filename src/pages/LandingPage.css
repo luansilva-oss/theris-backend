@@ -27,12 +27,20 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Largura total: quebra herança de max-width/centering do pai (ex.: body flex + place-items: center) */
 .landing-page {
   background: var(--bg);
   color: var(--text);
   font-family: 'Inter', sans-serif;
   overflow-x: hidden;
+  width: 100vw;
+  min-width: 100vw;
   min-height: 100vh;
+  /* Quebra qualquer max-width/centering do pai (ex.: body com display:flex; place-items:center) */
+  position: relative;
+  left: 50%;
+  margin-left: -50vw;
+  box-sizing: border-box;
 }
 
 /* ── BackgroundCanvas ── */
@@ -40,6 +48,12 @@ html {
 #bg-canvas {
   position: fixed;
   inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
   z-index: 0;
   pointer-events: none;
 }
