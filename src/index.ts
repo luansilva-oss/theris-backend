@@ -23,6 +23,7 @@ import { getKbu, putKbu, postKbu, deleteKbu } from './controllers/kbuController'
 import { getAllUsers, getMe, getUserById, getUserDetails, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
 import { resetCatalog, getLoginAttempts, getSessions, revokeSession, revokeAllSessions } from './controllers/adminController';
 import { checkSessionTimeout } from './middleware/sessionTimeout';
+import { requireAuth } from './middleware/auth';
 import * as structureController from './controllers/structureController';
 import { getAuditLog } from './controllers/auditLogController';
 import { syncStructureFromUsers } from './services/structureSync'; // Import sync service
@@ -104,36 +105,45 @@ app.use('/api/slack', slackReceiver.router);
 app.use(express.json({ limit: '15mb' }));
 
 // ============================================================
-// --- RATE LIMITING (auth: anti brute-force, por IP) ---
+// --- RATE LIMITING ---
 // ============================================================
-// Limite por IP: cada endereço tem sua própria cota. Apenas tentativas com erro (401, 429) consomem a cota.
+// Geral: 100 req/min por IP em todas as rotas /api
+const apiGeneralLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: { error: 'Muitas requisições. Tente novamente em um minuto.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip ?? req.socket?.remoteAddress ?? 'unknown',
+});
+app.use('/api', apiGeneralLimiter);
+
+// Auth: 300 req/15min por IP, só falhas contam (login/MFA)
 const authRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 min
-  max: 300, // 300 requisições por IP a cada 15 min (ambiente corporativo ~130 usuários)
-  skipSuccessfulRequests: true, // não conta tentativas bem-sucedidas no limite
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  skipSuccessfulRequests: true,
   message: { error: 'Muitas tentativas. Tente novamente em alguns minutos.' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip ?? req.socket?.remoteAddress ?? 'unknown', // explícito: conta por IP
+  keyGenerator: (req) => req.ip ?? req.socket?.remoteAddress ?? 'unknown',
 });
 app.use('/api/login', authRateLimiter);
 app.use('/api/auth', authRateLimiter);
 
 // ============================================================
-// --- ROTAS DE AUTENTICAÇÃO ---
+// --- ROTAS PÚBLICAS (sem autenticação) ---
 // ============================================================
 app.post('/api/login/google', googleLogin);
 app.post('/api/auth/send-mfa', sendMfa);
 app.post('/api/auth/verify-mfa', verifyMfa);
+app.get('/api/health', (_req: Request, res: Response) => res.json({ ok: true }));
 
 // ============================================================
-// --- SESSION TIMEOUT (60 min inatividade) — rotas autenticadas ---
+// --- AUTENTICAÇÃO GLOBAL /api (exceto rotas públicas acima) ---
 // ============================================================
-app.use((req, res, next) => {
-  const p = req.path;
-  if (p.startsWith('/api/login') || p.startsWith('/api/auth') || p.startsWith('/api/slack') || p.startsWith('/api/webhooks')) return next();
-  checkSessionTimeout(req, res, next);
-});
+// Valida x-user-id + sessão; anexa req.authUser (id, systemProfile). Não confiar em x-user-id sem sessão válida.
+app.use('/api', requireAuth);
 
 // ============================================================
 // --- ROTAS ADMINISTRATIVAS ---

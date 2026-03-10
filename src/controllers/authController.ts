@@ -149,8 +149,10 @@ export const googleLogin = async (req: Request, res: Response) => {
     }
 
     await logLoginAttempt({ req, email, success: true, userId: user.id });
+    // Nunca retornar mfaCode, mfaExpiresAt ou outros campos sensíveis
+    const { mfaCode, mfaExpiresAt, ...safeUser } = user as typeof user & { mfaCode?: string; mfaExpiresAt?: Date };
     return res.json({
-      user,
+      user: safeUser,
       profile: systemProfile,
       token: 'fake-jwt-token'
     });

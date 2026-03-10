@@ -189,9 +189,13 @@ export const migrateAndDeleteUnit = async (req: Request, res: Response) => {
     }
 };
 
-// GET /api/structure — estrutura completa Unit -> Department -> Role -> kitItems
-// O frontend espera obrigatoriamente: { units: Unit[] }
+// GET /api/structure — estrutura completa Unit -> Department -> Role -> kitItems (apenas ADMIN e SUPER_ADMIN)
 export const getStructure = async (req: Request, res: Response) => {
+    const authUser = (req as Request & { authUser?: { id: string; systemProfile: string } }).authUser;
+    const allowed = authUser && ['ADMIN', 'SUPER_ADMIN'].includes(authUser.systemProfile);
+    if (!allowed) {
+        return res.status(403).json({ error: 'Acesso negado. Apenas ADMIN ou SUPER_ADMIN podem acessar a estrutura.' });
+    }
     try {
         const data = await prisma.unit.findMany({
             orderBy: { name: 'asc' },

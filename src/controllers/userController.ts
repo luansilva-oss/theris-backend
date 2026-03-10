@@ -1,8 +1,25 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { registrarMudanca } from '../lib/auditLog';
+import { hasProfile } from '../middleware/auth';
 
 const prisma = new PrismaClient();
+
+/** Campos de User permitidos em respostas da API (nunca retornar mfaCode, mfaExpiresAt, etc.) */
+const USER_SAFE_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  jobTitle: true,
+  departmentId: true,
+  unitId: true,
+  roleId: true,
+  managerId: true,
+  systemProfile: true,
+  isActive: true,
+  lastPasswordChangeAt: true,
+  myDeputyId: true,
+} as const;
 
 // FUNÇÃO DE NORMALIZAÇÃO DE E-MAIL (nome.sobrenome@grupo-3c.com)
 const normalizeEmail = (email: string): string => {
@@ -14,28 +31,19 @@ const normalizeEmail = (email: string): string => {
 };
 
 export const getAllUsers = async (req: Request, res: Response) => {
+  if (!hasProfile(req, ['ADMIN', 'SUPER_ADMIN'])) {
+    return res.status(403).json({ error: 'Apenas ADMIN ou SUPER_ADMIN podem listar usuários.' });
+  }
   try {
     const users = await prisma.user.findMany({
       where: { isActive: true },
       orderBy: { name: 'asc' },
       select: {
-        id: true,
-        name: true,
-        email: true,
-        jobTitle: true,
-        departmentId: true,
-        unitId: true,
+        ...USER_SAFE_SELECT,
         departmentRef: { select: { id: true, name: true } },
         unitRef: { select: { id: true, name: true } },
-        systemProfile: true,
-        managerId: true,
-        roleId: true,
-        manager: {
-          select: {
-            name: true
-          }
-        }
-      } as any
+        manager: { select: { name: true } },
+      },
     });
 
     return res.json(users);
@@ -53,20 +61,11 @@ export const getMe = async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
-        id: true,
-        name: true,
-        email: true,
-        jobTitle: true,
-        isActive: true,
-        departmentId: true,
-        unitId: true,
+        ...USER_SAFE_SELECT,
         departmentRef: { select: { id: true, name: true } },
         unitRef: { select: { id: true, name: true } },
-        systemProfile: true,
-        managerId: true,
-        roleId: true,
-        manager: { select: { id: true, name: true } }
-      }
+        manager: { select: { id: true, name: true } },
+      },
     });
     if (!user) return res.status(404).json({ error: 'Usuário não encontrado.' });
     let role: { id: string; name: string; code: string | null } | null = null;
@@ -108,7 +107,10 @@ export const manualAddUser = async (req: Request, res: Response) => {
 
     const unitId = department.unitId ?? null;
 
-    const existing = await prisma.user.findUnique({ where: { email: emailStr } });
+    const existing = await prisma.user.findUnique({
+      where: { email: emailStr },
+      select: { ...USER_SAFE_SELECT, departmentRef: { select: { id: true, name: true } }, unitRef: { select: { id: true, name: true } } },
+    });
     if (existing) {
       await prisma.user.update({
         where: { id: existing.id },
@@ -135,10 +137,11 @@ export const manualAddUser = async (req: Request, res: Response) => {
         jobTitle: role.name,
         isActive: true
       },
-      include: {
+      select: {
+        ...USER_SAFE_SELECT,
         departmentRef: { select: { id: true, name: true } },
-        unitRef: { select: { id: true, name: true } }
-      }
+        unitRef: { select: { id: true, name: true } },
+      },
     });
     await registrarMudanca({
       tipo: 'USER_CREATED',
@@ -161,17 +164,24 @@ export const manualAddUser = async (req: Request, res: Response) => {
   }
 };
 
-/** GET /api/users/:id — usuário por ID com relations (departmentRef, unitRef, role) */
+/** GET /api/users/:id — usuário por ID (próprio usuário, ADMIN ou SUPER_ADMIN); nunca retorna mfaCode, mfaExpiresAt */
 export const getUserById = async (req: Request, res: Response) => {
   const { id } = req.params;
+  const authUser = (req as Request & { authUser?: { id: string; systemProfile: string } }).authUser;
+  const isSelf = authUser && authUser.id === id;
+  const isAdminOrSuper = hasProfile(req, ['ADMIN', 'SUPER_ADMIN']);
+  if (!isSelf && !isAdminOrSuper) {
+    return res.status(403).json({ error: 'Acesso negado. Apenas o próprio usuário, ADMIN ou SUPER_ADMIN.' });
+  }
   try {
     const user = await prisma.user.findUnique({
       where: { id },
-      include: {
+      select: {
+        ...USER_SAFE_SELECT,
         departmentRef: { select: { id: true, name: true } },
         unitRef: { select: { id: true, name: true } },
-        manager: { select: { id: true, name: true } }
-      }
+        manager: { select: { id: true, name: true } },
+      },
     });
     if (!user) return res.status(404).json({ error: 'Colaborador não encontrado.' });
     let role: { id: string; name: string; code: string | null } | null = null;
@@ -186,17 +196,24 @@ export const getUserById = async (req: Request, res: Response) => {
   }
 };
 
-/** GET /api/users/:id/details — detalhes completos (user, kbsFerramentas, historicoCargos) */
+/** GET /api/users/:id/details — detalhes completos (próprio usuário, ADMIN ou SUPER_ADMIN); nunca retorna mfaCode, mfaExpiresAt */
 export const getUserDetails = async (req: Request, res: Response) => {
   const { id } = req.params;
+  const authUser = (req as Request & { authUser?: { id: string; systemProfile: string } }).authUser;
+  const isSelf = authUser && authUser.id === id;
+  const isAdminOrSuper = hasProfile(req, ['ADMIN', 'SUPER_ADMIN']);
+  if (!isSelf && !isAdminOrSuper) {
+    return res.status(403).json({ error: 'Acesso negado. Apenas o próprio usuário, ADMIN ou SUPER_ADMIN.' });
+  }
   try {
     const user = await prisma.user.findUnique({
       where: { id },
-      include: {
+      select: {
+        ...USER_SAFE_SELECT,
         departmentRef: { select: { id: true, name: true } },
         unitRef: { select: { id: true, name: true } },
-        manager: { select: { id: true, name: true } }
-      }
+        manager: { select: { id: true, name: true } },
+      },
     });
     if (!user) return res.status(404).json({ error: 'Colaborador não encontrado.' });
 
