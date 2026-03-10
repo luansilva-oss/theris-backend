@@ -106,10 +106,11 @@ app.use(express.json({ limit: '15mb' }));
 // ============================================================
 // --- RATE LIMITING (auth: anti brute-force, por IP) ---
 // ============================================================
-// Limite por IP: cada endereço tem sua própria cota (usuários em redes diferentes não compartilham o mesmo limite).
+// Limite por IP: cada endereço tem sua própria cota. Apenas tentativas com erro (401, 429) consomem a cota.
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 min
-  max: 20, // máx. 20 requisições por IP a cada 15 min (login + MFA)
+  max: 300, // 300 requisições por IP a cada 15 min (ambiente corporativo ~130 usuários)
+  skipSuccessfulRequests: true, // não conta tentativas bem-sucedidas no limite
   message: { error: 'Muitas tentativas. Tente novamente em alguns minutos.' },
   standardHeaders: true,
   legacyHeaders: false,
