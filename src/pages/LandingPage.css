@@ -32,7 +32,6 @@ html {
   color: var(--text);
   font-family: 'Inter', sans-serif;
   overflow-x: hidden;
-  overflow-y: auto;
   width: 100vw;
   min-height: 100vh;
   box-sizing: border-box;
@@ -269,14 +268,14 @@ html {
   opacity: 0.35;
 }
 
-/* ── Features ── */
+/* ── Features ── (height from content only; no fixed min-height or excessive padding) */
 .landing-features,
 #features {
   position: relative;
   z-index: 1;
   height: auto;
   min-height: 0;
-  padding: 7rem 4rem;
+  padding: 4rem 4rem;
   max-width: 1200px;
   margin: 0 auto;
 }
