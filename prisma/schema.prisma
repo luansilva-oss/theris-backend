@@ -105,6 +105,9 @@ model User {
 
   // Auditoria: histórico de mudanças estruturais
   historicoMudancas HistoricoMudanca[] @relation("HistoricoMudancaAutor")
+
+  // Controle de notificação de revisão trimestral (evitar duplicata no mesmo dia)
+  revisaoNotificacoesEnviadas RevisaoNotificacaoEnviada[]
 }
 
 model HistoricoMudanca {
@@ -144,7 +147,18 @@ model Tool {
   criticality         String?  // Nível de criticidade (Alta, Média, Baixa)
   isCritical          Boolean  @default(false)
 
+  // Revisão periódica de acessos (90 dias)
+  lastReviewAt        DateTime?  // data da última revisão concluída
+  nextReviewAt        DateTime?  // calculado: lastReviewAt + 90 dias
+
   createdAt           DateTime @default(now())
+}
+
+model RevisaoNotificacaoEnviada {
+  id        String   @id @default(uuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  sentAt    DateTime @default(now())
 }
 
 model ToolGroup {

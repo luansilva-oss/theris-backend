@@ -29,6 +29,7 @@ import { getAuditLog } from './controllers/auditLogController';
 import { syncStructureFromUsers } from './services/structureSync'; // Import sync service
 import { startPasswordReminderCron } from './jobs/passwordReminderCron';
 import { startCleanupSessionsCron } from './crons/cleanupSessions';
+import { startReviewAccessCron } from './crons/reviewAccessCron';
 
 // Slack
 import { slackReceiver, getToolsAndLevelsMap } from './services/slackService';
@@ -76,6 +77,8 @@ syncStructureFromUsers();
 startPasswordReminderCron();
 // Cron: limpeza de sessões (> 24h) e tentativas de login (> 90 dias), 1x/dia às 03:00 (Brasília)
 startCleanupSessionsCron();
+// Cron: revisão periódica de acessos (90 dias), 1x/dia às 09:00 (Brasília)
+startReviewAccessCron();
 
 // --- CORS ---
 app.use(cors({

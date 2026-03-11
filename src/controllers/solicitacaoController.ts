@@ -38,10 +38,16 @@ const OFFBOARDING_REQUEST_TYPES = ['FIRING', 'DEMISSAO', 'OFFBOARDING'];
 const ONBOARDING_REQUEST_TYPES = ['HIRING', 'ADMISSAO', 'ONBOARDING'];
 
 /**
- * Automação: ao aprovar um chamado de desligamento, desvincula o colaborador alvo da estrutura (soft-delete).
+ * Automação: ao aprovar um chamado de desligamento, desvincula o colaborador alvo da estrutura (soft-delete)
+ * e notifica os Owners das ferramentas (KBS do cargo) para revogação imediata, com botão de confirmação.
  * O alvo é identificado por: details.targetUserId | details.collaboratorId | details.collaboratorEmail | details.collaboratorName (busca por nome).
  */
-async function runOffboardingAutomation(requestId: string, requestType: string, detailsJson: string | null): Promise<void> {
+async function runOffboardingAutomation(
+  requestId: string,
+  requestType: string,
+  detailsJson: string | null,
+  actionDate?: Date | string | null
+): Promise<void> {
   if (!OFFBOARDING_REQUEST_TYPES.includes(requestType)) return;
   let details: Record<string, unknown> = {};
   try {
@@ -50,15 +56,21 @@ async function runOffboardingAutomation(requestId: string, requestType: string, 
     return;
   }
   const d = details as Record<string, string | undefined>;
-  let targetUser: { id: string; name: string } | null = null;
+  let targetUser: { id: string; name: string; roleId: string | null; departmentId: string | null; unitId: string | null } | null = null;
 
   const targetUserId = d.targetUserId || d.collaboratorId;
   if (targetUserId) {
-    const u = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true, name: true } });
+    const u = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, name: true, roleId: true, departmentId: true, unitId: true }
+    });
     if (u) targetUser = u;
   }
   if (!targetUser && d.collaboratorEmail) {
-    const u = await prisma.user.findUnique({ where: { email: d.collaboratorEmail.trim() }, select: { id: true, name: true } });
+    const u = await prisma.user.findUnique({
+      where: { email: d.collaboratorEmail.trim() },
+      select: { id: true, name: true, roleId: true, departmentId: true, unitId: true }
+    });
     if (u) targetUser = u;
   }
   if (!targetUser && (d.collaboratorName || d.substitute)) {
@@ -66,7 +78,7 @@ async function runOffboardingAutomation(requestId: string, requestType: string, 
     if (name) {
       const u = await prisma.user.findFirst({
         where: { name: { equals: name, mode: 'insensitive' } },
-        select: { id: true, name: true }
+        select: { id: true, name: true, roleId: true, departmentId: true, unitId: true }
       });
       if (u) targetUser = u;
     }
@@ -75,6 +87,33 @@ async function runOffboardingAutomation(requestId: string, requestType: string, 
   if (!targetUser) {
     console.warn(`[Automação] Desligamento: chamado ${requestId} aprovado, mas não foi possível identificar o colaborador alvo (targetUserId/collaboratorEmail/collaboratorName).`);
     return;
+  }
+
+  let departmentName = '—';
+  let unitName = '—';
+  let jobTitle = '—';
+  const kitItems: { toolName: string; accessLevelDesc: string | null }[] = [];
+  if (targetUser.roleId) {
+    const role = await prisma.role.findUnique({
+      where: { id: targetUser.roleId },
+      include: { kitItems: true, department: { include: { unit: true } } }
+    });
+    if (role?.kitItems?.length) {
+      kitItems.push(...role.kitItems.map((k) => ({ toolName: k.toolName, accessLevelDesc: k.accessLevelDesc })));
+      departmentName = role.department?.name ?? '—';
+      unitName = role.department?.unit?.name ?? '—';
+      jobTitle = role.name;
+    }
+  }
+  if (targetUser.departmentId && departmentName === '—') {
+    const dept = await prisma.department.findUnique({
+      where: { id: targetUser.departmentId },
+      include: { unit: true }
+    });
+    if (dept) {
+      departmentName = dept.name;
+      unitName = dept.unit?.name ?? '—';
+    }
   }
 
   await prisma.user.update({
@@ -89,6 +128,16 @@ async function runOffboardingAutomation(requestId: string, requestType: string, 
     }
   });
   console.log(`[Automação] Usuário ${targetUser.name} (${targetUser.id}) desligado com sucesso após aprovação do chamado ${requestId}.`);
+
+  if (kitItems.length > 0) {
+    try {
+      const actionDateStr = actionDate instanceof Date ? actionDate.toISOString().slice(0, 10) : (typeof actionDate === 'string' ? actionDate : null);
+      const { notificarOwnersDesligamento } = await import('../services/slackService');
+      await notificarOwnersDesligamento(requestId, targetUser.name, jobTitle, departmentName, unitName, kitItems, actionDateStr);
+    } catch (notifErr) {
+      console.error('[Automação] Desligamento: falha ao notificar owners (não bloqueia):', notifErr);
+    }
+  }
 }
 
 /**
@@ -96,7 +145,8 @@ async function runOffboardingAutomation(requestId: string, requestType: string, 
  * respeita a hierarquia Unidade → Departamento → Cargo: busca/cria cada nível e vincula o colaborador.
  * Dados extraídos de request.details: unit/Unidade, department/Depto/dept, role/Cargo, collaboratorName/Colaborador, collaboratorEmail/email.
  */
-async function runOnboardingAutomation(requestId: string, request: { type: string; details: string | null }): Promise<void> {
+type OnboardingResult = { requestId: string; roleId: string; collaboratorName: string; jobTitle: string; departmentName: string; unitName: string; startDate: string };
+async function runOnboardingAutomation(requestId: string, request: { type: string; details: string | null }): Promise<OnboardingResult | void> {
   if (!ONBOARDING_REQUEST_TYPES.includes(request.type)) return;
   let d: Record<string, unknown> = {};
   try {
@@ -172,6 +222,10 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
     });
   }
 
+  const startDate = (details.startDate as string) || new Date().toISOString().slice(0, 10);
+  const departmentNameRes = department.name;
+  const unitNameRes = unit?.name ?? '—';
+
   if (user) {
     await prisma.user.update({
       where: { id: user.id },
@@ -184,7 +238,7 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
       }
     });
     console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${user.name} vinculado com sucesso (Chamado ${requestId}).`);
-    return;
+    return { requestId, roleId: role.id, collaboratorName: user.name, jobTitle: role.name, departmentName: departmentNameRes, unitName: unitNameRes, startDate };
   }
 
   if (!collaboratorEmail) {
@@ -204,6 +258,7 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
     }
   });
   console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${collaboratorName || collaboratorEmail} criado e vinculado com sucesso (Chamado ${requestId}).`);
+  return { requestId, roleId: role.id, collaboratorName: collaboratorName || collaboratorEmail, jobTitle: role.name, departmentName: departmentNameRes, unitName: unitNameRes, startDate };
 }
 
 /** Tipos de solicitação que ao serem aprovados concedem acesso extraordinário (vinculam usuário à ferramenta na tabela Access). */
@@ -1146,10 +1201,26 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         console.log(`✅ RH: Solicitação ${request.type} aprovada. Aguardando sincronização do Convenia.`);
       }
 
-      // CENÁRIO 1b: ONBOARDING (HIRING, ADMISSAO, ONBOARDING) — vincula colaborador a departamento e cargo
+      // CENÁRIO 1b: ONBOARDING (HIRING, ADMISSAO, ONBOARDING) — vincula colaborador a departamento e cargo + JML notifica Owners (Joiner)
       else if (ONBOARDING_REQUEST_TYPES.includes(request.type)) {
         try {
-          await runOnboardingAutomation(id, request);
+          const onboardingResult = await runOnboardingAutomation(id, request);
+          if (onboardingResult) {
+            try {
+              const { notificarOwnersJoiner } = await import('../services/slackService');
+              await notificarOwnersJoiner(
+                onboardingResult.requestId,
+                onboardingResult.collaboratorName,
+                onboardingResult.jobTitle,
+                onboardingResult.departmentName,
+                onboardingResult.unitName,
+                onboardingResult.startDate,
+                onboardingResult.roleId
+              );
+            } catch (notifErr) {
+              console.error('[Automação] Joiner: falha ao notificar owners (não bloqueia):', notifErr);
+            }
+          }
         } catch (onboardError) {
           console.error('[Automação] Erro ao vincular colaborador na admissão (onboarding):', onboardError);
         }
@@ -1210,14 +1281,36 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           }
           if (result.success && result.notifPayload) {
             try {
-              const { notificarOwnersFerramenta } = await import('../services/slackService');
-              await notificarOwnersFerramenta(
-                result.notifPayload.colaborador,
-                result.notifPayload.kbsAnterior,
-                result.notifPayload.kbsNovo,
-                id,
-                result.notifPayload.dataAcao
-              );
+              const details = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
+              const subtipo = details.subtipo as string | undefined;
+              if (subtipo === 'MUDANCA_CARGO') {
+                const { notificarOwnersMudancaCargo } = await import('../services/slackService');
+                await notificarOwnersMudancaCargo(
+                  result.notifPayload.colaborador,
+                  result.notifPayload.kbsAnterior,
+                  result.notifPayload.kbsNovo,
+                  id,
+                  result.notifPayload.dataAcao
+                );
+              } else if (subtipo === 'MUDANCA_DEPARTAMENTO') {
+                const { notificarOwnersMudancaDepto } = await import('../services/slackService');
+                await notificarOwnersMudancaDepto(
+                  result.notifPayload.colaborador,
+                  result.notifPayload.kbsAnterior,
+                  result.notifPayload.kbsNovo,
+                  id,
+                  result.notifPayload.dataAcao
+                );
+              } else {
+                const { notificarOwnersFerramenta } = await import('../services/slackService');
+                await notificarOwnersFerramenta(
+                  result.notifPayload.colaborador,
+                  result.notifPayload.kbsAnterior,
+                  result.notifPayload.kbsNovo,
+                  id,
+                  result.notifPayload.dataAcao
+                );
+              }
             } catch (notifErr) {
               console.error('[Automação CHANGE_ROLE] Falha ao notificar owners (não bloqueia aprovação):', notifErr);
             }
@@ -1254,10 +1347,10 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         }
       }
 
-      // CENÁRIO 4: DESLIGAMENTO (FIRING / DEMISSAO / OFFBOARDING) — desvincula o colaborador alvo da estrutura
+      // CENÁRIO 4: DESLIGAMENTO (FIRING / DEMISSAO / OFFBOARDING) — desvincula o colaborador alvo e notifica Owners
       else if (OFFBOARDING_REQUEST_TYPES.includes(request.type)) {
         try {
-          await runOffboardingAutomation(id, request.type, request.details);
+          await runOffboardingAutomation(id, request.type, request.details, request.actionDate);
         } catch (offboardError) {
           console.error('[Automação] Erro ao desvincular usuário após aprovação de desligamento:', offboardError);
         }
@@ -1464,14 +1557,36 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           }
           if (result.success && result.notifPayload) {
             try {
-              const { notificarOwnersFerramenta } = await import('../services/slackService');
-              await notificarOwnersFerramenta(
-                result.notifPayload.colaborador,
-                result.notifPayload.kbsAnterior,
-                result.notifPayload.kbsNovo,
-                id,
-                result.notifPayload.dataAcao
-              );
+              const details = typeof existing.details === 'string' ? JSON.parse(existing.details || '{}') : (existing.details || {});
+              const subtipo = details.subtipo as string | undefined;
+              if (subtipo === 'MUDANCA_CARGO') {
+                const { notificarOwnersMudancaCargo } = await import('../services/slackService');
+                await notificarOwnersMudancaCargo(
+                  result.notifPayload.colaborador,
+                  result.notifPayload.kbsAnterior,
+                  result.notifPayload.kbsNovo,
+                  id,
+                  result.notifPayload.dataAcao
+                );
+              } else if (subtipo === 'MUDANCA_DEPARTAMENTO') {
+                const { notificarOwnersMudancaDepto } = await import('../services/slackService');
+                await notificarOwnersMudancaDepto(
+                  result.notifPayload.colaborador,
+                  result.notifPayload.kbsAnterior,
+                  result.notifPayload.kbsNovo,
+                  id,
+                  result.notifPayload.dataAcao
+                );
+              } else {
+                const { notificarOwnersFerramenta } = await import('../services/slackService');
+                await notificarOwnersFerramenta(
+                  result.notifPayload.colaborador,
+                  result.notifPayload.kbsAnterior,
+                  result.notifPayload.kbsNovo,
+                  id,
+                  result.notifPayload.dataAcao
+                );
+              }
             } catch (notifErr) {
               console.error('[Automação CHANGE_ROLE] Falha ao notificar owners (metadata, não bloqueia):', notifErr);
             }
@@ -1482,14 +1597,30 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       }
       if (OFFBOARDING_REQUEST_TYPES.includes(existing.type)) {
         try {
-          await runOffboardingAutomation(id, existing.type, existing.details);
+          await runOffboardingAutomation(id, existing.type, existing.details, existing.actionDate);
         } catch (offboardError) {
           console.error('[Automação] Erro ao desvincular usuário após aprovação de desligamento (metadata):', offboardError);
         }
       }
       if (ONBOARDING_REQUEST_TYPES.includes(existing.type)) {
         try {
-          await runOnboardingAutomation(id, existing);
+          const onboardingResult = await runOnboardingAutomation(id, existing);
+          if (onboardingResult) {
+            try {
+              const { notificarOwnersJoiner } = await import('../services/slackService');
+              await notificarOwnersJoiner(
+                onboardingResult.requestId,
+                onboardingResult.collaboratorName,
+                onboardingResult.jobTitle,
+                onboardingResult.departmentName,
+                onboardingResult.unitName,
+                onboardingResult.startDate,
+                onboardingResult.roleId
+              );
+            } catch (notifErr) {
+              console.error('[Automação] Joiner (metadata): falha ao notificar owners (não bloqueia):', notifErr);
+            }
+          }
         } catch (onboardError) {
           console.error('[Automação] Erro ao vincular colaborador na admissão (metadata):', onboardError);
         }
