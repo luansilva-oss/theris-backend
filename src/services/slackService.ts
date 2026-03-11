@@ -215,7 +215,8 @@ slackApp.command('/pessoas', async ({ ack, body, client }) => {
           {
             type: 'actions',
             elements: [
-              { type: 'button', text: { type: 'plain_text', text: '🔄 Promoção / Mudança' }, action_id: 'btn_move', style: 'primary' },
+              { type: 'button', text: { type: 'plain_text', text: '📂 Mudança de Departamento' }, action_id: 'btn_move_dept', style: 'primary' },
+              { type: 'button', text: { type: 'plain_text', text: '📋 Mudança de Cargo' }, action_id: 'btn_move_cargo' },
               { type: 'button', text: { type: 'plain_text', text: '✅ Contratação' }, action_id: 'btn_hire' },
               { type: 'button', text: { type: 'plain_text', text: '❌ Desligamento' }, action_id: 'btn_fire', style: 'danger' }
             ]
@@ -335,7 +336,8 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
           {
             type: 'actions',
             elements: [
-              { type: 'button', text: { type: 'plain_text', text: '🔄 Promoção / Mudança' }, action_id: 'btn_move', style: 'primary' },
+              { type: 'button', text: { type: 'plain_text', text: '📂 Mudança de Departamento' }, action_id: 'btn_move_dept', style: 'primary' },
+              { type: 'button', text: { type: 'plain_text', text: '📋 Mudança de Cargo' }, action_id: 'btn_move_cargo' },
               { type: 'button', text: { type: 'plain_text', text: '✅ Contratação' }, action_id: 'btn_hire' },
               { type: 'button', text: { type: 'plain_text', text: '❌ Desligamento' }, action_id: 'btn_fire', style: 'danger' }
             ]
@@ -443,58 +445,62 @@ slackApp.command('/infra', async ({ ack, body, client }) => {
 // 2. MODAIS (ABERTURA)
 // ============================================================
 
-// MOVIMENTAÇÃO: dois subtipos (Mudança de Departamento / Mudança de Cargo)
-slackApp.action('btn_move', async ({ ack, body, client }) => {
+// Helper: opções de Unidade para modais de movimentação
+async function getUnitOptionsForMove(): Promise<{ text: { type: 'plain_text'; text: string }; value: string }[]> {
+  try {
+    const units = await prisma.unit.findMany({ orderBy: { name: 'asc' } });
+    return units.length > 0
+      ? units.map((u) => ({ text: { type: 'plain_text' as const, text: u.name }, value: u.id }))
+      : DEFAULT_UNIT_NAMES.map((name) => ({ text: { type: 'plain_text' as const, text: name }, value: name }));
+  } catch {
+    return DEFAULT_UNIT_NAMES.map((name) => ({ text: { type: 'plain_text' as const, text: name }, value: name }));
+  }
+}
+
+// Mudança de Departamento: Nome, Unidade, Cargo atual, Depto atual, Novo cargo, Novo departamento, Data, Justificativa
+slackApp.action('btn_move_dept', async ({ ack, body, client }) => {
   await ack();
   try {
-    let unitOptions: { text: { type: 'plain_text'; text: string }; value: string }[];
-    try {
-      const units = await prisma.unit.findMany({ orderBy: { name: 'asc' } });
-      unitOptions = units.length > 0
-        ? units.map((u) => ({ text: { type: 'plain_text' as const, text: u.name }, value: u.id }))
-        : DEFAULT_UNIT_NAMES.map((name) => ({ text: { type: 'plain_text' as const, text: name }, value: name }));
-    } catch {
-      unitOptions = DEFAULT_UNIT_NAMES.map((name) => ({ text: { type: 'plain_text' as const, text: name }, value: name }));
-    }
+    const unitOptions = await getUnitOptionsForMove();
     await pushModalSafely(client, (body as any).trigger_id, {
       type: 'modal',
-      callback_id: 'submit_move',
-      title: { type: 'plain_text', text: 'Movimentação' },
+      callback_id: 'submit_move_dept',
+      title: { type: 'plain_text', text: 'Mudança de Departamento' },
       submit: { type: 'plain_text', text: 'Enviar' },
       blocks: [
-        {
-          type: 'input',
-          block_id: 'blk_tipo',
-          label: { type: 'plain_text', text: 'Tipo de mudança' },
-          element: {
-            type: 'static_select',
-            action_id: 'tipo_select',
-            placeholder: { type: 'plain_text', text: 'Selecione...' },
-            options: [
-              { text: { type: 'plain_text', text: 'Mudança de Departamento' }, value: 'MUDANCA_DEPARTAMENTO' },
-              { text: { type: 'plain_text', text: 'Mudança de Cargo' }, value: 'MUDANCA_CARGO' }
-            ]
-          }
-        },
         { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-        {
-          type: 'input',
-          block_id: 'blk_unit',
-          label: { type: 'plain_text', text: 'Unidade' },
-          element: {
-            type: 'static_select',
-            action_id: 'unit_select',
-            placeholder: { type: 'plain_text', text: 'Selecione a unidade...' },
-            options: unitOptions
-          }
-        },
+        { type: 'input', block_id: 'blk_unit', label: { type: 'plain_text', text: 'Unidade' }, element: { type: 'static_select', action_id: 'unit_select', placeholder: { type: 'plain_text', text: 'Selecione a unidade...' }, options: unitOptions } },
         { type: 'divider' },
         { type: 'section', text: { type: 'mrkdwn', text: '*Situação Atual*' } },
         { type: 'input', block_id: 'blk_role_curr', label: { type: 'plain_text', text: 'Cargo Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
         { type: 'input', block_id: 'blk_dept_curr', label: { type: 'plain_text', text: 'Departamento Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
         { type: 'section', text: { type: 'mrkdwn', text: '*Situação Nova*' } },
         { type: 'input', block_id: 'blk_role_fut', label: { type: 'plain_text', text: 'Novo Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-        { type: 'input', block_id: 'blk_dept_fut', label: { type: 'plain_text', text: 'Novo Departamento (_igual ao atual para Mudança de Cargo_)' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Deixe igual ao atual se for só mudança de cargo' } } },
+        { type: 'input', block_id: 'blk_dept_fut', label: { type: 'plain_text', text: 'Novo Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+        { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de Ação' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
+        { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
+      ]
+    }, body);
+  } catch (e) { console.error(e); }
+});
+
+// Mudança de Cargo: Nome, Unidade, Departamento (único), Cargo atual, Novo cargo, Data, Justificativa (sem Novo departamento)
+slackApp.action('btn_move_cargo', async ({ ack, body, client }) => {
+  await ack();
+  try {
+    const unitOptions = await getUnitOptionsForMove();
+    await pushModalSafely(client, (body as any).trigger_id, {
+      type: 'modal',
+      callback_id: 'submit_move_cargo',
+      title: { type: 'plain_text', text: 'Mudança de Cargo' },
+      submit: { type: 'plain_text', text: 'Enviar' },
+      blocks: [
+        { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+        { type: 'input', block_id: 'blk_unit', label: { type: 'plain_text', text: 'Unidade' }, element: { type: 'static_select', action_id: 'unit_select', placeholder: { type: 'plain_text', text: 'Selecione a unidade...' }, options: unitOptions } },
+        { type: 'divider' },
+        { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Departamento (mesmo para cargo atual e novo)' } } },
+        { type: 'input', block_id: 'blk_role_curr', label: { type: 'plain_text', text: 'Cargo Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+        { type: 'input', block_id: 'blk_role_fut', label: { type: 'plain_text', text: 'Novo Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
         { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de Ação' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
         { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
       ]
@@ -1319,21 +1325,19 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
   }
 });
 
-// Handlers de Submissão
-slackApp.view('submit_move', async ({ ack, body, view, client }) => {
+// Handlers de Submissão — Movimentação
+slackApp.view('submit_move_dept', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
   const name = v.blk_name.inp.value;
-  const subtipo = v.blk_tipo?.tipo_select?.selected_option?.value ?? 'MUDANCA_DEPARTAMENTO';
   const unitValue = v.blk_unit?.unit_select?.selected_option?.value ?? '';
   const deptCurr = v.blk_dept_curr.inp.value ?? '';
-  const deptFutRaw = v.blk_dept_fut?.inp?.value?.trim() ?? '';
-  const deptFut = subtipo === 'MUDANCA_CARGO' ? deptCurr : deptFutRaw;
+  const deptFut = v.blk_dept_fut?.inp?.value?.trim() ?? '';
   const actionDate = v.data_acao?.picker?.selected_date ?? null;
   const details = {
-    info: `Movimentação: ${name}`,
+    info: `Mudança de Departamento: ${name}`,
     collaboratorName: name,
-    subtipo,
+    subtipo: 'MUDANCA_DEPARTAMENTO',
     unitId: unitValue || undefined,
     unit: unitValue || undefined,
     current: { role: v.blk_role_curr.inp.value, dept: deptCurr },
@@ -1341,7 +1345,28 @@ slackApp.view('submit_move', async ({ ack, body, view, client }) => {
     reason: v.blk_reason.inp.value ?? '',
     ...(actionDate && { actionDate })
   };
-  await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value!, `✅ Solicitação de movimentação para *${name}* criada com sucesso.`, false, actionDate);
+  await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value!, `✅ Solicitação de mudança de departamento para *${name}* criada com sucesso.`, false, actionDate);
+});
+
+slackApp.view('submit_move_cargo', async ({ ack, body, view, client }) => {
+  await ack();
+  const v = view.state.values;
+  const name = v.blk_name.inp.value;
+  const unitValue = v.blk_unit?.unit_select?.selected_option?.value ?? '';
+  const dept = v.blk_dept?.inp?.value ?? '';
+  const actionDate = v.data_acao?.picker?.selected_date ?? null;
+  const details = {
+    info: `Mudança de Cargo: ${name}`,
+    collaboratorName: name,
+    subtipo: 'MUDANCA_CARGO',
+    unitId: unitValue || undefined,
+    unit: unitValue || undefined,
+    current: { role: v.blk_role_curr.inp.value, dept },
+    future: { role: v.blk_role_fut.inp.value, dept, ...(unitValue && { unitId: unitValue }) },
+    reason: v.blk_reason.inp.value ?? '',
+    ...(actionDate && { actionDate })
+  };
+  await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value!, `✅ Solicitação de mudança de cargo para *${name}* criada com sucesso.`, false, actionDate);
 });
 
 slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
