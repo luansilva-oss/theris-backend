@@ -443,24 +443,61 @@ slackApp.command('/infra', async ({ ack, body, client }) => {
 // 2. MODAIS (ABERTURA)
 // ============================================================
 
-// PROMOÇÃO
+// MOVIMENTAÇÃO: dois subtipos (Mudança de Departamento / Mudança de Cargo)
 slackApp.action('btn_move', async ({ ack, body, client }) => {
   await ack();
   try {
+    let unitOptions: { text: { type: 'plain_text'; text: string }; value: string }[];
+    try {
+      const units = await prisma.unit.findMany({ orderBy: { name: 'asc' } });
+      unitOptions = units.length > 0
+        ? units.map((u) => ({ text: { type: 'plain_text' as const, text: u.name }, value: u.id }))
+        : DEFAULT_UNIT_NAMES.map((name) => ({ text: { type: 'plain_text' as const, text: name }, value: name }));
+    } catch {
+      unitOptions = DEFAULT_UNIT_NAMES.map((name) => ({ text: { type: 'plain_text' as const, text: name }, value: name }));
+    }
     await pushModalSafely(client, (body as any).trigger_id, {
-        type: 'modal', callback_id: 'submit_move', title: { type: 'plain_text', text: 'Movimentação' }, submit: { type: 'plain_text', text: 'Enviar' },
-        blocks: [
-          { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'divider' },
-          { type: 'section', text: { type: 'mrkdwn', text: '*Situação Atual*' } },
-          { type: 'input', block_id: 'blk_role_curr', label: { type: 'plain_text', text: 'Cargo Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_dept_curr', label: { type: 'plain_text', text: 'Departamento Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'section', text: { type: 'mrkdwn', text: '*Situação Nova*' } },
-          { type: 'input', block_id: 'blk_role_fut', label: { type: 'plain_text', text: 'Novo Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_dept_fut', label: { type: 'plain_text', text: 'Novo Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de Ação' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
-          { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Motivo' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
-        ]
+      type: 'modal',
+      callback_id: 'submit_move',
+      title: { type: 'plain_text', text: 'Movimentação' },
+      submit: { type: 'plain_text', text: 'Enviar' },
+      blocks: [
+        {
+          type: 'input',
+          block_id: 'blk_tipo',
+          label: { type: 'plain_text', text: 'Tipo de mudança' },
+          element: {
+            type: 'static_select',
+            action_id: 'tipo_select',
+            placeholder: { type: 'plain_text', text: 'Selecione...' },
+            options: [
+              { text: { type: 'plain_text', text: 'Mudança de Departamento' }, value: 'MUDANCA_DEPARTAMENTO' },
+              { text: { type: 'plain_text', text: 'Mudança de Cargo' }, value: 'MUDANCA_CARGO' }
+            ]
+          }
+        },
+        { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Nome do Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+        {
+          type: 'input',
+          block_id: 'blk_unit',
+          label: { type: 'plain_text', text: 'Unidade' },
+          element: {
+            type: 'static_select',
+            action_id: 'unit_select',
+            placeholder: { type: 'plain_text', text: 'Selecione a unidade...' },
+            options: unitOptions
+          }
+        },
+        { type: 'divider' },
+        { type: 'section', text: { type: 'mrkdwn', text: '*Situação Atual*' } },
+        { type: 'input', block_id: 'blk_role_curr', label: { type: 'plain_text', text: 'Cargo Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+        { type: 'input', block_id: 'blk_dept_curr', label: { type: 'plain_text', text: 'Departamento Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+        { type: 'section', text: { type: 'mrkdwn', text: '*Situação Nova*' } },
+        { type: 'input', block_id: 'blk_role_fut', label: { type: 'plain_text', text: 'Novo Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+        { type: 'input', block_id: 'blk_dept_fut', label: { type: 'plain_text', text: 'Novo Departamento (_igual ao atual para Mudança de Cargo_)' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Deixe igual ao atual se for só mudança de cargo' } } },
+        { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de Ação' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
+        { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
+      ]
     }, body);
   } catch (e) { console.error(e); }
 });
@@ -1044,6 +1081,20 @@ async function saveRequest(
       }
     });
 
+    try {
+      await notificarSI({
+        id: created.id,
+        type: created.type,
+        status: created.status,
+        justification: created.justification,
+        details: created.details,
+        requesterId: created.requesterId,
+        createdAt: created.createdAt
+      });
+    } catch (notifErr) {
+      console.error('[saveRequest] Falha ao notificar SI (chamado criado normalmente):', notifErr);
+    }
+
     if (isExtraordinary && toolName) {
       const { registrarMudanca } = await import('../lib/auditLog');
       const period = accessPeriodRaw || (accessPeriodDays != null ? `${accessPeriodDays} dias` : null) || undefined;
@@ -1273,12 +1324,20 @@ slackApp.view('submit_move', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
   const name = v.blk_name.inp.value;
+  const subtipo = v.blk_tipo?.tipo_select?.selected_option?.value ?? 'MUDANCA_DEPARTAMENTO';
+  const unitValue = v.blk_unit?.unit_select?.selected_option?.value ?? '';
+  const deptCurr = v.blk_dept_curr.inp.value ?? '';
+  const deptFutRaw = v.blk_dept_fut?.inp?.value?.trim() ?? '';
+  const deptFut = subtipo === 'MUDANCA_CARGO' ? deptCurr : deptFutRaw;
   const actionDate = v.data_acao?.picker?.selected_date ?? null;
   const details = {
     info: `Movimentação: ${name}`,
     collaboratorName: name,
-    current: { role: v.blk_role_curr.inp.value, dept: v.blk_dept_curr.inp.value },
-    future: { role: v.blk_role_fut.inp.value, dept: v.blk_dept_fut.inp.value },
+    subtipo,
+    unitId: unitValue || undefined,
+    unit: unitValue || undefined,
+    current: { role: v.blk_role_curr.inp.value, dept: deptCurr },
+    future: { role: v.blk_role_fut.inp.value, dept: deptFut, ...(unitValue && { unitId: unitValue }) },
     reason: v.blk_reason.inp.value ?? '',
     ...(actionDate && { actionDate })
   };
@@ -1670,3 +1729,163 @@ export const sendChangeRoleApprovedDM = async (requesterEmail: string, collabora
     console.error('❌ Erro ao enviar DM de movimentação aprovada:', e);
   }
 };
+
+/** Tipo de item KBS (RoleKitItem) para comparação pós-mudança. */
+export type KBSItem = { toolName: string; accessLevelDesc: string | null };
+
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.VITE_API_URL || 'https://theris.grupo-3c.com';
+const SLACK_ID_LUAN = process.env.SLACK_ID_LUAN || '';
+const SLACK_SI_CHANNEL_ID = process.env.SLACK_SI_CHANNEL_ID || 'C09PZQ9FM9C';
+
+/** Payload mínimo do chamado para notificar o time de SI (após criação no banco). */
+export type TicketForSINotification = {
+  id: string;
+  type: string;
+  status: string;
+  justification: string | null;
+  details: string | null;
+  requesterId: string | null;
+  createdAt: Date;
+};
+
+/**
+ * Notifica o time de SI (Luan + canal SI se configurado) quando um novo chamado é criado.
+ * Envia DM para SLACK_ID_LUAN e, se SLACK_SI_CHANNEL_ID estiver definido, também posta no canal.
+ * Falha na notificação não deve bloquear a criação do ticket — chamar em try/catch.
+ */
+export async function notificarSI(ticket: TicketForSINotification): Promise<void> {
+  if (!slackApp?.client) return;
+  const client = slackApp.client;
+  if (!SLACK_ID_LUAN && !SLACK_SI_CHANNEL_ID) return;
+
+  try {
+    let requesterName = '—';
+    let requesterCargo = '';
+    let departmentName = '—';
+    if (ticket.requesterId) {
+      const requester = await prisma.user.findUnique({
+        where: { id: ticket.requesterId },
+        select: { name: true, jobTitle: true, departmentRef: { select: { name: true } } }
+      });
+      if (requester) {
+        requesterName = requester.name ?? '—';
+        requesterCargo = requester.jobTitle ?? '';
+        departmentName = requester.departmentRef?.name ?? '—';
+      }
+    }
+
+    let detailsObj: Record<string, unknown> = {};
+    try {
+      detailsObj = typeof ticket.details === 'string' ? JSON.parse(ticket.details || '{}') : (ticket.details || {});
+    } catch (_) {}
+    const collaboratorName = (detailsObj.collaboratorName as string) || (detailsObj.beneficiary as string) || (detailsObj.substituteName as string) || (detailsObj.substitute as string) || '';
+    const deptFromDetails = (detailsObj.department as string) || (detailsObj.dept as string) || (detailsObj.current as Record<string, string>)?.dept;
+    const tipoLabel = TYPE_LABELS[ticket.type] || ticket.type;
+    const dataHora = ticket.createdAt instanceof Date ? ticket.createdAt.toLocaleString('pt-BR') : String(ticket.createdAt);
+    const detalhes = (ticket.justification || (detailsObj.info as string) || (detailsObj.reason as string) || '—').toString().slice(0, 300);
+    const linkChamado = `${FRONTEND_URL}/tickets?id=${ticket.id}`;
+
+    const text =
+      `🔔 *Novo Chamado no Theris*\n\n` +
+      `*Tipo:* ${tipoLabel}\n` +
+      `*Solicitante:* ${requesterName}${requesterCargo ? ` — ${requesterCargo}` : ''}\n` +
+      (collaboratorName ? `*Colaborador alvo:* ${collaboratorName}\n` : '') +
+      `*Departamento:* ${departmentName !== '—' ? departmentName : (deptFromDetails || '—')}\n` +
+      `*Data/hora:* ${dataHora}\n` +
+      `*Status inicial:* ${ticket.status}\n` +
+      `*Detalhes:* ${detalhes}\n\n` +
+      `👉 Ver chamado: ${linkChamado}`;
+
+    const targets: string[] = [];
+    if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
+    if (SLACK_SI_CHANNEL_ID) targets.push(SLACK_SI_CHANNEL_ID);
+    for (const channel of targets) {
+      try {
+        await client.chat.postMessage({ channel, text });
+        console.log(`[notificarSI] Notificação de novo chamado ${ticket.id} enviada para ${channel}`);
+      } catch (e) {
+        console.error(`[notificarSI] Falha ao enviar para ${channel}:`, e);
+      }
+    }
+  } catch (e) {
+    console.error('[notificarSI] Erro ao notificar SI:', e);
+  }
+}
+
+/**
+ * Notifica os owners das ferramentas KBS afetadas após aprovação de mudança de cargo/departamento.
+ * Compara kbsAnterior com kbsNovo: ferramenta removida → "Acesso a ser revogado"; nível alterado → "Nível alterado de X para Y".
+ * Busca Slack ID do owner via tool.owner (User) → users.lookupByEmail(owner.email). Fallback: SLACK_ID_LUAN.
+ */
+export async function notificarOwnersFerramenta(
+  colaborador: { nome: string; cargoAnterior: string; deptAnterior: string; cargoNovo: string; deptNovo: string },
+  kbsAnterior: KBSItem[],
+  kbsNovo: KBSItem[],
+  chamadoId: string,
+  dataAcao: string
+): Promise<void> {
+  if (!slackApp?.client) return;
+  const client = slackApp.client;
+  const novobyName = new Map<string, string | null>();
+  kbsNovo.forEach((k) => novobyName.set(k.toolName, k.accessLevelDesc ?? null));
+  const afetados: { toolName: string; situacao: 'revogado' | 'nivel_alterado'; nivelAntigo?: string; nivelNovo?: string }[] = [];
+  for (const a of kbsAnterior) {
+    const nivelNovo = novobyName.get(a.toolName);
+    if (nivelNovo === undefined) {
+      afetados.push({ toolName: a.toolName, situacao: 'revogado', nivelAntigo: a.accessLevelDesc ?? undefined });
+    } else if ((a.accessLevelDesc ?? null) !== nivelNovo) {
+      afetados.push({
+        toolName: a.toolName,
+        situacao: 'nivel_alterado',
+        nivelAntigo: a.accessLevelDesc ?? undefined,
+        nivelNovo: nivelNovo ?? undefined
+      });
+    }
+  }
+  if (afetados.length === 0) return;
+  const tipoMudanca = colaborador.deptAnterior !== colaborador.deptNovo ? 'departamento' : 'cargo';
+  const linkChamado = `${FRONTEND_URL}/tickets${chamadoId ? `?id=${chamadoId}` : ''}`;
+  for (const af of afetados) {
+    try {
+      const tool = await prisma.tool.findFirst({
+        where: {
+          OR: [
+            { name: { equals: af.toolName, mode: 'insensitive' } },
+            { name: { contains: af.toolName, mode: 'insensitive' } }
+          ]
+        },
+        include: { owner: { select: { email: true, name: true } } }
+      });
+      let slackUserId: string | null = null;
+      if (tool?.owner?.email) {
+        try {
+          const lookup = await client.users.lookupByEmail({ email: tool.owner.email });
+          slackUserId = lookup.user?.id ?? null;
+        } catch (_) {}
+      }
+      if (!slackUserId && SLACK_ID_LUAN) slackUserId = SLACK_ID_LUAN;
+      if (!slackUserId) {
+        console.warn(`[notificarOwnersFerramenta] Owner não encontrado no Slack para ferramenta ${af.toolName} (email: ${tool?.owner?.email ?? 'N/A'}).`);
+        continue;
+      }
+      const situacaoTexto =
+        af.situacao === 'revogado'
+          ? 'Acesso a ser revogado'
+          : `Nível alterado de ${af.nivelAntigo ?? '—'} para ${af.nivelNovo ?? '—'}`;
+      const text =
+        `🔄 *Revisão de Acesso Necessária — Theris*\n\n` +
+        `O colaborador *${colaborador.nome}* teve uma mudança de ${tipoMudanca}.\n\n` +
+        `*Ferramenta:* ${af.toolName}\n` +
+        `*Situação:* ${situacaoTexto}\n` +
+        `*Cargo anterior:* ${colaborador.cargoAnterior} — ${colaborador.deptAnterior}\n` +
+        `*Novo cargo:* ${colaborador.cargoNovo} — ${colaborador.deptNovo}\n` +
+        `*Data da mudança:* ${dataAcao}\n\n` +
+        `Por favor, revise e ajuste o acesso dessa ferramenta.\n` +
+        `👉 Ver chamado: ${linkChamado}`;
+      await client.chat.postMessage({ channel: slackUserId, text });
+      console.log(`[notificarOwnersFerramenta] DM enviada para owner de ${af.toolName} (Slack ID: ${slackUserId}).`);
+    } catch (e) {
+      console.error(`[notificarOwnersFerramenta] Erro ao notificar owner de ${af.toolName}:`, e);
+    }
+  }
+}

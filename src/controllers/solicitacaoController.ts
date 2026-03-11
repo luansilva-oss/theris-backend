@@ -280,16 +280,20 @@ async function runExtraordinaryAccessAutomation(requestId: string, request: { ty
   console.log(`[Automação] Acesso extraordinário concedido: usuário ${targetUserId} vinculado à ferramenta ${tool.name} (chamado ${requestId}).`);
 }
 
+/** Tipo de item KBS para notificação pós-mudança (compatível com slackService.KBSItem). */
+type KBSItem = { toolName: string; accessLevelDesc: string | null };
+
 /**
  * Automação CHANGE_ROLE: ao aprovar um chamado de movimentação, atualiza o colaborador no banco.
  * Dados em details: collaboratorId | collaboratorEmail | collaboratorName; future: { role, dept, roleId?, departmentId?, unitId? }.
  * Resolve IDs por nome quando future.role/dept forem strings.
+ * Retorna payload para notificarOwnersFerramenta quando success (KBS do colaborador é atualizado; notificação é chamada no controller).
  */
 async function runChangeRoleAutomation(
   requestId: string,
-  request: { type: string; requesterId: string | null; details: string | null; requester?: { name?: string; email?: string } | null },
+  request: { type: string; requesterId: string | null; details: string | null; actionDate?: string | Date | null; requester?: { name?: string; email?: string } | null },
   approverId?: string | null
-): Promise<{ success: boolean; collaboratorName?: string }> {
+): Promise<{ success: boolean; collaboratorName?: string; notifPayload?: { colaborador: { nome: string; cargoAnterior: string; deptAnterior: string; cargoNovo: string; deptNovo: string }; kbsAnterior: KBSItem[]; kbsNovo: KBSItem[]; dataAcao: string } }> {
   if (request.type !== 'CHANGE_ROLE') return { success: false };
   let d: Record<string, unknown> = {};
   try {
@@ -417,6 +421,19 @@ async function runChangeRoleAutomation(
     unitId: oldUser?.unitId
   };
 
+  // KBS anterior e novo para notificação aos owners (após atualizar o usuário)
+  const [oldRole, newRole] = await Promise.all([
+    oldUser?.roleId ? prisma.role.findUnique({ where: { id: oldUser.roleId }, include: { kitItems: true, department: true } }) : null,
+    prisma.role.findUnique({ where: { id: roleId! }, include: { kitItems: true, department: true } })
+  ]);
+  const kbsAnterior: KBSItem[] = (oldRole?.kitItems ?? []).map((k) => ({ toolName: k.toolName, accessLevelDesc: k.accessLevelDesc }));
+  const kbsNovo: KBSItem[] = (newRole?.kitItems ?? []).map((k) => ({ toolName: k.toolName, accessLevelDesc: k.accessLevelDesc }));
+  const cargoAnterior = oldRole?.name ?? (details.current as any)?.role ?? '';
+  const deptAnterior = oldRole?.department?.name ?? (details.current as any)?.dept ?? '';
+  const cargoNovo = jobTitle ?? '';
+  const deptNovo = newRole?.department?.name ?? '';
+  const dataAcao = request.actionDate instanceof Date ? request.actionDate.toISOString().slice(0, 10) : (typeof request.actionDate === 'string' ? request.actionDate : '') || new Date().toISOString().slice(0, 10);
+
   const deptChanged = departmentId !== oldUser?.departmentId;
   let newManagerId: string | null | undefined = undefined;
   if (deptChanged && departmentId) {
@@ -470,7 +487,16 @@ async function runChangeRoleAutomation(
   });
 
   console.log(`[Automação CHANGE_ROLE] Usuário ${targetUser.name} (${targetUser.id}) atualizado: cargo/departamento aplicados (chamado ${requestId}).`);
-  return { success: true, collaboratorName: targetUser.name };
+  return {
+    success: true,
+    collaboratorName: targetUser.name,
+    notifPayload: {
+      colaborador: { nome: targetUser.name, cargoAnterior, deptAnterior, cargoNovo, deptNovo },
+      kbsAnterior,
+      kbsNovo,
+      dataAcao
+    }
+  };
 }
 
 // ============================================================
@@ -636,6 +662,21 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
     const { notifyTicketEvent } = await import('../services/ticketEventService');
     notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {}).catch(() => {});
+
+    try {
+      const { notificarSI } = await import('../services/slackService');
+      await notificarSI({
+        id: newRequest.id,
+        type: newRequest.type,
+        status: newRequest.status,
+        justification: newRequest.justification,
+        details: newRequest.details,
+        requesterId: newRequest.requesterId,
+        createdAt: newRequest.createdAt
+      });
+    } catch (notifErr) {
+      console.error('[createSolicitacao] Falha ao notificar SI (chamado criado normalmente):', notifErr);
+    }
 
     if ((isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) && toolNameAex) {
       const requester = await prisma.user.findUnique({ where: { id: safeRequesterId }, select: { name: true, email: true } });
@@ -1166,7 +1207,22 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           if (result.success && request.requester?.email) {
             const { sendChangeRoleApprovedDM } = await import('../services/slackService');
             await sendChangeRoleApprovedDM(request.requester.email, result.collaboratorName || 'Colaborador');
-          } else if (!result.success && request.requester?.email) {
+          }
+          if (result.success && result.notifPayload) {
+            try {
+              const { notificarOwnersFerramenta } = await import('../services/slackService');
+              await notificarOwnersFerramenta(
+                result.notifPayload.colaborador,
+                result.notifPayload.kbsAnterior,
+                result.notifPayload.kbsNovo,
+                id,
+                result.notifPayload.dataAcao
+              );
+            } catch (notifErr) {
+              console.error('[Automação CHANGE_ROLE] Falha ao notificar owners (não bloqueia aprovação):', notifErr);
+            }
+          }
+          if (!result.success && request.requester?.email) {
             sendSlackNotification(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada.', request.type, undefined, request.details);
           }
         } catch (changeRoleError) {
@@ -1405,6 +1461,20 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           if (result.success && existing.requester?.email) {
             const { sendChangeRoleApprovedDM } = await import('../services/slackService');
             await sendChangeRoleApprovedDM(existing.requester.email, result.collaboratorName || 'Colaborador');
+          }
+          if (result.success && result.notifPayload) {
+            try {
+              const { notificarOwnersFerramenta } = await import('../services/slackService');
+              await notificarOwnersFerramenta(
+                result.notifPayload.colaborador,
+                result.notifPayload.kbsAnterior,
+                result.notifPayload.kbsNovo,
+                id,
+                result.notifPayload.dataAcao
+              );
+            } catch (notifErr) {
+              console.error('[Automação CHANGE_ROLE] Falha ao notificar owners (metadata, não bloqueia):', notifErr);
+            }
           }
         } catch (changeRoleError) {
           console.error('[Automação] Erro ao aplicar movimentação (CHANGE_ROLE metadata):', changeRoleError);
