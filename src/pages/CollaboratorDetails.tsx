@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, User as UserIcon, Mail, Briefcase, Building2, Hash, Clock, Pencil } from 'lucide-react';
+import { ArrowLeft, User as UserIcon, Mail, Briefcase, Building2, Hash, Clock, Pencil, Shield } from 'lucide-react';
 import { API_URL } from '../config';
 import { EntityAuditHistory } from '../components/EntityAuditHistory';
 import { EditUserModal } from '../components/EditUserModal';
@@ -34,6 +34,18 @@ interface CollaboratorDetailsData {
 function formatDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+const SYSTEM_PROFILE_LABELS: Record<string, string> = {
+  VIEWER: 'Visualizador',
+  APPROVER: 'Aprovador',
+  ADMIN: 'Administrador',
+  SUPER_ADMIN: 'Super Administrador',
+  GESTOR: 'Gestor',
+};
+function getSystemProfileLabel(profile?: string | null): string {
+  if (!profile) return '—';
+  return SYSTEM_PROFILE_LABELS[profile] ?? profile;
 }
 
 interface Props {
@@ -239,6 +251,10 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
                 <span>{(user.role.code || '').split(/\s+e\s+/)[0]?.trim() || user.role.code}</span>
               </div>
             )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Shield size={16} color="#71717a" style={{ flexShrink: 0 }} />
+              <span>Perfil de acesso: {getSystemProfileLabel((user as { systemProfile?: string })?.systemProfile)}</span>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Mail size={16} color="#71717a" style={{ flexShrink: 0 }} />
               <a href={`mailto:${user?.email}`} style={{ color: '#38BDF8', textDecoration: 'none' }}>{user?.email || '—'}</a>
