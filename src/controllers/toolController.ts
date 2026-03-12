@@ -282,55 +282,69 @@ export const updateToolLevel = async (req: Request, res: Response) => {
     const tool = await prisma.tool.findUnique({ where: { id: toolId } });
     if (!tool) return res.status(404).json({ error: 'Ferramenta não encontrada' });
 
+    // Deep clone so Prisma detects change (avoid same reference)
     let updatedLevels = [...(tool.availableAccessLevels || [])];
-    let updatedDescriptions = (tool.accessLevelDescriptions as Record<string, any>) || {};
+    const rawDescriptions = (tool.accessLevelDescriptions as Record<string, any>) || {};
+    let updatedDescriptions: Record<string, any> = {};
+    for (const k of Object.keys(rawDescriptions)) {
+      const v = rawDescriptions[k];
+      updatedDescriptions[k] = typeof v === 'object' && v !== null ? { ...v } : v;
+    }
 
     // 1. Rename Level (if name changed)
-    if (newLevelName && newLevelName !== oldLevelName) {
-      // Check if new name already exists
-      if (updatedLevels.includes(newLevelName)) {
+    if (newLevelName && String(newLevelName).trim() !== String(oldLevelName).trim()) {
+      const newName = String(newLevelName).trim();
+      const oldName = String(oldLevelName).trim();
+      if (updatedLevels.includes(newName)) {
         return res.status(400).json({ error: 'Este nome de nível já existe.' });
       }
-
-      // Update array
-      updatedLevels = updatedLevels.map(l => l === oldLevelName ? newLevelName : l);
-
-      // Update descriptions map key
-      if (updatedDescriptions[oldLevelName]) {
-        updatedDescriptions[newLevelName] = updatedDescriptions[oldLevelName];
-        delete updatedDescriptions[oldLevelName];
+      updatedLevels = updatedLevels.map(l => (l === oldName ? newName : l));
+      if (updatedDescriptions[oldName] !== undefined) {
+        updatedDescriptions[newName] = updatedDescriptions[oldName];
+        delete updatedDescriptions[oldName];
       }
-
-      // Update all Access records
       await prisma.access.updateMany({
-        where: { toolId, status: oldLevelName },
-        data: { status: newLevelName }
+        where: { toolId, status: oldName },
+        data: { status: newName }
       });
     }
 
     // 2. Update Description & Icon
-    const targetName = newLevelName || oldLevelName;
+    const targetName = (newLevelName && String(newLevelName).trim()) || String(oldLevelName).trim();
     if (description !== undefined || icon !== undefined) {
       const currentData = updatedDescriptions[targetName];
-
-      // Handle backward compatibility (string vs object)
       const baseData = typeof currentData === 'string'
         ? { description: currentData }
-        : (currentData || {});
-
+        : (typeof currentData === 'object' && currentData !== null ? { ...currentData } : {});
       updatedDescriptions[targetName] = {
         ...baseData,
-        ...(description !== undefined ? { description } : {}),
-        ...(icon !== undefined ? { icon } : {})
+        ...(description !== undefined ? { description: description } : {}),
+        ...(icon !== undefined ? { icon: icon } : {})
       };
     }
 
-    // Save Tool
+    // Persist: pass new object so Prisma serializes and saves
     const updatedTool = await prisma.tool.update({
       where: { id: toolId },
       data: {
         availableAccessLevels: updatedLevels,
-        accessLevelDescriptions: updatedDescriptions
+        accessLevelDescriptions: { ...updatedDescriptions }
+      },
+      select: {
+        id: true,
+        name: true,
+        acronym: true,
+        availableAccessLevels: true,
+        accessLevelDescriptions: true,
+        description: true,
+        ownerId: true,
+        subOwnerId: true,
+        toolGroupId: true,
+        criticality: true,
+        isCritical: true,
+        lastReviewAt: true,
+        nextReviewAt: true,
+        createdAt: true
       }
     });
 

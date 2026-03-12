@@ -145,7 +145,7 @@ async function runOffboardingAutomation(
  * respeita a hierarquia Unidade → Departamento → Cargo: busca/cria cada nível e vincula o colaborador.
  * Dados extraídos de request.details: unit/Unidade, department/Depto/dept, role/Cargo, collaboratorName/Colaborador, collaboratorEmail/email.
  */
-type OnboardingResult = { requestId: string; roleId: string; collaboratorName: string; jobTitle: string; departmentName: string; unitName: string; startDate: string };
+type OnboardingResult = { requestId: string; roleId: string; userId: string; collaboratorName: string; jobTitle: string; departmentName: string; unitName: string; startDate: string };
 async function runOnboardingAutomation(requestId: string, request: { type: string; details: string | null }): Promise<OnboardingResult | void> {
   if (!ONBOARDING_REQUEST_TYPES.includes(request.type)) return;
   let d: Record<string, unknown> = {};
@@ -238,7 +238,7 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
       }
     });
     console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${user.name} vinculado com sucesso (Chamado ${requestId}).`);
-    return { requestId, roleId: role.id, collaboratorName: user.name, jobTitle: role.name, departmentName: departmentNameRes, unitName: unitNameRes, startDate };
+    return { requestId, roleId: role.id, userId: user.id, collaboratorName: user.name, jobTitle: role.name, departmentName: departmentNameRes, unitName: unitNameRes, startDate };
   }
 
   if (!collaboratorEmail) {
@@ -246,7 +246,7 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
     return;
   }
 
-  await prisma.user.create({
+  const created = await prisma.user.create({
     data: {
       name: collaboratorName || collaboratorEmail.split('@')[0],
       email: collaboratorEmail,
@@ -258,7 +258,7 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
     }
   });
   console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${collaboratorName || collaboratorEmail} criado e vinculado com sucesso (Chamado ${requestId}).`);
-  return { requestId, roleId: role.id, collaboratorName: collaboratorName || collaboratorEmail, jobTitle: role.name, departmentName: departmentNameRes, unitName: unitNameRes, startDate };
+  return { requestId, roleId: role.id, userId: created.id, collaboratorName: collaboratorName || collaboratorEmail, jobTitle: role.name, departmentName: departmentNameRes, unitName: unitNameRes, startDate };
 }
 
 /** Tipos de solicitação que ao serem aprovados concedem acesso extraordinário (vinculam usuário à ferramenta na tabela Access). */
@@ -337,6 +337,84 @@ async function runExtraordinaryAccessAutomation(requestId: string, request: { ty
 
 /** Tipo de item KBS para notificação pós-mudança (compatível com slackService.KBSItem). */
 type KBSItem = { toolName: string; accessLevelDesc: string | null };
+
+/**
+ * Sincroniza a tabela Access (Catálogo) após mudança de cargo: remove acessos das ferramentas que saíram do KBS,
+ * adiciona/atualiza acessos para as ferramentas do novo KBS com o nível correto.
+ */
+async function syncAccessAfterRoleChange(userId: string, kbsAnterior: KBSItem[], kbsNovo: KBSItem[]): Promise<void> {
+  const novoByTool = new Map<string, string | null>();
+  kbsNovo.forEach((k) => novoByTool.set(k.toolName.trim().toLowerCase(), k.accessLevelDesc ?? null));
+
+  const anteriorOnly = kbsAnterior.filter((a) => !novoByTool.has(a.toolName.trim().toLowerCase()));
+
+  for (const item of anteriorOnly) {
+    const tool = await prisma.tool.findFirst({
+      where: {
+        OR: [
+          { name: { equals: item.toolName, mode: 'insensitive' } },
+          { name: { contains: item.toolName, mode: 'insensitive' } }
+        ]
+      },
+      select: { id: true }
+    });
+    if (tool) {
+      await prisma.access.deleteMany({ where: { toolId: tool.id, userId } });
+    }
+  }
+
+  for (const item of kbsNovo) {
+    const tool = await prisma.tool.findFirst({
+      where: {
+        OR: [
+          { name: { equals: item.toolName, mode: 'insensitive' } },
+          { name: { contains: item.toolName, mode: 'insensitive' } }
+        ]
+      },
+      select: { id: true }
+    });
+    if (!tool) continue;
+    const level = item.accessLevelDesc ?? 'ACTIVE';
+    await prisma.access.deleteMany({ where: { toolId: tool.id, userId } });
+    await prisma.access.create({
+      data: {
+        toolId: tool.id,
+        userId,
+        status: level,
+        isExtraordinary: false
+      }
+    });
+  }
+}
+
+/**
+ * Sincroniza Access (Catálogo) a partir do KBS do cargo: cria registros de acesso para cada ferramenta do role.
+ * Usado após onboarding (novo colaborador vinculado ao cargo).
+ */
+async function syncAccessFromRole(userId: string, roleId: string): Promise<void> {
+  const role = await prisma.role.findUnique({
+    where: { id: roleId },
+    include: { kitItems: true }
+  });
+  if (!role?.kitItems?.length) return;
+  for (const ki of role.kitItems) {
+    const tool = await prisma.tool.findFirst({
+      where: {
+        OR: [
+          { name: { equals: ki.toolName, mode: 'insensitive' } },
+          { name: { contains: ki.toolName, mode: 'insensitive' } }
+        ]
+      },
+      select: { id: true }
+    });
+    if (!tool) continue;
+    const level = ki.accessLevelDesc ?? 'ACTIVE';
+    await prisma.access.deleteMany({ where: { toolId: tool.id, userId } });
+    await prisma.access.create({
+      data: { toolId: tool.id, userId, status: level, isExtraordinary: false }
+    });
+  }
+}
 
 /**
  * Automação CHANGE_ROLE: ao aprovar um chamado de movimentação, atualiza o colaborador no banco.
@@ -542,6 +620,14 @@ async function runChangeRoleAutomation(
   });
 
   console.log(`[Automação CHANGE_ROLE] Usuário ${targetUser.name} (${targetUser.id}) atualizado: cargo/departamento aplicados (chamado ${requestId}).`);
+
+  // Sincronizar Catálogo (Access): remover acessos do KBS anterior que não estão no novo; adicionar/atualizar acessos do KBS novo
+  try {
+    await syncAccessAfterRoleChange(targetUser.id, kbsAnterior, kbsNovo);
+  } catch (syncErr) {
+    console.error('[Automação CHANGE_ROLE] Falha ao sincronizar Access com Catálogo (não bloqueia):', syncErr);
+  }
+
   return {
     success: true,
     collaboratorName: targetUser.name,
@@ -1207,6 +1293,11 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           const onboardingResult = await runOnboardingAutomation(id, request);
           if (onboardingResult) {
             try {
+              await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);
+            } catch (syncErr) {
+              console.error('[Automação] Onboarding: falha ao sincronizar Access/Catálogo (não bloqueia):', syncErr);
+            }
+            try {
               const { notificarOwnersJoiner } = await import('../services/slackService');
               await notificarOwnersJoiner(
                 onboardingResult.requestId,
@@ -1606,6 +1697,11 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         try {
           const onboardingResult = await runOnboardingAutomation(id, existing);
           if (onboardingResult) {
+            try {
+              await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);
+            } catch (syncErr) {
+              console.error('[Automação] Onboarding (metadata): falha ao sincronizar Access/Catálogo (não bloqueia):', syncErr);
+            }
             try {
               const { notificarOwnersJoiner } = await import('../services/slackService');
               await notificarOwnersJoiner(
