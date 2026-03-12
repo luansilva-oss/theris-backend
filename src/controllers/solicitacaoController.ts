@@ -431,15 +431,20 @@ async function runChangeRoleAutomation(
   let d: Record<string, unknown> = {};
   try {
     d = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
-  } catch {
+  } catch (parseErr) {
+    console.error('[CHANGE_ROLE] Erro ao fazer parse de details:', parseErr);
     return { success: false };
   }
   const details = d as Record<string, string | { role?: string; dept?: string } | undefined>;
   const future = details.future as Record<string, string> | undefined;
-  if (!future?.role && !future?.dept && !(future as any)?.roleId) {
-    console.warn(`[Automação CHANGE_ROLE] Chamado ${requestId}: detalhes future não informados. Ignorando.`);
+  const futureRole = (future?.role ?? (future as any)?.roleName ?? '').toString().trim();
+  const futureDept = (future?.dept ?? (future as any)?.deptName ?? '').toString().trim();
+  const futureRoleId = (future as any)?.roleId;
+  if (!futureRole && !futureDept && !futureRoleId) {
+    console.warn(`[CHANGE_ROLE] Chamado ${requestId}: detalhes future não informados (future=%s). Ignorando.`, JSON.stringify(future));
     return { success: false };
   }
+  console.log('[CHANGE_ROLE] Executando mudança de cargo para requestId:', requestId, 'future.role=', futureRole, 'future.dept=', futureDept, 'future.roleId=', futureRoleId);
 
   let targetUser: { id: string; name: string } | null = null;
   const collaboratorId = details.collaboratorId || details.targetUserId;
@@ -490,8 +495,8 @@ async function runChangeRoleAutomation(
       jobTitle = role.name;
     }
   }
-  const deptName = (future?.dept || futureDepartmentId || '').toString().trim();
-  const roleName = (future?.role || '').toString().trim();
+  const deptName = futureDept || (futureDepartmentId || '').toString().trim();
+  const roleName = futureRole || ('').toString().trim();
 
   if (!departmentId && deptName) {
     let dept = await prisma.department.findFirst({
@@ -538,9 +543,10 @@ async function runChangeRoleAutomation(
   if (futureUnitId && !unitId) unitId = futureUnitId;
 
   if (!roleId || !departmentId) {
-    console.warn(`[Automação CHANGE_ROLE] Chamado ${requestId}: cargo ou departamento de destino não encontrados (future.role="${roleName}", future.dept="${deptName}").`);
+    console.warn(`[CHANGE_ROLE] Chamado ${requestId}: cargo ou departamento de destino não encontrados. roleName="${roleName}" deptName="${deptName}" (roleId=${roleId} departmentId=${departmentId}). Verifique se o cargo/departamento existem no catálogo.`);
     return { success: false };
   }
+  console.log('[CHANGE_ROLE] Colaborador identificado userId=', targetUser.id, '; novo roleId=', roleId, 'departmentId=', departmentId);
   if (!jobTitle && roleName) jobTitle = roleName;
 
   const oldUser = await prisma.user.findUnique({
@@ -1364,8 +1370,14 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
 
       // CENÁRIO 2.5: CHANGE_ROLE (MOVIMENTAÇÃO) — atualiza colaborador no banco e notifica
       else if (request.type === 'CHANGE_ROLE') {
+        console.log('[CHANGE_ROLE] Executando fluxo pós-aprovação para requestId:', id);
         try {
           const result = await runChangeRoleAutomation(id, request, approverId);
+          if (result.success) {
+            console.log('[CHANGE_ROLE] Mudança aplicada com sucesso. userId atualizado; notificações em seguida.');
+          } else {
+            console.warn('[CHANGE_ROLE] runChangeRoleAutomation retornou success: false. Verifique details.future e colaborador.');
+          }
           if (result.success && request.requester?.email) {
             const { sendChangeRoleApprovedDM } = await import('../services/slackService');
             await sendChangeRoleApprovedDM(request.requester.email, result.collaboratorName || 'Colaborador');
@@ -1373,8 +1385,11 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           if (result.success && result.notifPayload) {
             try {
               const details = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
-              const subtipo = details.subtipo as string | undefined;
-              if (subtipo === 'MUDANCA_CARGO') {
+              const subtipo = (details.subtipo as string | undefined)?.trim()?.toUpperCase() || '';
+              const isCargo = subtipo === 'MUDANCA_CARGO';
+              const isDepto = subtipo === 'MUDANCA_DEPARTAMENTO';
+              console.log('[CHANGE_ROLE] Notificações: subtipo=', details.subtipo, '→ isCargo=', isCargo, 'isDepto=', isDepto);
+              if (isCargo) {
                 const { notificarOwnersMudancaCargo } = await import('../services/slackService');
                 await notificarOwnersMudancaCargo(
                   result.notifPayload.colaborador,
@@ -1383,7 +1398,8 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
                   id,
                   result.notifPayload.dataAcao
                 );
-              } else if (subtipo === 'MUDANCA_DEPARTAMENTO') {
+                console.log('[CHANGE_ROLE] notificarOwnersMudancaCargo concluído.');
+              } else if (isDepto) {
                 const { notificarOwnersMudancaDepto } = await import('../services/slackService');
                 await notificarOwnersMudancaDepto(
                   result.notifPayload.colaborador,
@@ -1392,6 +1408,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
                   id,
                   result.notifPayload.dataAcao
                 );
+                console.log('[CHANGE_ROLE] notificarOwnersMudancaDepto concluído.');
               } else {
                 const { notificarOwnersFerramenta } = await import('../services/slackService');
                 await notificarOwnersFerramenta(
@@ -1410,7 +1427,18 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
             sendSlackNotification(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada.', request.type, undefined, request.details);
           }
         } catch (changeRoleError) {
-          console.error('[Automação] Erro ao aplicar movimentação (CHANGE_ROLE):', changeRoleError);
+          console.error('[CHANGE_ROLE] Erro ao executar mudança:', changeRoleError);
+          try {
+            const { registrarMudanca } = await import('../lib/auditLog');
+            await registrarMudanca({
+              tipo: 'CHANGE_ROLE_ERRO',
+              entidadeTipo: 'Request',
+              entidadeId: id,
+              descricao: `Falha ao aplicar mudança de cargo após aprovação: ${changeRoleError instanceof Error ? changeRoleError.message : String(changeRoleError)}`,
+              dadosDepois: { error: String(changeRoleError), requestId: id },
+              autorId: approverId ?? undefined
+            });
+          } catch (_) {}
           if (request.requester?.email) {
             sendSlackNotification(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada.', request.type, undefined, request.details);
           }
@@ -1640,8 +1668,14 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     // Automação: se o status foi alterado para APROVADO, executar regras (desligamento, onboarding, acesso extraordinário, CHANGE_ROLE)
     if (newStatus === 'APROVADO') {
       if (existing.type === 'CHANGE_ROLE') {
+        console.log('[CHANGE_ROLE] Executando fluxo pós-aprovação (metadata) para requestId:', id);
         try {
           const result = await runChangeRoleAutomation(id, existing, existing.approverId);
+          if (result.success) {
+            console.log('[CHANGE_ROLE] (metadata) Mudança aplicada com sucesso.');
+          } else {
+            console.warn('[CHANGE_ROLE] (metadata) runChangeRoleAutomation retornou success: false.');
+          }
           if (result.success && existing.requester?.email) {
             const { sendChangeRoleApprovedDM } = await import('../services/slackService');
             await sendChangeRoleApprovedDM(existing.requester.email, result.collaboratorName || 'Colaborador');
@@ -1649,8 +1683,10 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           if (result.success && result.notifPayload) {
             try {
               const details = typeof existing.details === 'string' ? JSON.parse(existing.details || '{}') : (existing.details || {});
-              const subtipo = details.subtipo as string | undefined;
-              if (subtipo === 'MUDANCA_CARGO') {
+              const subtipo = (details.subtipo as string | undefined)?.trim()?.toUpperCase() || '';
+              const isCargo = subtipo === 'MUDANCA_CARGO';
+              const isDepto = subtipo === 'MUDANCA_DEPARTAMENTO';
+              if (isCargo) {
                 const { notificarOwnersMudancaCargo } = await import('../services/slackService');
                 await notificarOwnersMudancaCargo(
                   result.notifPayload.colaborador,
@@ -1659,7 +1695,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
                   id,
                   result.notifPayload.dataAcao
                 );
-              } else if (subtipo === 'MUDANCA_DEPARTAMENTO') {
+              } else if (isDepto) {
                 const { notificarOwnersMudancaDepto } = await import('../services/slackService');
                 await notificarOwnersMudancaDepto(
                   result.notifPayload.colaborador,
@@ -1683,7 +1719,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
             }
           }
         } catch (changeRoleError) {
-          console.error('[Automação] Erro ao aplicar movimentação (CHANGE_ROLE metadata):', changeRoleError);
+          console.error('[CHANGE_ROLE] Erro ao aplicar movimentação (metadata):', changeRoleError);
         }
       }
       if (OFFBOARDING_REQUEST_TYPES.includes(existing.type)) {
