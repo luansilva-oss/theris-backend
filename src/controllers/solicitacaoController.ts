@@ -416,11 +416,75 @@ async function syncAccessFromRole(userId: string, roleId: string): Promise<void>
   }
 }
 
+/** Conta quantas palavras do input existem no nome do candidato (case-insensitive). Usado para desempate na camada 3. */
+function scoreSimilarity(input: string, candidate: string): number {
+  const words = input.toLowerCase().split(/\s+/).filter(Boolean);
+  const candLower = candidate.toLowerCase();
+  return words.filter((w) => candLower.includes(w)).length;
+}
+
+/** Busca departamento em 3 camadas: (1) por ID, (2) equals case-insensitive, (3) contains + melhor similaridade. */
+async function findDepartmentByThreeLayers(
+  departmentIdFromDetails: string | null | undefined,
+  deptName: string
+): Promise<{ id: string; name: string; unitId: string | null } | null> {
+  const id = (departmentIdFromDetails || '').toString().trim();
+  if (id) {
+    const dept = await prisma.department.findUnique({ where: { id }, include: { unit: true } });
+    if (dept) return { id: dept.id, name: dept.name, unitId: dept.unitId ?? (dept as any).unit?.id ?? null };
+  }
+  if (!deptName) return null;
+  let dept = await prisma.department.findFirst({
+    where: { name: { equals: deptName, mode: 'insensitive' } },
+    include: { unit: true }
+  });
+  if (dept) return { id: dept.id, name: dept.name, unitId: dept.unitId ?? (dept as any).unit?.id ?? null };
+  const candidates = await prisma.department.findMany({
+    where: { name: { contains: deptName, mode: 'insensitive' } },
+    include: { unit: true }
+  });
+  if (candidates.length === 0) return null;
+  const best = candidates.sort(
+    (a, b) => scoreSimilarity(deptName, b.name) - scoreSimilarity(deptName, a.name)
+  )[0];
+  return { id: best.id, name: best.name, unitId: best.unitId ?? (best as any).unit?.id ?? null };
+}
+
+/** Busca cargo em 3 camadas: (1) por ID, (2) equals case-insensitive, (3) contains + melhor similaridade. departmentId opcional para restringir ao depto. */
+async function findRoleByThreeLayers(
+  roleIdFromDetails: string | null | undefined,
+  roleName: string,
+  departmentId: string | null
+): Promise<{ id: string; name: string; departmentId: string; unitId: string | null } | null> {
+  const id = (roleIdFromDetails || '').toString().trim();
+  if (id) {
+    const role = await prisma.role.findUnique({ where: { id }, include: { department: true } });
+    if (role) return { id: role.id, name: role.name, departmentId: role.departmentId, unitId: role.department?.unitId ?? null };
+  }
+  if (!roleName) return null;
+  const baseWhere = departmentId ? { departmentId } : {};
+  let role = await prisma.role.findFirst({
+    where: { ...baseWhere, name: { equals: roleName, mode: 'insensitive' } },
+    include: { department: true }
+  });
+  if (role) return { id: role.id, name: role.name, departmentId: role.departmentId, unitId: role.department?.unitId ?? null };
+  const candidates = await prisma.role.findMany({
+    where: { ...baseWhere, name: { contains: roleName, mode: 'insensitive' } },
+    include: { department: true }
+  });
+  if (candidates.length === 0) return null;
+  const best = candidates.sort(
+    (a, b) => scoreSimilarity(roleName, b.name) - scoreSimilarity(roleName, a.name)
+  )[0];
+  return { id: best.id, name: best.name, departmentId: best.departmentId, unitId: best.department?.unitId ?? null };
+}
+
 /**
  * Automação CHANGE_ROLE: ao aprovar um chamado de movimentação, atualiza o colaborador no banco.
- * Dados em details: collaboratorId | collaboratorEmail | collaboratorName; future: { role, dept, roleId?, departmentId?, unitId? }.
- * Resolve IDs por nome quando future.role/dept forem strings.
- * Retorna payload para notificarOwnersFerramenta quando success (KBS do colaborador é atualizado; notificação é chamada no controller).
+ * Dados em details: collaboratorId | collaboratorEmail | collaboratorName; future: { role, dept, roleId?, departmentId?, unitId? };
+ * details.newRoleId e details.newDepartmentId (ou future.roleId / future.departmentId) têm prioridade (camada 1).
+ * Resolução por texto: camada 2 equals case-insensitive, camada 3 contains + similaridade.
+ * Retorna payload para notificarOwnersFerramenta quando success.
  */
 async function runChangeRoleAutomation(
   requestId: string,
@@ -439,12 +503,13 @@ async function runChangeRoleAutomation(
   const future = details.future as Record<string, string> | undefined;
   const futureRole = (future?.role ?? (future as any)?.roleName ?? '').toString().trim();
   const futureDept = (future?.dept ?? (future as any)?.deptName ?? '').toString().trim();
-  const futureRoleId = (future as any)?.roleId;
-  if (!futureRole && !futureDept && !futureRoleId) {
+  const newRoleId = (details.newRoleId ?? (future as any)?.roleId ?? '').toString().trim() || null;
+  const newDepartmentId = (details.newDepartmentId ?? (future as any)?.departmentId ?? '').toString().trim() || null;
+  if (!futureRole && !futureDept && !newRoleId && !newDepartmentId) {
     console.warn(`[CHANGE_ROLE] Chamado ${requestId}: detalhes future não informados (future=%s). Ignorando.`, JSON.stringify(future));
     return { success: false };
   }
-  console.log('[CHANGE_ROLE] Executando mudança de cargo para requestId:', requestId, 'future.role=', futureRole, 'future.dept=', futureDept, 'future.roleId=', futureRoleId);
+  console.log('[CHANGE_ROLE] Executando mudança de cargo para requestId:', requestId, 'future.role=', futureRole, 'future.dept=', futureDept, 'newRoleId=', newRoleId, 'newDepartmentId=', newDepartmentId);
 
   let targetUser: { id: string; name: string } | null = null;
   const collaboratorId = details.collaboratorId || details.targetUserId;
@@ -481,69 +546,46 @@ async function runChangeRoleAutomation(
   let departmentId: string | null = null;
   let unitId: string | null = null;
   let jobTitle: string | null = null;
-
-  const futureRoleId = (future as any)?.roleId;
-  const futureDepartmentId = (future as any)?.departmentId;
   const futureUnitId = (future as any)?.unitId;
 
-  if (futureRoleId) {
-    const role = await prisma.role.findUnique({ where: { id: futureRoleId }, include: { department: true } });
-    if (role) {
-      roleId = role.id;
-      departmentId = role.departmentId;
-      unitId = role.department?.unitId ?? null;
-      jobTitle = role.name;
-    }
+  const bestDept = await findDepartmentByThreeLayers(newDepartmentId, futureDept);
+  if (bestDept) {
+    departmentId = bestDept.id;
+    unitId = bestDept.unitId;
   }
-  const deptName = futureDept || (futureDepartmentId || '').toString().trim();
-  const roleName = futureRole || ('').toString().trim();
+  console.log('[CHANGE_ROLE] Buscando depto:', futureDept || newDepartmentId || '(vazio)', '→ encontrado:', bestDept?.name ?? 'NENHUM');
 
-  if (!departmentId && deptName) {
-    let dept = await prisma.department.findFirst({
-      where: { name: { equals: deptName, mode: 'insensitive' } },
-      include: { unit: true }
-    });
-    if (!dept) {
-      dept = await prisma.department.findFirst({
-        where: { name: { contains: deptName, mode: 'insensitive' } },
-        include: { unit: true }
-      });
-    }
-    if (dept) {
-      departmentId = dept.id;
-      unitId = dept.unitId ?? (dept as any).unit?.id ?? null;
+  const bestRole = await findRoleByThreeLayers(newRoleId, futureRole, departmentId);
+  if (bestRole) {
+    roleId = bestRole.id;
+    jobTitle = bestRole.name;
+    if (!departmentId) {
+      departmentId = bestRole.departmentId;
+      unitId = bestRole.unitId;
     }
   }
-  if (!roleId && roleName && departmentId) {
-    let role = await prisma.role.findFirst({
-      where: { departmentId, name: { equals: roleName, mode: 'insensitive' } }
-    });
-    if (!role) {
-      role = await prisma.role.findFirst({
-        where: { departmentId, name: { contains: roleName, mode: 'insensitive' } }
-      });
-    }
-    if (role) {
-      roleId = role.id;
-      jobTitle = role.name;
-    }
-  }
-  if (!roleId && roleName && !departmentId) {
-    const role = await prisma.role.findFirst({
-      where: { name: { contains: roleName, mode: 'insensitive' } },
-      include: { department: true }
-    });
-    if (role) {
-      roleId = role.id;
-      departmentId = role.departmentId;
-      unitId = role.department?.unitId ?? null;
-      jobTitle = role.name;
-    }
-  }
+  console.log('[CHANGE_ROLE] Buscando cargo:', futureRole || newRoleId || '(vazio)', '→ encontrado:', bestRole?.name ?? 'NENHUM');
+
   if (futureUnitId && !unitId) unitId = futureUnitId;
 
   if (!roleId || !departmentId) {
-    console.warn(`[CHANGE_ROLE] Chamado ${requestId}: cargo ou departamento de destino não encontrados. roleName="${roleName}" deptName="${deptName}" (roleId=${roleId} departmentId=${departmentId}). Verifique se o cargo/departamento existem no catálogo.`);
+    const cargoBuscado = futureRole || newRoleId || '(não informado)';
+    const deptoBuscado = futureDept || newDepartmentId || '(não informado)';
+    console.warn(`[CHANGE_ROLE] Chamado ${requestId}: cargo ou departamento não encontrados. Cargo buscado: "${cargoBuscado}". Depto buscado: "${deptoBuscado}".`);
+    const { registrarMudanca } = await import('../lib/auditLog');
+    await registrarMudanca({
+      tipo: 'ERRO_CHANGE_ROLE',
+      entidadeTipo: 'Solicitacao',
+      entidadeId: requestId,
+      descricao: `Automação CHANGE_ROLE: cargo ou departamento não encontrados. Cargo buscado: ${cargoBuscado}. Depto buscado: ${deptoBuscado}. Ação necessária: revisar manualmente.`,
+      dadosDepois: { cargoBuscado, deptoBuscado, roleId, departmentId }
+    }).catch((e) => console.error('[CHANGE_ROLE] HistoricoMudanca ERRO_CHANGE_ROLE:', e));
+    try {
+      const { notificarLuanErroChangeRole } = await import('../services/slackService');
+      await notificarLuanErroChangeRole(requestId, String(cargoBuscado), String(deptoBuscado));
+    } catch (notifErr) {
+      console.error('[CHANGE_ROLE] Falha ao notificar SLACK_ID_LUAN:', notifErr);
+    }
     return { success: false };
   }
   console.log('[CHANGE_ROLE] Colaborador identificado userId=', targetUser.id, '; novo roleId=', roleId, 'departmentId=', departmentId);
@@ -726,6 +768,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       approverId = null;
     }
     // ROTA B: GESTÃO DE PESSOAS / DEPUTY — gestor aprova; exceção: Renata Czapiewski Silva vai direto para SI
+    // Para CHANGE_ROLE: ao criar o chamado, enviar details.newRoleId e details.newDepartmentId (ou future.roleId / future.departmentId) quando disponíveis, para priorizar busca por ID na automação.
     else if (['DEPUTY_DESIGNATION', 'CHANGE_ROLE', 'HIRING', 'FIRING', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'].includes(safeType)) {
       const requester = await prisma.user.findUnique({
         where: { id: safeRequesterId },
