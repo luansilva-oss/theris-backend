@@ -30,6 +30,8 @@ import { syncStructureFromUsers } from './services/structureSync'; // Import syn
 import { startPasswordReminderCron } from './jobs/passwordReminderCron';
 import { startCleanupSessionsCron } from './crons/cleanupSessions';
 import { startReviewAccessCron } from './crons/reviewAccessCron';
+import { startJumpCloudPasswordCron } from './crons/jumpcloudPasswordCron';
+import { startJumpCloudPasswordExpiryCron } from './crons/jumpcloudPasswordExpiryCron';
 
 // Slack
 import { slackReceiver, getToolsAndLevelsMap } from './services/slackService';
@@ -79,6 +81,10 @@ startPasswordReminderCron();
 startCleanupSessionsCron();
 // Cron: revisão periódica de acessos (90 dias), 1x/dia às 09:00 (Brasília)
 startReviewAccessCron();
+// Cron: JumpCloud Password Manager (eventos view/copy), a cada 5 min
+startJumpCloudPasswordCron();
+// Cron: JumpCloud senha expirando em 7 dias, 1x/dia às 08:00 (Brasília)
+startJumpCloudPasswordExpiryCron();
 
 // --- CORS ---
 app.use(cors({

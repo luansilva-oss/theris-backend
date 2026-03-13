@@ -108,6 +108,9 @@ model User {
 
   // Controle de notificação de revisão trimestral (evitar duplicata no mesmo dia)
   revisaoNotificacoesEnviadas RevisaoNotificacaoEnviada[]
+
+  // Controle de notificação de senha JumpCloud expirando (evitar spam: 1x por dia)
+  senhaExpiracaoNotificacoes SenhaExpiracaoNotificacao[]
 }
 
 model HistoricoMudanca {
@@ -290,4 +293,31 @@ model LoginAttempt {
   @@index([email])
   @@index([ipAddress])
   @@index([createdAt])
+}
+
+// JumpCloud: deduplicação de eventos do Password Manager (cron 5 min)
+model JumpCloudEventLog {
+  id           String   @id // ID único do evento JumpCloud
+  eventType    String
+  userEmail    String
+  resourceName String?
+  clientIp     String?
+  processedAt  DateTime @default(now())
+}
+
+// Chave/valor para estado dos crons (ex: último timestamp processado JumpCloud)
+model SystemConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Evitar notificar o mesmo usuário mais de uma vez por dia (senha JumpCloud expirando)
+model SenhaExpiracaoNotificacao {
+  id     String   @id @default(uuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sentAt DateTime @default(now())
+
+  @@index([userId, sentAt])
 }
