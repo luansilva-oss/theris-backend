@@ -8,10 +8,14 @@ const prisma = new PrismaClient();
 
 const JUMPCLOUD_API_KEY = process.env.JUMPCLOUD_API_KEY || '';
 const JUMPCLOUD_SLACK_CHANNEL_ID = process.env.JUMPCLOUD_SLACK_CHANNEL_ID || '';
+/** POST https://api.jumpcloud.com/insights/directory/v1/events — Directory Insights API */
 const INSIGHTS_EVENTS_URL = 'https://api.jumpcloud.com/insights/directory/v1/events';
 const SYSTEM_USERS_URL = 'https://console.jumpcloud.com/api/systemusers';
 
 const CONFIG_KEY_LAST_PASSWORD_EVENT_TS = 'jumpcloud_password_events_last_start';
+
+/** Valor do campo service para eventos do Password Manager (documentação JumpCloud: "Password Manager" na UI). */
+const INSIGHTS_SERVICE_PASSWORD_MANAGER = 'password_manager';
 
 /** Evento retornado pela API Directory Insights (estrutura flexível). */
 export type JumpCloudInsightEvent = {
@@ -62,6 +66,50 @@ export async function setLastProcessedEventTimestamp(isoTimestamp: string): Prom
   }
 }
 
+/** Mascara API key para log (mostra só os primeiros 6 caracteres). */
+function maskApiKey(key: string): string {
+  if (!key || key.length <= 6) return '***';
+  return key.slice(0, 6) + '***';
+}
+
+/**
+ * Request de diagnóstico: apenas start_time e end_time (janela 24h), sem service e sem search_term.
+ * Loga o response bruto completo para ver se a API retorna qualquer evento.
+ */
+async function fetchInsightsDiagnosticNoFilter(): Promise<void> {
+  if (!JUMPCLOUD_API_KEY) return;
+  const endTime = new Date();
+  const startTime = new Date(endTime);
+  startTime.setHours(startTime.getHours() - 24);
+  const body = {
+    start_time: startTime.toISOString(),
+    end_time: endTime.toISOString()
+  };
+  console.log('[JumpCloud] [DIAGNÓSTICO] Request SEM filtros (apenas start_time/end_time, janela 24h)');
+  console.log('[JumpCloud] [DIAGNÓSTICO] URL:', INSIGHTS_EVENTS_URL);
+  console.log('[JumpCloud] [DIAGNÓSTICO] Body:', JSON.stringify(body, null, 2));
+  try {
+    const res = await fetch(INSIGHTS_EVENTS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': JUMPCLOUD_API_KEY },
+      body: JSON.stringify(body)
+    });
+    const raw = await res.text();
+    console.log('[JumpCloud] [DIAGNÓSTICO] Status:', res.status);
+    console.log('[JumpCloud] [DIAGNÓSTICO] Response bruto completo:', raw);
+    try {
+      const parsed = JSON.parse(raw);
+      const keys = Object.keys(parsed);
+      console.log('[JumpCloud] [DIAGNÓSTICO] Keys no JSON:', keys.join(', '));
+      if (Array.isArray(parsed)) console.log('[JumpCloud] [DIAGNÓSTICO] Array length:', parsed.length);
+      else if (parsed.events) console.log('[JumpCloud] [DIAGNÓSTICO] parsed.events length:', parsed.events?.length);
+      else if (parsed.data) console.log('[JumpCloud] [DIAGNÓSTICO] parsed.data length:', parsed.data?.length);
+    } catch (_) {}
+  } catch (e) {
+    console.error('[JumpCloud] [DIAGNÓSTICO] Erro:', e);
+  }
+}
+
 /**
  * Consulta eventos do Password Manager (password_copy ou password_view).
  * start_time: ISO timestamp do último evento processado; na primeira execução usar há 24h ou valor padrão.
@@ -73,28 +121,35 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
   }
   try {
     const endTime = new Date().toISOString();
+    const body = {
+      service: [INSIGHTS_SERVICE_PASSWORD_MANAGER],
+      start_time: startTime,
+      end_time: endTime,
+      search_term: {
+        and: [
+          {
+            or: [
+              { field: 'event_type', value: 'password_copy' },
+              { field: 'event_type', value: 'password_view' }
+            ]
+          }
+        ]
+      }
+    };
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-api-key': JUMPCLOUD_API_KEY
+    };
+
+    console.log('[JumpCloud] URL completa:', INSIGHTS_EVENTS_URL);
+    console.log('[JumpCloud] Headers:', { 'Content-Type': headers['Content-Type'], 'x-api-key': maskApiKey(JUMPCLOUD_API_KEY) });
+    console.log('[JumpCloud] Body completo:', JSON.stringify(body, null, 2));
     console.log('[JumpCloud] Request interval start_time:', startTime, 'end_time:', endTime);
+
     const res = await fetch(INSIGHTS_EVENTS_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': JUMPCLOUD_API_KEY
-      },
-      body: JSON.stringify({
-        service: ['password_manager'],
-        start_time: startTime,
-        end_time: endTime,
-        search_term: {
-          and: [
-            {
-              or: [
-                { field: 'event_type', value: 'password_copy' },
-                { field: 'event_type', value: 'password_view' }
-              ]
-            }
-          ]
-        }
-      })
+      headers,
+      body: JSON.stringify(body)
     });
     if (!res.ok) {
       console.error('[JumpCloud] Insights API status:', res.status, await res.text());
@@ -105,6 +160,11 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
     const events = data.events ?? data.data ?? [];
     const list = Array.isArray(events) ? events : [];
     console.log('[JumpCloud] Parsed events count:', list.length, '(keys in response:', Object.keys(data).join(', ') + ')');
+
+    if (list.length === 0) {
+      console.log('[JumpCloud] Nenhum evento retornado; executando request de diagnóstico sem filtros...');
+      await fetchInsightsDiagnosticNoFilter();
+    }
     return list;
   } catch (e) {
     console.error('[JumpCloud] fetchPasswordManagerEvents:', e);
