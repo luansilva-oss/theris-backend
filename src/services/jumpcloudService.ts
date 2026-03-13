@@ -17,6 +17,12 @@ const CONFIG_KEY_LAST_PASSWORD_EVENT_TS = 'jumpcloud_password_events_last_start'
 /** Valor do campo service para eventos do Password Manager (documentação JumpCloud: "Password Manager" na UI). */
 const INSIGHTS_SERVICE_PASSWORD_MANAGER = 'password_manager';
 
+/** Tipos de evento do Password Manager que processamos e notificamos no Slack. */
+const RELEVANT_EVENT_TYPES = [
+  'passwordmanager_item_copy',
+  'passwordmanager_item_reveal',
+];
+
 /** Evento retornado pela API Directory Insights (estrutura flexível). */
 export type JumpCloudInsightEvent = {
   id?: string;
@@ -87,17 +93,7 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
     const body = {
       service: [INSIGHTS_SERVICE_PASSWORD_MANAGER],
       start_time: startTime,
-      end_time: endTime,
-      search_term: {
-        and: [
-          {
-            or: [
-              { field: 'event_type', value: 'passwordmanager_item_copy' },
-              { field: 'event_type', value: 'passwordmanager_item_reveal' }
-            ]
-          }
-        ]
-      }
+      end_time: endTime
     };
     const headers = {
       'Content-Type': 'application/json',
@@ -122,9 +118,10 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
     console.log('[JumpCloud] Response:', JSON.stringify(data, null, 2));
     const events = data.events ?? data.data ?? [];
     const list = Array.isArray(events) ? events : [];
-    console.log('[JumpCloud] Parsed events count:', list.length, '(keys in response:', Object.keys(data).join(', ') + ')');
+    const filtered = list.filter((e) => RELEVANT_EVENT_TYPES.includes((e.event_type ?? '') as string));
+    console.log('[JumpCloud] Parsed events count:', list.length, '| filtrados (copy/reveal):', filtered.length, '(keys in response:', Object.keys(data).join(', ') + ')');
 
-    return list;
+    return filtered;
   } catch (e) {
     console.error('[JumpCloud] fetchPasswordManagerEvents:', e);
     return [];
