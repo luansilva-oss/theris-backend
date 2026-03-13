@@ -61,6 +61,7 @@ export async function setLastProcessedEventTimestamp(isoTimestamp: string): Prom
       create: { key: CONFIG_KEY_LAST_PASSWORD_EVENT_TS, value: isoTimestamp },
       update: { value: isoTimestamp }
     });
+    console.log('[JumpCloud] Timestamp salvo:', isoTimestamp);
   } catch (e) {
     console.error('[JumpCloud] setLastProcessedEventTimestamp:', e);
   }

@@ -17,7 +17,7 @@ const CRON_SCHEDULE = '*/5 * * * *'; // a cada 5 minutos
 
 function getDefaultStartTime(): string {
   const d = new Date();
-  d.setMinutes(d.getMinutes() - 10); // janela inicial: últimos 10 min
+  d.setMinutes(d.getMinutes() - 60); // janela padrão: últimos 60 min (enquanto persistência não estiver estável)
   return d.toISOString();
 }
 
@@ -29,7 +29,7 @@ export function startJumpCloudPasswordCron(): void {
       try {
         const lastStored = await getLastProcessedEventTimestamp();
         const startTime = lastStored || getDefaultStartTime();
-        if (!lastStored) console.log('[JumpCloud] Sem timestamp armazenado; usando janela padrão (últimos 10 min)');
+        if (!lastStored) console.log('[JumpCloud] Sem timestamp armazenado; usando janela padrão (últimos 60 min)');
         console.log('[JumpCloud] startTime usado:', startTime);
         const events = await fetchPasswordManagerEvents(startTime);
         let maxTimestamp = startTime;
@@ -51,9 +51,9 @@ export function startJumpCloudPasswordCron(): void {
           }
         }
 
-        if (events.length > 0 && maxTimestamp !== startTime) {
-          await setLastProcessedEventTimestamp(maxTimestamp);
-        }
+        // Sempre persistir um timestamp ao final para a próxima execução (evita "Sem timestamp" em toda execução)
+        const timestampToSave = events.length > 0 && maxTimestamp !== startTime ? maxTimestamp : new Date().toISOString();
+        await setLastProcessedEventTimestamp(timestampToSave);
         console.log('✅ [Cron] JumpCloud Password Manager: processados', events.length, 'eventos.');
       } catch (e) {
         console.error('[JumpCloud] Erro no cron Password Manager (não derruba o servidor):', e);
