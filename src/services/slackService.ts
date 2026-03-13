@@ -2362,11 +2362,16 @@ export type TicketForSINotification = {
  * Falha na notificação não deve bloquear a criação do ticket — chamar em try/catch.
  */
 export async function notificarSI(ticket: TicketForSINotification): Promise<void> {
-  console.log('[notificarSI] canal:', process.env.SLACK_SI_CHANNEL_ID);
+  const channelId = process.env.SLACK_GRUPO_SEGURANCA_CHANNEL_ID ?? process.env.SLACK_SI_CHANNEL_ID;
+  if (!channelId) {
+    console.error('[notificarSI] Nenhum canal SI configurado');
+    return;
+  }
+  console.log('[notificarSI] Enviando para canal:', channelId);
   console.log('[notificarSI] chamado:', ticket?.id ?? 'sem id');
   if (!slackApp?.client) return;
   const client = slackApp.client;
-  if (!SLACK_ID_LUAN && !SLACK_SI_CHANNEL_ID) return;
+  if (!SLACK_ID_LUAN && !channelId) return;
 
   try {
     let requesterName = '—';
@@ -2408,7 +2413,7 @@ export async function notificarSI(ticket: TicketForSINotification): Promise<void
 
     const targets: string[] = [];
     if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
-    if (SLACK_SI_CHANNEL_ID) targets.push(SLACK_SI_CHANNEL_ID);
+    if (channelId) targets.push(channelId);
     for (const channel of targets) {
       try {
         await client.chat.postMessage({ channel, text });

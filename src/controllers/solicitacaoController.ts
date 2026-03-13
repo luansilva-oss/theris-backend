@@ -854,6 +854,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {}).catch(() => {});
 
     try {
+      console.log('[createTicket] Chamando notificarSI para ticket:', newRequest.id, 'tipo:', newRequest.type);
       const { notificarSI } = await import('../services/slackService');
       await notificarSI({
         id: newRequest.id,
