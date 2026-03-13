@@ -83,7 +83,16 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
         service: ['password_manager'],
         start_time: startTime,
         end_time: endTime,
-        search_term: 'password_copy OR password_view'
+        search_term: {
+          and: [
+            {
+              or: [
+                { field: 'event_type', value: 'password_copy' },
+                { field: 'event_type', value: 'password_view' }
+              ]
+            }
+          ]
+        }
       })
     });
     if (!res.ok) {
