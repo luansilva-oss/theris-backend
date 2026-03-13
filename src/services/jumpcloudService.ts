@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 
 const JUMPCLOUD_API_KEY = process.env.JUMPCLOUD_API_KEY || '';
 const JUMPCLOUD_SLACK_CHANNEL_ID = process.env.JUMPCLOUD_SLACK_CHANNEL_ID || '';
-const INSIGHTS_EVENTS_URL = 'https://insights.jumpcloud.com/v1/events';
+const INSIGHTS_EVENTS_URL = 'https://api.jumpcloud.com/insights/directory/v1/events';
 const SYSTEM_USERS_URL = 'https://console.jumpcloud.com/api/systemusers';
 
 const CONFIG_KEY_LAST_PASSWORD_EVENT_TS = 'jumpcloud_password_events_last_start';
@@ -72,6 +72,7 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
     return [];
   }
   try {
+    const endTime = new Date().toISOString();
     const res = await fetch(INSIGHTS_EVENTS_URL, {
       method: 'POST',
       headers: {
@@ -81,6 +82,7 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
       body: JSON.stringify({
         service: ['password_manager'],
         start_time: startTime,
+        end_time: endTime,
         search_term: 'password_copy OR password_view'
       })
     });
@@ -205,7 +207,7 @@ export type JumpCloudUserExpiry = {
 
 /**
  * Retorna usuários com senha expirando nos próximos 7 dias.
- * GET /api/v2/systemusers com filtro password_expiration_date.
+ * GET /api/systemusers com filtro password_expiration_date.
  */
 export async function fetchUsersWithPasswordExpiring(daysAhead: number = 7): Promise<JumpCloudUserExpiry[]> {
   if (!JUMPCLOUD_API_KEY) {
