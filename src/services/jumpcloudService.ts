@@ -100,10 +100,7 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
       'x-api-key': JUMPCLOUD_API_KEY
     };
 
-    console.log('[JumpCloud] URL completa:', INSIGHTS_EVENTS_URL);
-    console.log('[JumpCloud] Headers:', { 'Content-Type': headers['Content-Type'], 'x-api-key': maskApiKey(JUMPCLOUD_API_KEY) });
-    console.log('[JumpCloud] Body completo:', JSON.stringify(body, null, 2));
-    console.log('[JumpCloud] Request interval start_time:', startTime, 'end_time:', endTime);
+    console.log('[JumpCloud] Request', startTime, '->', endTime);
 
     const res = await fetch(INSIGHTS_EVENTS_URL, {
       method: 'POST',
@@ -115,18 +112,17 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
       return [];
     }
     const response = (await res.json()) as JumpCloudInsightEvent[] | InsightsEventsResponse;
-    console.log('[JumpCloud] Response:', JSON.stringify(response, null, 2));
     // API retorna array JSON na raiz ([{...}, {...}]) ou objeto com data/events
     const list: JumpCloudInsightEvent[] = Array.isArray(response)
       ? response
-      : Array.isArray(response.data)
-        ? response.data
-        : Array.isArray(response.events)
-          ? response.events
+      : Array.isArray((response as InsightsEventsResponse).data)
+        ? (response as InsightsEventsResponse).data!
+        : Array.isArray((response as InsightsEventsResponse).events)
+          ? (response as InsightsEventsResponse).events!
           : [];
     const filtered = list.filter((e) => RELEVANT_EVENT_TYPES.includes((e.event_type ?? '') as string));
-    const responseShape = Array.isArray(response) ? 'array (raiz)' : Object.keys(response).join(', ');
-    console.log('[JumpCloud] Parsed events count:', list.length, '| filtrados (copy/reveal):', filtered.length, '(response:', responseShape + ')');
+    console.log('[JumpCloud] Response: recebidos', list.length, 'eventos');
+    console.log('[JumpCloud] Parsed events count:', list.length, '| filtrados (copy/reveal):', filtered.length);
 
     return filtered;
   } catch (e) {
