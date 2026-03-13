@@ -73,54 +73,7 @@ function maskApiKey(key: string): string {
 }
 
 /**
- * Diagnóstico 2: com service password_manager, sem search_term, janela 24h.
- * Se retornar eventos → event_type (e outros campos) aparecem no log e podemos ajustar search_term.
- * Se retornar [] → não há eventos de Password Manager no período na organização.
- */
-async function fetchInsightsDiagnosticNoFilter(): Promise<void> {
-  if (!JUMPCLOUD_API_KEY) return;
-  const end = new Date();
-  const start = new Date(end);
-  start.setHours(start.getHours() - 24);
-  const body = {
-    service: [INSIGHTS_SERVICE_PASSWORD_MANAGER],
-    start_time: start.toISOString(),
-    end_time: end.toISOString()
-  };
-  console.log('[JumpCloud] [DIAGNÓSTICO] Request com service, SEM search_term (janela 24h)');
-  console.log('[JumpCloud] [DIAGNÓSTICO] URL:', INSIGHTS_EVENTS_URL);
-  console.log('[JumpCloud] [DIAGNÓSTICO] Body:', JSON.stringify(body, null, 2));
-  try {
-    const res = await fetch(INSIGHTS_EVENTS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': JUMPCLOUD_API_KEY },
-      body: JSON.stringify(body)
-    });
-    const raw = await res.text();
-    console.log('[JumpCloud] [DIAGNÓSTICO] Status:', res.status);
-    console.log('[JumpCloud] [DIAGNÓSTICO] Response bruto completo:', raw);
-    try {
-      const parsed = JSON.parse(raw);
-      const keys = Object.keys(parsed);
-      console.log('[JumpCloud] [DIAGNÓSTICO] Keys no JSON:', keys.join(', '));
-      const events = Array.isArray(parsed) ? parsed : (parsed.events ?? parsed.data ?? []);
-      const list = Array.isArray(events) ? events : [];
-      console.log('[JumpCloud] [DIAGNÓSTICO] Total de eventos:', list.length);
-      if (list.length > 0) {
-        const sample = list.slice(0, 3);
-        sample.forEach((ev: Record<string, unknown>, i: number) => {
-          console.log('[JumpCloud] [DIAGNÓSTICO] Evento', i + 1, 'keys:', Object.keys(ev).join(', '));
-          console.log('[JumpCloud] [DIAGNÓSTICO] Evento', i + 1, 'event_type/action:', (ev.event_type ?? ev.action ?? ev.type ?? '—'));
-        });
-      }
-    } catch (_) {}
-  } catch (e) {
-    console.error('[JumpCloud] [DIAGNÓSTICO] Erro:', e);
-  }
-}
-
-/**
- * Consulta eventos do Password Manager (password_copy ou password_view).
+ * Consulta eventos do Password Manager (passwordmanager_item_copy e passwordmanager_item_reveal).
  * start_time: ISO timestamp do último evento processado; na primeira execução usar há 24h ou valor padrão.
  */
 export async function fetchPasswordManagerEvents(startTime: string): Promise<JumpCloudInsightEvent[]> {
@@ -138,8 +91,8 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
         and: [
           {
             or: [
-              { field: 'event_type', value: 'password_copy' },
-              { field: 'event_type', value: 'password_view' }
+              { field: 'event_type', value: 'passwordmanager_item_copy' },
+              { field: 'event_type', value: 'passwordmanager_item_reveal' }
             ]
           }
         ]
@@ -170,10 +123,6 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
     const list = Array.isArray(events) ? events : [];
     console.log('[JumpCloud] Parsed events count:', list.length, '(keys in response:', Object.keys(data).join(', ') + ')');
 
-    if (list.length === 0) {
-      console.log('[JumpCloud] Nenhum evento retornado; executando request de diagnóstico sem filtros...');
-      await fetchInsightsDiagnosticNoFilter();
-    }
     return list;
   } catch (e) {
     console.error('[JumpCloud] fetchPasswordManagerEvents:', e);
@@ -240,7 +189,7 @@ export async function notifyPasswordEventToSlack(event: JumpCloudInsightEvent): 
   if (!app?.client) return;
 
   const eventType = (event.event_type ?? event.action ?? '').toString().toLowerCase();
-  const isView = eventType.includes('view') || eventType === 'password_view';
+  const isView = eventType.includes('view') || eventType.includes('reveal') || eventType === 'password_view' || eventType === 'passwordmanager_item_reveal';
   const actionEmoji = isView ? '🔍' : '📋';
   const actionLabel = isView ? 'Senha Visualizada' : 'Senha Copiada';
 
