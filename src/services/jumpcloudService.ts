@@ -188,10 +188,16 @@ export async function recordEventIfNew(event: JumpCloudInsightEvent): Promise<bo
  * Envia notificação Slack para o canal de segurança (evento Password Manager).
  */
 export async function notifyPasswordEventToSlack(event: JumpCloudInsightEvent): Promise<void> {
-  if (!JUMPCLOUD_SLACK_CHANNEL_ID) return;
+  if (!JUMPCLOUD_SLACK_CHANNEL_ID) {
+    console.log('[JumpCloud] Slack: canal não configurado (JUMPCLOUD_SLACK_CHANNEL_ID vazio); envio ignorado.');
+    return;
+  }
   const { getSlackApp } = await import('./slackService');
   const app = getSlackApp();
-  if (!app?.client) return;
+  if (!app?.client) {
+    console.log('[JumpCloud] Slack: app/client não disponível; envio ignorado.');
+    return;
+  }
 
   const eventType = (event.event_type ?? event.action ?? '').toString().toLowerCase();
   const isView = eventType.includes('view') || eventType.includes('reveal') || eventType === 'password_view' || eventType === 'passwordmanager_item_reveal';
@@ -223,10 +229,15 @@ export async function notifyPasswordEventToSlack(event: JumpCloudInsightEvent): 
     `🕒 Horário: ${timestampFormatted}\n` +
     `🌐 IP de Origem: ${clientIp}`;
 
+  const payload = { channel: JUMPCLOUD_SLACK_CHANNEL_ID, text };
+  console.log('[JumpCloud] Slack payload (channel, text):', JSON.stringify({ channel: payload.channel, textLength: payload.text.length, textPreview: payload.text.slice(0, 120) + (payload.text.length > 120 ? '...' : '') }));
+
   try {
-    await app.client.chat.postMessage({ channel: JUMPCLOUD_SLACK_CHANNEL_ID, text });
+    const slackResponse = await app.client.chat.postMessage(payload);
+    console.log('[JumpCloud] Slack API resposta:', JSON.stringify(slackResponse));
   } catch (e) {
     console.error('[JumpCloud] notifyPasswordEventToSlack:', e);
+    throw e;
   }
 }
 
