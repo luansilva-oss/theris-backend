@@ -73,6 +73,7 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
   }
   try {
     const endTime = new Date().toISOString();
+    console.log('[JumpCloud] Request interval start_time:', startTime, 'end_time:', endTime);
     const res = await fetch(INSIGHTS_EVENTS_URL, {
       method: 'POST',
       headers: {
@@ -100,8 +101,11 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
       return [];
     }
     const data = (await res.json()) as InsightsEventsResponse;
+    console.log('[JumpCloud] Response:', JSON.stringify(data, null, 2));
     const events = data.events ?? data.data ?? [];
-    return Array.isArray(events) ? events : [];
+    const list = Array.isArray(events) ? events : [];
+    console.log('[JumpCloud] Parsed events count:', list.length, '(keys in response:', Object.keys(data).join(', ') + ')');
+    return list;
   } catch (e) {
     console.error('[JumpCloud] fetchPasswordManagerEvents:', e);
     return [];

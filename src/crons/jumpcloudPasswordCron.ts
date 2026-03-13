@@ -27,7 +27,10 @@ export function startJumpCloudPasswordCron(): void {
     async () => {
       console.log('🕐 [Cron] Executando monitoramento JumpCloud Password Manager...');
       try {
-        const startTime = (await getLastProcessedEventTimestamp()) || getDefaultStartTime();
+        const lastStored = await getLastProcessedEventTimestamp();
+        const startTime = lastStored || getDefaultStartTime();
+        if (!lastStored) console.log('[JumpCloud] Sem timestamp armazenado; usando janela padrão (últimos 10 min)');
+        console.log('[JumpCloud] startTime usado:', startTime);
         const events = await fetchPasswordManagerEvents(startTime);
         let maxTimestamp = startTime;
 
