@@ -1128,7 +1128,7 @@ async function saveRequest(
     });
 
     try {
-      await notificarSI({
+      await notificarSINovoTicket({
         id: created.id,
         type: created.type,
         status: created.status,
@@ -2322,10 +2322,15 @@ export type KBSItem = { toolName: string; accessLevelDesc: string | null };
 
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.VITE_API_URL || 'https://theris.grupo-3c.com';
 const SLACK_ID_LUAN = process.env.SLACK_ID_LUAN || '';
+const SLACK_ID_VLADIMIR = process.env.SLACK_ID_VLADIMIR || '';
+const SLACK_ID_ALLAN = process.env.SLACK_ID_ALLAN || '';
 const SLACK_ID_RENATA = process.env.SLACK_ID_RENATA || '';
 const SLACK_SI_CHANNEL_ID = process.env.SLACK_SI_CHANNEL_ID || 'C09PZQ9FM9C';
-/** Canal ou ID para notificação de confirmação de revogação (desligamento). Se vazio, usa SLACK_SI_CHANNEL_ID. */
-const SLACK_GRUPO_SEGURANCA_CHANNEL_ID = process.env.SLACK_GRUPO_SEGURANCA_CHANNEL_ID || process.env.SLACK_SI_CHANNEL_ID || 'C09PZQ9FM9C';
+/** Canal Grupo Segurança: só usado se definido e diferente de SLACK_SI_CHANNEL_ID (senão usa apenas SI). */
+const SLACK_GRUPO_SEGURANCA_CHANNEL_ID = process.env.SLACK_GRUPO_SEGURANCA_CHANNEL_ID || '';
+
+/** Membros do SI para DM em novo chamado (todos os tipos). */
+const SI_MEMBERS = [SLACK_ID_LUAN, SLACK_ID_VLADIMIR, SLACK_ID_ALLAN].filter(Boolean) as string[];
 
 /**
  * Notifica SLACK_ID_LUAN quando a automação CHANGE_ROLE não encontra cargo ou departamento no banco.
@@ -2357,21 +2362,17 @@ export type TicketForSINotification = {
 };
 
 /**
- * Notifica o time de SI (Luan + canal SI se configurado) quando um novo chamado é criado.
- * Envia DM para SLACK_ID_LUAN e, se SLACK_SI_CHANNEL_ID estiver definido, também posta no canal.
+ * Notificação genérica de novo chamado para SI: canal(is) + DM para cada membro do SI.
+ * Cobre todos os tipos (CHANGE_ROLE, ONBOARDING, OFFBOARDING, ACCESS_TOOL_EXTRA, etc.).
  * Falha na notificação não deve bloquear a criação do ticket — chamar em try/catch.
  */
-export async function notificarSI(ticket: TicketForSINotification): Promise<void> {
-  const channelId = process.env.SLACK_GRUPO_SEGURANCA_CHANNEL_ID ?? process.env.SLACK_SI_CHANNEL_ID;
+export async function notificarSINovoTicket(ticket: TicketForSINotification): Promise<void> {
+  const channelId = process.env.SLACK_SI_CHANNEL_ID || '';
   if (!channelId) {
-    console.error('[notificarSI] Nenhum canal SI configurado');
-    return;
+    console.error('[notificarSINovoTicket] SLACK_SI_CHANNEL_ID não definido');
   }
-  console.log('[notificarSI] Enviando para canal:', channelId);
-  console.log('[notificarSI] chamado:', ticket?.id ?? 'sem id');
   if (!slackApp?.client) return;
   const client = slackApp.client;
-  if (!SLACK_ID_LUAN && !channelId) return;
 
   try {
     let requesterName = '—';
@@ -2411,20 +2412,42 @@ export async function notificarSI(ticket: TicketForSINotification): Promise<void
       `*Detalhes:* ${detalhes}\n\n` +
       `👉 Ver chamado: ${linkChamado}`;
 
-    const targets: string[] = [];
-    if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
-    if (channelId) targets.push(channelId);
-    for (const channel of targets) {
+    const dmText = `🔔 Novo chamado: ${tipoLabel} — <${linkChamado}|Ver chamado>`;
+
+    const channels: string[] = [];
+    if (channelId) channels.push(channelId);
+    if (SLACK_GRUPO_SEGURANCA_CHANNEL_ID && SLACK_GRUPO_SEGURANCA_CHANNEL_ID !== channelId) {
+      channels.push(SLACK_GRUPO_SEGURANCA_CHANNEL_ID);
+    }
+
+    for (const ch of channels) {
       try {
-        await client.chat.postMessage({ channel, text });
-        console.log(`[notificarSI] Notificação de novo chamado ${ticket.id} enviada para ${channel}`);
+        await client.chat.postMessage({ channel: ch, text });
+        console.log('[notificarSINovoTicket] Enviado para canal:', ch, 'ticket:', ticket.id);
       } catch (e) {
-        console.error(`[notificarSI] Falha ao enviar para ${channel}:`, e);
+        console.error('[notificarSINovoTicket] Erro canal', ch, e);
+      }
+    }
+
+    for (const memberId of SI_MEMBERS) {
+      try {
+        await client.chat.postMessage({ channel: memberId, text: dmText });
+        console.log('[notificarSINovoTicket] DM enviada para', memberId);
+      } catch (err) {
+        console.error('[notificarSINovoTicket] Erro DM para', memberId, err);
       }
     }
   } catch (error) {
-    console.error('[notificarSI] ERRO:', error);
+    console.error('[notificarSINovoTicket] ERRO:', error);
   }
+}
+
+/**
+ * Notifica o time de SI quando um novo chamado é criado (qualquer tipo).
+ * Encaminha para notificarSINovoTicket (canal SI + DMs Luan, Vladimir, Allan).
+ */
+export async function notificarSI(ticket: TicketForSINotification): Promise<void> {
+  await notificarSINovoTicket(ticket);
 }
 
 /**
@@ -2890,8 +2913,8 @@ export async function notificarConfirmacaoRevogacaoDesligamento(
   const targets: string[] = [];
   if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
   if (SLACK_ID_RENATA) targets.push(SLACK_ID_RENATA);
-  if (SLACK_GRUPO_SEGURANCA_CHANNEL_ID) targets.push(SLACK_GRUPO_SEGURANCA_CHANNEL_ID);
   if (SLACK_SI_CHANNEL_ID) targets.push(SLACK_SI_CHANNEL_ID);
+  if (SLACK_GRUPO_SEGURANCA_CHANNEL_ID && SLACK_GRUPO_SEGURANCA_CHANNEL_ID !== SLACK_SI_CHANNEL_ID) targets.push(SLACK_GRUPO_SEGURANCA_CHANNEL_ID);
   for (const channel of targets) {
     try {
       await client.chat.postMessage({ channel, text });
