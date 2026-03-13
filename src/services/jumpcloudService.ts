@@ -73,19 +73,21 @@ function maskApiKey(key: string): string {
 }
 
 /**
- * Request de diagnóstico: apenas start_time e end_time (janela 24h), sem service e sem search_term.
- * Loga o response bruto completo para ver se a API retorna qualquer evento.
+ * Diagnóstico 2: com service password_manager, sem search_term, janela 24h.
+ * Se retornar eventos → event_type (e outros campos) aparecem no log e podemos ajustar search_term.
+ * Se retornar [] → não há eventos de Password Manager no período na organização.
  */
 async function fetchInsightsDiagnosticNoFilter(): Promise<void> {
   if (!JUMPCLOUD_API_KEY) return;
-  const endTime = new Date();
-  const startTime = new Date(endTime);
-  startTime.setHours(startTime.getHours() - 24);
+  const end = new Date();
+  const start = new Date(end);
+  start.setHours(start.getHours() - 24);
   const body = {
-    start_time: startTime.toISOString(),
-    end_time: endTime.toISOString()
+    service: [INSIGHTS_SERVICE_PASSWORD_MANAGER],
+    start_time: start.toISOString(),
+    end_time: end.toISOString()
   };
-  console.log('[JumpCloud] [DIAGNÓSTICO] Request SEM filtros (apenas start_time/end_time, janela 24h)');
+  console.log('[JumpCloud] [DIAGNÓSTICO] Request com service, SEM search_term (janela 24h)');
   console.log('[JumpCloud] [DIAGNÓSTICO] URL:', INSIGHTS_EVENTS_URL);
   console.log('[JumpCloud] [DIAGNÓSTICO] Body:', JSON.stringify(body, null, 2));
   try {
@@ -101,9 +103,16 @@ async function fetchInsightsDiagnosticNoFilter(): Promise<void> {
       const parsed = JSON.parse(raw);
       const keys = Object.keys(parsed);
       console.log('[JumpCloud] [DIAGNÓSTICO] Keys no JSON:', keys.join(', '));
-      if (Array.isArray(parsed)) console.log('[JumpCloud] [DIAGNÓSTICO] Array length:', parsed.length);
-      else if (parsed.events) console.log('[JumpCloud] [DIAGNÓSTICO] parsed.events length:', parsed.events?.length);
-      else if (parsed.data) console.log('[JumpCloud] [DIAGNÓSTICO] parsed.data length:', parsed.data?.length);
+      const events = Array.isArray(parsed) ? parsed : (parsed.events ?? parsed.data ?? []);
+      const list = Array.isArray(events) ? events : [];
+      console.log('[JumpCloud] [DIAGNÓSTICO] Total de eventos:', list.length);
+      if (list.length > 0) {
+        const sample = list.slice(0, 3);
+        sample.forEach((ev: Record<string, unknown>, i: number) => {
+          console.log('[JumpCloud] [DIAGNÓSTICO] Evento', i + 1, 'keys:', Object.keys(ev).join(', '));
+          console.log('[JumpCloud] [DIAGNÓSTICO] Evento', i + 1, 'event_type/action:', (ev.event_type ?? ev.action ?? ev.type ?? '—'));
+        });
+      }
     } catch (_) {}
   } catch (e) {
     console.error('[JumpCloud] [DIAGNÓSTICO] Erro:', e);
