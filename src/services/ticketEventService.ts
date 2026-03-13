@@ -84,15 +84,17 @@ export async function notifyTicketEvent(
   eventType: 'TICKET_CREATED' | 'COMMENT_ADDED' | 'ATTACHMENT_ADDED' | 'STATUS_CHANGED' | 'ASSIGNEE_CHANGED',
   payload?: Record<string, unknown>
 ): Promise<void> {
+  console.log('[Chamado] Tentando enviar notificação Slack para chamado:', requestId, 'tipo:', eventType);
+
   const hasToken = Boolean(process.env.SLACK_BOT_TOKEN);
   if (!hasToken) {
-    console.error('[Slack] Notificação não enviada: SLACK_BOT_TOKEN não está definido no ambiente.');
+    console.error('[Chamado] Slack não enviado: SLACK_BOT_TOKEN não está definido no ambiente.');
     return;
   }
 
   const slackApp = getApp();
   if (!slackApp) {
-    console.error('[Slack] Notificação não enviada: getSlackApp() retornou null (verifique SLACK_BOT_TOKEN e inicialização do app).');
+    console.error('[Chamado] Slack não enviado: getSlackApp() retornou null (verifique SLACK_BOT_TOKEN e inicialização do app).');
     return;
   }
 
@@ -103,7 +105,10 @@ export async function notifyTicketEvent(
       assignee: { select: { name: true } }
     }
   });
-  if (!request?.requester?.email) return;
+  if (!request?.requester?.email) {
+    console.log('[Chamado] Slack não enviado: chamado sem requester/email, requestId:', requestId);
+    return;
+  }
 
   const { title, summary } = getRequestContext(request);
 
@@ -111,7 +116,7 @@ export async function notifyTicketEvent(
     const userLookup = await slackApp.client.users.lookupByEmail({ email: request.requester.email });
     const slackUserId = userLookup.user?.id;
     if (!slackUserId) {
-      console.warn(`⚠️ Slack: usuário não encontrado para ${request.requester.email}`);
+      console.warn('[Chamado] Slack não enviado: usuário não encontrado para', request.requester.email, 'chamado:', requestId);
       return;
     }
 
@@ -142,14 +147,15 @@ export async function notifyTicketEvent(
         { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${requestId.slice(0, 8)} · Theris Service Desk` }] }
       ]
     });
+    console.log('[Chamado] Slack enviado com sucesso para chamado:', requestId);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : undefined;
     console.error(
-      '[Slack] Falha ao notificar no ticketEventService:',
+      '[Chamado] Erro ao enviar Slack:',
       msg,
       code ? `(code: ${code})` : '',
-      '| Token definido:', hasToken,
+      '| chamado:', requestId,
       '| Dica: verifique escopo users:read.email e se o e-mail do solicitante existe no workspace.'
     );
     if (err instanceof Error && err.stack) console.error(err.stack);

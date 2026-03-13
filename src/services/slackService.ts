@@ -1127,6 +1127,7 @@ async function saveRequest(
       }
     });
 
+    console.log('[Chamado] Tentando enviar notificação SI para chamado:', created.id, 'tipo:', created.type);
     try {
       await notificarSINovoTicket({
         id: created.id,
@@ -1137,8 +1138,9 @@ async function saveRequest(
         requesterId: created.requesterId,
         createdAt: created.createdAt
       });
+      console.log('[Chamado] Slack SI enviado com sucesso para chamado:', created.id);
     } catch (notifErr) {
-      console.error('[saveRequest] Falha ao notificar SI (chamado criado normalmente):', notifErr);
+      console.error('[Chamado] Erro ao enviar Slack SI:', notifErr);
     }
 
     if (isExtraordinary && toolName) {
@@ -2367,11 +2369,16 @@ export type TicketForSINotification = {
  * Falha na notificação não deve bloquear a criação do ticket — chamar em try/catch.
  */
 export async function notificarSINovoTicket(ticket: TicketForSINotification): Promise<void> {
+  console.log('[Chamado] Tentando enviar notificação SI (novo ticket) para chamado:', ticket.id, 'tipo:', ticket.type);
+
   const channelId = process.env.SLACK_SI_CHANNEL_ID || '';
   if (!channelId) {
-    console.error('[notificarSINovoTicket] SLACK_SI_CHANNEL_ID não definido');
+    console.error('[Chamado] notificarSINovoTicket: SLACK_SI_CHANNEL_ID não definido');
   }
-  if (!slackApp?.client) return;
+  if (!slackApp?.client) {
+    console.log('[Chamado] Slack não enviado (SI): app/client não disponível');
+    return;
+  }
   const client = slackApp.client;
 
   try {
@@ -2423,22 +2430,23 @@ export async function notificarSINovoTicket(ticket: TicketForSINotification): Pr
     for (const ch of channels) {
       try {
         await client.chat.postMessage({ channel: ch, text });
-        console.log('[notificarSINovoTicket] Enviado para canal:', ch, 'ticket:', ticket.id);
+        console.log('[Chamado] notificarSINovoTicket: enviado para canal:', ch, 'ticket:', ticket.id);
       } catch (e) {
-        console.error('[notificarSINovoTicket] Erro canal', ch, e);
+        console.error('[Chamado] Erro ao enviar Slack SI (canal):', ch, e);
       }
     }
 
     for (const memberId of SI_MEMBERS) {
       try {
         await client.chat.postMessage({ channel: memberId, text: dmText });
-        console.log('[notificarSINovoTicket] DM enviada para', memberId);
+        console.log('[Chamado] notificarSINovoTicket: DM enviada para', memberId);
       } catch (err) {
-        console.error('[notificarSINovoTicket] Erro DM para', memberId, err);
+        console.error('[Chamado] Erro ao enviar Slack SI (DM):', memberId, err);
       }
     }
+    console.log('[Chamado] Slack SI enviado com sucesso para chamado:', ticket.id);
   } catch (error) {
-    console.error('[notificarSINovoTicket] ERRO:', error);
+    console.error('[Chamado] Erro ao enviar Slack SI:', error);
   }
 }
 

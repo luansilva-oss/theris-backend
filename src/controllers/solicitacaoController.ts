@@ -851,8 +851,15 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     }
 
     const { notifyTicketEvent } = await import('../services/ticketEventService');
-    notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {}).catch(() => {});
+    console.log('[Chamado] Tentando enviar notificação Slack para chamado:', newRequest.id, 'tipo: TICKET_CREATED');
+    try {
+      await notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {});
+      console.log('[Chamado] Slack enviado com sucesso para chamado:', newRequest.id);
+    } catch (err) {
+      console.error('[Chamado] Erro ao enviar Slack:', err);
+    }
 
+    console.log('[Chamado] Tentando enviar notificação SI (novo ticket) para chamado:', newRequest.id, 'tipo:', newRequest.type);
     try {
       const { notificarSINovoTicket } = await import('../services/slackService');
       await notificarSINovoTicket({
@@ -864,8 +871,9 @@ export const createSolicitacao = async (req: Request, res: Response) => {
         requesterId: newRequest.requesterId,
         createdAt: newRequest.createdAt
       });
+      console.log('[Chamado] Slack SI enviado com sucesso para chamado:', newRequest.id);
     } catch (notifErr) {
-      console.error('[createSolicitacao] Falha ao notificar SI (chamado criado normalmente):', notifErr);
+      console.error('[Chamado] Erro ao enviar Slack SI:', notifErr);
     }
 
     if ((isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) && toolNameAex) {
@@ -1667,8 +1675,24 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     });
 
     const { notifyTicketEvent } = await import('../services/ticketEventService');
-    if (status !== undefined && status !== existing.status) notifyTicketEvent(id, 'STATUS_CHANGED', { from: existing.status, to: status }).catch(() => {});
-    if (assigneeId !== undefined && assigneeId !== existing.assigneeId) notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId }).catch(() => {});
+    if (status !== undefined && status !== existing.status) {
+      console.log('[Chamado] Tentando enviar notificação Slack para chamado:', id, 'tipo: STATUS_CHANGED');
+      try {
+        await notifyTicketEvent(id, 'STATUS_CHANGED', { from: existing.status, to: status });
+        console.log('[Chamado] Slack enviado com sucesso para chamado:', id);
+      } catch (err) {
+        console.error('[Chamado] Erro ao enviar Slack:', err);
+      }
+    }
+    if (assigneeId !== undefined && assigneeId !== existing.assigneeId) {
+      console.log('[Chamado] Tentando enviar notificação Slack para chamado:', id, 'tipo: ASSIGNEE_CHANGED');
+      try {
+        await notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId });
+        console.log('[Chamado] Slack enviado com sucesso para chamado:', id);
+      } catch (err) {
+        console.error('[Chamado] Erro ao enviar Slack:', err);
+      }
+    }
 
     const newStatus = (status !== undefined ? String(status) : existing.status) || '';
     const { registrarMudanca } = await import('../lib/auditLog');
@@ -1933,7 +1957,13 @@ export const createComment = async (req: Request, res: Response) => {
     }).catch(() => {});
 
     const { notifyTicketEvent } = await import('../services/ticketEventService');
-    notifyTicketEvent(id, 'COMMENT_ADDED', { commentId: comment.id, kind: comment.kind, body: comment.body.slice(0, 200) }).catch(() => {});
+    console.log('[Chamado] Tentando enviar notificação Slack para chamado:', id, 'tipo: COMMENT_ADDED');
+    try {
+      await notifyTicketEvent(id, 'COMMENT_ADDED', { commentId: comment.id, kind: comment.kind, body: comment.body.slice(0, 200) });
+      console.log('[Chamado] Slack enviado com sucesso para chamado:', id);
+    } catch (err) {
+      console.error('[Chamado] Erro ao enviar Slack:', err);
+    }
 
     return res.status(201).json(comment);
   } catch (error) {
@@ -1986,7 +2016,13 @@ export const createAttachment = async (req: Request, res: Response) => {
     });
 
     const { notifyTicketEvent } = await import('../services/ticketEventService');
-    notifyTicketEvent(id, 'ATTACHMENT_ADDED', { filename: attachment.filename }).catch(() => {});
+    console.log('[Chamado] Tentando enviar notificação Slack para chamado:', id, 'tipo: ATTACHMENT_ADDED');
+    try {
+      await notifyTicketEvent(id, 'ATTACHMENT_ADDED', { filename: attachment.filename });
+      console.log('[Chamado] Slack enviado com sucesso para chamado:', id);
+    } catch (err) {
+      console.error('[Chamado] Erro ao enviar Slack:', err);
+    }
 
     return res.status(201).json(attachment);
   } catch (error) {
