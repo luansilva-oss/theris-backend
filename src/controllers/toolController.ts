@@ -30,7 +30,8 @@ export const getTools = async (req: Request, res: Response) => {
     const toolNames = tools.map(t => t.name);
     if (toolNames.length === 0) return res.json(tools);
 
-    // KBS: RoleKitItem por nome da ferramenta (case-insensitive) → cargos (Roles) e colaboradores (Users)
+    // KBS: RoleKitItem por nome da ferramenta (case-insensitive) → cargos (Roles) e colaboradores (Users).
+    // Calculado em tempo real a cada GET; alterações em Gestão de Pessoas (RoleKitItem) refletem na próxima carga do Catálogo (sem cache/tabela desnormalizada).
     const kbsItems = await prisma.roleKitItem.findMany({
       where: toolNames.length > 0 ? {
         OR: toolNames.map(name => ({ toolName: { equals: name, mode: 'insensitive' } }))

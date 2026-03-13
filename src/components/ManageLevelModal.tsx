@@ -182,7 +182,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
 
     return (
         <div className="modal-overlay">
-            <div className="modal-content" style={{ maxWidth: '600px', width: '90%', maxHeight: '80vh', height: '80vh', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+            <div className="modal-content" style={{ maxWidth: '600px', width: '90%', maxHeight: '85vh', height: '85vh', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
 
                 {/* Custom Delete Confirmation Overlay */}
                 {isDeleteConfirmOpen && (
@@ -264,9 +264,9 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                     <button onClick={onClose} className="btn-icon"><X size={20} /></button>
                 </div>
 
-                <div className="modal-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24, padding: '20px 24px' }}>
+                <div className="modal-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: 24, padding: '20px 24px' }}>
 
-                    {/* INFO SECTION */}
+                    {/* INFO SECTION — altura preservada para não colapsar com a seção KBS */}
                     <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', padding: 16, flexShrink: 0 }}>
                         <h4 style={{ color: 'white', marginTop: 0, marginBottom: 12 }}>Informações do Nível</h4>
                         <div className="form-group">
@@ -319,12 +319,12 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                         </div>
                     </div>
 
-                    {/* HERDADOS VIA CARGO (KBS) - somente leitura */}
+                    {/* HERDADOS VIA CARGO (KBS) - somente leitura; lista com scroll interno para não sobrepor Informações do Nível */}
                     {kbsUsersForLevel.length > 0 && (
-                        <div className="card-base" style={{ background: 'rgba(34, 197, 94, 0.06)', border: '1px solid rgba(34, 197, 94, 0.2)', padding: 16, flexShrink: 0 }}>
-                            <h4 style={{ color: '#22c55e', marginBottom: 10, fontSize: 13 }}>Herdados via Cargo (KBS)</h4>
-                            <p style={{ color: '#71717a', fontSize: 12, marginBottom: 12 }}>Estes colaboradores recebem este nível por padrão através da Gestão de Pessoas. Somente leitura.</p>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxHeight: 'none' }}>
+                        <div className="card-base" style={{ background: 'rgba(34, 197, 94, 0.06)', border: '1px solid rgba(34, 197, 94, 0.2)', padding: 16, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: '240px' }}>
+                            <h4 style={{ color: '#22c55e', marginBottom: 10, fontSize: 13, flexShrink: 0 }}>Herdados via Cargo (KBS)</h4>
+                            <p style={{ color: '#71717a', fontSize: 12, marginBottom: 12, flexShrink: 0 }}>Estes colaboradores recebem este nível por padrão através da Gestão de Pessoas. Somente leitura.</p>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, overflowY: 'auto', minHeight: 0, flex: 1 }}>
                                 {kbsUsersForLevel.map((u) => (
                                     <div
                                         key={u.id}
