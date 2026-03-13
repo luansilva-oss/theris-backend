@@ -200,8 +200,14 @@ export async function notifyPasswordEventToSlack(event: JumpCloudInsightEvent): 
   const actionEmoji = isView ? '🔍' : '📋';
   const actionLabel = isView ? 'Senha Visualizada' : 'Senha Copiada';
 
-  const userEmail = (event.user_email ?? event.email ?? '—').toString();
-  const resourceName = (event.resource_name ?? event.resource ?? '—').toString();
+  const initiatedBy = event.initiated_by as { email?: string; username?: string } | undefined;
+  const userEmail = initiatedBy?.email ?? initiatedBy?.username ?? (event.user_email ?? event.email ?? 'desconhecido').toString();
+  const resource = event.resource as { name?: string } | string | undefined;
+  const resourceName =
+    (typeof resource === 'object' && resource?.name) ? resource.name
+    : (typeof event.resource_name === 'string' ? event.resource_name : null)
+    ?? (typeof resource === 'string' ? resource : null)
+    ?? 'desconhecido';
   const clientIp = (event.client_ip ?? event.ip ?? '—').toString();
   const rawTs = event.timestamp ?? (event as any).timestamp_iso ?? new Date().toISOString();
   let timestampFormatted = '—';
