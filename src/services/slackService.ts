@@ -1537,7 +1537,15 @@ slackApp.action('joiner_access_done', async ({ ack, body, client }) => {
         autorId: clickerUserId ?? undefined
       });
       const now = new Date();
-      const dataHora = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const dataHora = now.toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
       const text = `✅ *Joiner Concluído*\n\nO Owner *${ownerName}* confirmou o provisionamento de acesso de *${colaboradorName}* em *${tool.name}*.\n🕒 ${dataHora}`;
       const targets: string[] = [];
       if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
@@ -1614,7 +1622,15 @@ slackApp.action('cargo_review_done', async ({ ack, body, client }) => {
         autorId: clickerUserId ?? undefined
       });
       const now = new Date();
-      const dataHora = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const dataHora = now.toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
       const text = `✅ *Mudança de Cargo Concluída*\n\nO Owner *${ownerName}* confirmou o ajuste de nível de acesso de *${colaboradorName}* em *${tool.name}*.\nCargo anterior: ${cargoAnterior} → Novo cargo: ${cargoNovo}\n🕒 ${dataHora}`;
       const targets: string[] = [];
       if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
@@ -1685,7 +1701,15 @@ slackApp.action('dept_review_done', async ({ ack, body, client }) => {
         autorId: undefined
       });
       const now = new Date();
-      const dataHora = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const dataHora = now.toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
       const text = `✅ *Mudança de Departamento Concluída*\n\nO Owner *${ownerName}* confirmou a ação de acesso de *${colaboradorName}* em *${tool.name}*.\nTipo: ${tipoLabel}\nDepto anterior: ${deptAnterior} → Novo depto: ${deptNovo}\n🕒 ${dataHora}`;
       const targets: string[] = [];
       if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
@@ -2322,6 +2346,7 @@ export const sendChangeRoleApprovedDM = async (requesterEmail: string, collabora
 /** Tipo de item KBS (RoleKitItem) para comparação pós-mudança. */
 export type KBSItem = { toolName: string; accessLevelDesc: string | null };
 
+/** URL do frontend para links "Ver chamado". No Render, configurar FRONTEND_URL=https://theris.grupo-3c.com */
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.VITE_API_URL || 'https://theris.grupo-3c.com';
 const SLACK_ID_LUAN = process.env.SLACK_ID_LUAN || '';
 const SLACK_ID_VLADIMIR = process.env.SLACK_ID_VLADIMIR || '';
@@ -2404,7 +2429,15 @@ export async function notificarSINovoTicket(ticket: TicketForSINotification): Pr
     const collaboratorName = (detailsObj.collaboratorName as string) || (detailsObj.beneficiary as string) || (detailsObj.substituteName as string) || (detailsObj.substitute as string) || '';
     const deptFromDetails = (detailsObj.department as string) || (detailsObj.dept as string) || (detailsObj.current as Record<string, string>)?.dept;
     const tipoLabel = TYPE_LABELS[ticket.type] || ticket.type;
-    const dataHora = ticket.createdAt instanceof Date ? ticket.createdAt.toLocaleString('pt-BR') : String(ticket.createdAt);
+    const dataHora = new Date(ticket.createdAt).toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
     const detalhes = (ticket.justification || (detailsObj.info as string) || (detailsObj.reason as string) || '—').toString().slice(0, 300);
     const linkChamado = `${FRONTEND_URL}/tickets?id=${ticket.id}`;
 
@@ -2945,7 +2978,15 @@ export async function notificarConfirmacaoLeaverConcluido(
   if (!slackApp?.client) return;
   const client = slackApp.client;
   const now = new Date();
-  const dataHora = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const dataHora = now.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
   const text =
     `✅ *Leaver Concluído*\n\n` +
     `O Owner *${ownerName}* confirmou a revogação de acesso de *${colaboradorName}* em *${toolName}*.\n` +
@@ -2973,7 +3014,15 @@ export async function notificarRevisaoTrimestralConcluida(
 ): Promise<void> {
   if (!slackApp?.client) return;
   const client = slackApp.client;
-  const dataHora = completedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' - ' + completedAt.toLocaleDateString('pt-BR');
+  const dataHora = new Date(completedAt).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
   const toolsList = toolNames.length ? toolNames.join(', ') : '—';
   const text =
     `📝 *Auditoria Periódica Realizada*\n\n` +
