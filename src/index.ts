@@ -38,11 +38,6 @@ import { slackReceiver, getToolsAndLevelsMap } from './services/slackService';
 
 dotenv.config();
 
-console.log('[Config] SLACK_SI_CHANNEL_ID:', process.env.SLACK_SI_CHANNEL_ID ?? 'NÃO DEFINIDO');
-console.log('[Config] SLACK_ID_LUAN:', process.env.SLACK_ID_LUAN ?? 'NÃO DEFINIDO');
-console.log('[Config] SLACK_ID_VLADIMIR:', process.env.SLACK_ID_VLADIMIR ?? 'NÃO DEFINIDO');
-console.log('[Config] SLACK_ID_ALLAN:', process.env.SLACK_ID_ALLAN ?? 'NÃO DEFINIDO');
-
 const app = express();
 const prisma = new PrismaClient();
 
@@ -259,4 +254,7 @@ app.get('*', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Theris Backend rodando na porta ${PORT}`);
+  console.log('[Config] SLACK_SI_CHANNEL_ID:', process.env.SLACK_SI_CHANNEL_ID ?? 'NÃO DEFINIDO');
+  console.log('[Config] SLACK_ID_LUAN:', process.env.SLACK_ID_LUAN ?? 'NÃO DEFINIDO');
+  console.log('[Config] SLACK_GRUPO_SEGURANCA_CHANNEL_ID:', process.env.SLACK_GRUPO_SEGURANCA_CHANNEL_ID ?? 'NÃO DEFINIDO');
 });

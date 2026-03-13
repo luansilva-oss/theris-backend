@@ -2362,8 +2362,8 @@ export type TicketForSINotification = {
  * Falha na notificação não deve bloquear a criação do ticket — chamar em try/catch.
  */
 export async function notificarSI(ticket: TicketForSINotification): Promise<void> {
-  console.log('[notificarSI] Iniciando notificação para canal:', process.env.SLACK_SI_CHANNEL_ID);
-  console.log('[notificarSI] Slack App inicializado:', !!getSlackApp());
+  console.log('[notificarSI] canal:', process.env.SLACK_SI_CHANNEL_ID);
+  console.log('[notificarSI] chamado:', ticket?.id ?? 'sem id');
   if (!slackApp?.client) return;
   const client = slackApp.client;
   if (!SLACK_ID_LUAN && !SLACK_SI_CHANNEL_ID) return;
@@ -2418,7 +2418,7 @@ export async function notificarSI(ticket: TicketForSINotification): Promise<void
       }
     }
   } catch (error) {
-    console.error('[notificarSI] Erro:', error);
+    console.error('[notificarSI] ERRO:', error);
   }
 }
 
