@@ -38,7 +38,7 @@ export type JumpCloudInsightEvent = {
   [k: string]: unknown;
 };
 
-/** Resposta da API de eventos (array de eventos). */
+/** Resposta da API de eventos: array na raiz ou objeto com data/events. */
 type InsightsEventsResponse = { events?: JumpCloudInsightEvent[]; data?: JumpCloudInsightEvent[] };
 
 /**
@@ -114,12 +114,19 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
       console.error('[JumpCloud] Insights API status:', res.status, await res.text());
       return [];
     }
-    const data = (await res.json()) as InsightsEventsResponse;
-    console.log('[JumpCloud] Response:', JSON.stringify(data, null, 2));
-    const events = data.events ?? data.data ?? [];
-    const list = Array.isArray(events) ? events : [];
+    const response = (await res.json()) as JumpCloudInsightEvent[] | InsightsEventsResponse;
+    console.log('[JumpCloud] Response:', JSON.stringify(response, null, 2));
+    // API retorna array JSON na raiz ([{...}, {...}]) ou objeto com data/events
+    const list: JumpCloudInsightEvent[] = Array.isArray(response)
+      ? response
+      : Array.isArray(response.data)
+        ? response.data
+        : Array.isArray(response.events)
+          ? response.events
+          : [];
     const filtered = list.filter((e) => RELEVANT_EVENT_TYPES.includes((e.event_type ?? '') as string));
-    console.log('[JumpCloud] Parsed events count:', list.length, '| filtrados (copy/reveal):', filtered.length, '(keys in response:', Object.keys(data).join(', ') + ')');
+    const responseShape = Array.isArray(response) ? 'array (raiz)' : Object.keys(response).join(', ');
+    console.log('[JumpCloud] Parsed events count:', list.length, '| filtrados (copy/reveal):', filtered.length, '(response:', responseShape + ')');
 
     return filtered;
   } catch (e) {
