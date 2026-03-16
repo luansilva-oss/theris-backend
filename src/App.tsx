@@ -274,6 +274,138 @@ function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 
   return { category: 'Acessos', categoryColor: '#38BDF8', title, lines };
 }
 
+/** Formata valor para exibição de data (YYYY-MM-DD → dd/MM/yyyy ou Date). */
+function formatDateValue(val: unknown): string | null {
+  if (val == null || val === '') return null;
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const [y, m, d] = val.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  try {
+    const date = typeof val === 'string' ? new Date(val) : (val as Date);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Monta as linhas de detalhe do evento "Solicitação criada" no Histórico do chamado.
+ * Usada para qualquer chamado aberto (novo ou antigo). Exibe apenas campos com valor (!== null/undefined/'').
+ * Chamados criados antes dos novos campos do modal (managerName, contractType, equipmentReturn, etc.) terão
+ * details incompleto — os campos ausentes são omitidos naturalmente. Campos antigos (collaboratorName, role,
+ * dept, reason, current, future, etc.) são lidos normalmente para chamados já existentes.
+ */
+function getTicketHistoryDetailLines(chamado: Request): { label: string; value: string }[] {
+  let d: Record<string, unknown> = {};
+  try {
+    d = typeof chamado.details === 'string' ? JSON.parse(chamado.details || '{}') : (chamado.details as Record<string, unknown> || {});
+  } catch {
+    return [];
+  }
+  const lines: { label: string; value: string }[] = [];
+  const push = (label: string, value: unknown) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      lines.push({ label, value: String(value).trim() });
+    }
+  };
+  const actionDateFormatted = chamado.actionDate
+    ? new Date(chamado.actionDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : null;
+  const startDateDisplay = formatDateValue(d.startDate) ?? actionDateFormatted;
+
+  const type = chamado.type;
+  const subtipo = d.subtipo as string | undefined;
+
+  // HIRING
+  if (type === 'HIRING') {
+    push('Colaborador', d.collaboratorName);
+    push('Cargo', d.role);
+    push('Departamento', d.dept ?? d.department);
+    push('Data de início', startDateDisplay ?? d.startDate);
+    push('Gestor', d.managerName);
+    push('E-mail corporativo', d.corporateEmail);
+    push('Tipo', d.contractType);
+    push('Observações', d.obs);
+    if (chamado.justification) lines.push({ label: 'Justificativa', value: chamado.justification });
+    return lines;
+  }
+
+  // FIRING / LEAVER / OFFBOARDING / DEMISSAO
+  if (type === 'FIRING' || type === 'DEMISSAO' || type === 'OFFBOARDING') {
+    push('Colaborador', d.collaboratorName);
+    push('Cargo', d.role);
+    push('Departamento', d.dept);
+    push('Data de desligamento', formatDateValue(d.actionDate) ?? actionDateFormatted);
+    push('Motivo', d.reason);
+    push('Gestor', d.managerName);
+    push('Devolução de equipamento', d.equipmentReturn);
+    push('Observações', d.obs);
+    if (chamado.justification && !d.reason) lines.push({ label: 'Justificativa', value: chamado.justification });
+    return lines;
+  }
+
+  // CHANGE_ROLE (Mudança de Cargo)
+  if (type === 'CHANGE_ROLE' && subtipo === 'MUDANCA_CARGO') {
+    push('Colaborador', d.collaboratorName);
+    const curr = d.current as Record<string, string> | undefined;
+    const fut = d.future as Record<string, string> | undefined;
+    push('Cargo atual', curr?.role);
+    push('Novo cargo', fut?.role ?? d.newRoleName);
+    push('Departamento atual', curr?.dept);
+    push('Novo departamento', fut?.dept ?? d.newDeptName);
+    push('Data de início', formatDateValue(d.actionDate) ?? actionDateFormatted);
+    push('Justificativa', d.reason ?? chamado.justification);
+    push('Gestor atual', d.managerCurrent);
+    push('Novo gestor', d.managerNew);
+    return lines;
+  }
+
+  // CHANGE_ROLE (Mudança de Departamento) / CHANGE_DEPARTMENT
+  if (type === 'CHANGE_ROLE' && (subtipo === 'MUDANCA_DEPARTAMENTO' || !subtipo)) {
+    push('Colaborador', d.collaboratorName);
+    const curr = d.current as Record<string, string> | undefined;
+    const fut = d.future as Record<string, string> | undefined;
+    push('Departamento atual', curr?.dept);
+    push('Novo departamento', fut?.dept ?? d.newDeptName);
+    push('Cargo atual', curr?.role);
+    push('Novo cargo', fut?.role ?? d.newRoleName);
+    push('Gestor atual', d.managerCurrent);
+    push('Novo gestor', d.managerNew);
+    push('Data de início', formatDateValue(d.actionDate) ?? actionDateFormatted);
+    push('Justificativa', d.reason ?? chamado.justification);
+    return lines;
+  }
+
+  // DEPUTY_DESIGNATION (sem tool = /pessoas)
+  if (type === 'DEPUTY_DESIGNATION' && !d.tool) {
+    push('Colaborador', d.substituteName ?? d.substitute);
+    push('Cargo', d.role);
+    push('Departamento', d.dept);
+    if (chamado.justification) lines.push({ label: 'Justificativa', value: chamado.justification });
+    return lines;
+  }
+
+  // Acessos / AEX / Infra / genérico
+  if (actionDateFormatted) lines.push({ label: 'Data de Ação', value: actionDateFormatted });
+  if (chamado.justification) lines.push({ label: 'Justificativa', value: chamado.justification });
+  push('Ferramenta', d.tool ?? d.toolName);
+  push('Nível solicitado', d.target ?? d.targetValue);
+  const period = (chamado as { accessPeriodRaw?: string }).accessPeriodRaw ?? (d.duration != null && d.unit ? `${d.duration} ${d.unit}` : null);
+  if (period) lines.push({ label: 'Período', value: period });
+  push('Urgência', d.urgencyLabel ?? d.urgency);
+  push('Tipo de solicitação', d.requestTypeLabel ?? d.requestType);
+  push('Descrição / Problema', d.description);
+  if (d.collaboratorName) lines.push({ label: 'Colaborador', value: String(d.collaboratorName) });
+  const c = d.current as Record<string, string> | undefined;
+  if (c && (c.role || c.dept)) lines.push({ label: 'Cargo/Depto atual', value: [c.role, c.dept].filter(Boolean).join(' / ') });
+  const f = d.future as Record<string, string> | undefined;
+  if (f && (f.role || f.dept)) lines.push({ label: 'Cargo/Depto futuro', value: [f.role, f.dept].filter(Boolean).join(' / ') });
+  push('Substituto', [d.substituteName, d.substituteEmail].filter(Boolean).map(String).join(' · ') || undefined);
+  push('Motivo', d.reason);
+  push('Info', d.info);
+  return lines;
+}
+
 export default function App() {
   const location = useLocation();
   const params = useParams();
@@ -2829,40 +2961,11 @@ export default function App() {
                                 )}
                               </>
                             )}
-                            {(() => {
-                              let d: Record<string, unknown> = {};
-                              try { d = typeof chamadoDetail.details === 'string' ? JSON.parse(chamadoDetail.details || '{}') : (chamadoDetail.details || {}); } catch {}
-                              const lines: { label: string; value: string }[] = [];
-                              if (chamadoDetail.actionDate) lines.push({ label: 'Data de Ação', value: new Date(chamadoDetail.actionDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) });
-                              if (chamadoDetail.justification) lines.push({ label: 'Justificativa', value: chamadoDetail.justification });
-                              if (d.tool) lines.push({ label: 'Ferramenta', value: String(d.tool) });
-                              if (d.target || d.targetValue) lines.push({ label: 'Nível solicitado', value: String(d.target || d.targetValue || '—') });
-                              if ((chamadoDetail as { accessPeriodRaw?: string }).accessPeriodRaw) lines.push({ label: 'Período', value: (chamadoDetail as { accessPeriodRaw: string }).accessPeriodRaw });
-                              if (d.urgencyLabel || d.urgency) lines.push({ label: 'Urgência', value: String(d.urgencyLabel || d.urgency) });
-                              if (d.requestTypeLabel || d.requestType) lines.push({ label: 'Tipo de solicitação', value: String(d.requestTypeLabel || d.requestType || '—') });
-                              if (d.description) lines.push({ label: 'Descrição / Problema', value: String(d.description) });
-                              if (d.collaboratorName) lines.push({ label: 'Colaborador', value: String(d.collaboratorName) });
-                              if (d.current && typeof d.current === 'object') {
-                                const c = d.current as Record<string, string>;
-                                if (c.role || c.dept) lines.push({ label: 'Cargo/Depto atual', value: [c.role, c.dept].filter(Boolean).join(' / ') });
-                              }
-                              if (d.future && typeof d.future === 'object') {
-                                const f = d.future as Record<string, string>;
-                                if (f.role || f.dept) lines.push({ label: 'Cargo/Depto futuro', value: [f.role, f.dept].filter(Boolean).join(' / ') });
-                              }
-                              if (d.substituteName || d.substituteEmail) lines.push({ label: 'Substituto', value: [d.substituteName, d.substituteEmail].filter(Boolean).map(String).join(' · ') });
-                              if (d.reason) lines.push({ label: 'Motivo', value: String(d.reason) });
-                              if (d.info) lines.push({ label: 'Info', value: String(d.info) });
-                              return (
-                                <>
-                                  {lines.map((l, i) => (
-                                    <div key={i} style={{ marginTop: 6, fontSize: 12, color: '#a1a1aa' }}>
-                                      <span style={{ color: '#71717a' }}>{l.label}:</span> {l.value}
-                                    </div>
-                                  ))}
-                                </>
-                              );
-                            })()}
+                            {getTicketHistoryDetailLines(chamadoDetail).map((l, i) => (
+                              <div key={i} style={{ marginTop: 6, fontSize: 12, color: '#a1a1aa' }}>
+                                <span style={{ color: '#71717a' }}>{l.label}:</span> {l.value}
+                              </div>
+                            ))}
                           </div>
                           {(chamadoDetail.comments || []).map(c => (
                             <div key={c.id} style={{ padding: 12, background: '#18181b', borderRadius: 8 }}>

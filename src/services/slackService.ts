@@ -512,6 +512,8 @@ slackApp.action('btn_move_dept', async ({ ack, body, client }) => {
         { type: 'section', text: { type: 'mrkdwn', text: '*Situação Nova*' } },
         { type: 'input', block_id: 'blk_role_fut', label: { type: 'plain_text', text: 'Novo Cargo' }, element: { type: 'static_select', action_id: 'role_select', placeholder: { type: 'plain_text', text: 'Selecione o novo cargo...' }, options: roleOptions } },
         { type: 'input', block_id: 'blk_dept_fut', label: { type: 'plain_text', text: 'Novo Departamento' }, element: { type: 'static_select', action_id: 'dept_select', placeholder: { type: 'plain_text', text: 'Selecione o novo departamento...' }, options: deptOptions } },
+        { type: 'input', block_id: 'blk_manager_curr', optional: true, label: { type: 'plain_text', text: 'Gestor atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+        { type: 'input', block_id: 'blk_manager_fut', optional: true, label: { type: 'plain_text', text: 'Novo gestor' }, element: { type: 'plain_text_input', action_id: 'inp' } },
         { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de Ação' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
         { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
       ]
@@ -540,6 +542,8 @@ slackApp.action('btn_move_cargo', async ({ ack, body, client }) => {
         { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'static_select', action_id: 'dept_select', placeholder: { type: 'plain_text', text: 'Departamento (mesmo para cargo atual e novo)' }, options: deptOptions } },
         { type: 'input', block_id: 'blk_role_curr', label: { type: 'plain_text', text: 'Cargo Atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
         { type: 'input', block_id: 'blk_role_fut', label: { type: 'plain_text', text: 'Novo Cargo' }, element: { type: 'static_select', action_id: 'role_select', placeholder: { type: 'plain_text', text: 'Selecione o novo cargo...' }, options: roleOptions } },
+        { type: 'input', block_id: 'blk_manager_curr', optional: true, label: { type: 'plain_text', text: 'Gestor atual' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+        { type: 'input', block_id: 'blk_manager_fut', optional: true, label: { type: 'plain_text', text: 'Novo gestor' }, element: { type: 'plain_text_input', action_id: 'inp' } },
         { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de Ação' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
         { type: 'input', block_id: 'blk_reason', label: { type: 'plain_text', text: 'Justificativa' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
       ]
@@ -581,7 +585,23 @@ slackApp.action('btn_hire', async ({ ack, body, client }) => {
           },
           { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'blk_obs', optional: true, label: { type: 'plain_text', text: 'Obs (Equipamentos, etc)' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
+          { type: 'input', block_id: 'blk_manager', optional: true, label: { type: 'plain_text', text: 'Gestor direto' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_email', optional: true, label: { type: 'plain_text', text: 'E-mail corporativo' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'exemplo@empresa.com' } } },
+          {
+            type: 'input',
+            block_id: 'blk_contract_type',
+            label: { type: 'plain_text', text: 'Tipo de contratação' },
+            element: {
+              type: 'static_select',
+              action_id: 'inp_select',
+              placeholder: { type: 'plain_text', text: 'Selecione...' },
+              options: [
+                { text: { type: 'plain_text', text: 'CLT' }, value: 'CLT' },
+                { text: { type: 'plain_text', text: 'PJ' }, value: 'PJ' }
+              ]
+            }
+          },
+          { type: 'input', block_id: 'blk_obs', optional: true, label: { type: 'plain_text', text: 'Observações' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
         ]
     }, body);
   } catch (e) { console.error(e); }
@@ -598,8 +618,25 @@ slackApp.action('btn_fire', async ({ ack, body, client }) => {
           { type: 'input', block_id: 'blk_name', label: { type: 'plain_text', text: 'Colaborador' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_role', label: { type: 'plain_text', text: 'Cargo' }, element: { type: 'plain_text_input', action_id: 'inp' } },
           { type: 'input', block_id: 'blk_dept', label: { type: 'plain_text', text: 'Departamento' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-          { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de Ação' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
-          { type: 'input', block_id: 'blk_reason', optional: true, label: { type: 'plain_text', text: 'Motivo' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
+          { type: 'input', block_id: 'data_acao', optional: true, label: { type: 'plain_text', text: 'Data de desligamento' }, element: { type: 'datepicker', action_id: 'picker', placeholder: { type: 'plain_text', text: 'Selecione a data' } } },
+          { type: 'input', block_id: 'blk_reason', optional: true, label: { type: 'plain_text', text: 'Motivo do desligamento' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } },
+          { type: 'input', block_id: 'blk_manager', optional: true, label: { type: 'plain_text', text: 'Gestor' }, element: { type: 'plain_text_input', action_id: 'inp' } },
+          {
+            type: 'input',
+            block_id: 'blk_equipment',
+            optional: true,
+            label: { type: 'plain_text', text: 'Devolução de equipamento' },
+            element: {
+              type: 'static_select',
+              action_id: 'inp_select',
+              placeholder: { type: 'plain_text', text: 'Selecione...' },
+              options: [
+                { text: { type: 'plain_text', text: 'Sim' }, value: 'Sim' },
+                { text: { type: 'plain_text', text: 'Não' }, value: 'Não' }
+              ]
+            }
+          },
+          { type: 'input', block_id: 'blk_obs', optional: true, label: { type: 'plain_text', text: 'Observações' }, element: { type: 'plain_text_input', multiline: true, action_id: 'inp' } }
         ]
     }, body);
   } catch (e) { console.error(e); }
@@ -1902,6 +1939,8 @@ slackApp.view('submit_move_dept', async ({ ack, body, view, client }) => {
   const [newRoleId, newRoleName] = roleSelectVal.includes('|') ? roleSelectVal.split('|', 2) : [roleSelectVal, ''];
   const [newDepartmentId, newDeptName] = deptSelectVal.includes('|') ? deptSelectVal.split('|', 2) : [deptSelectVal, ''];
   const actionDate = v.data_acao?.picker?.selected_date ?? null;
+  const managerCurr = v.blk_manager_curr?.inp?.value?.trim();
+  const managerFut = v.blk_manager_fut?.inp?.value?.trim();
   const details: Record<string, unknown> = {
     info: `Mudança de Departamento: ${name}`,
     collaboratorName: name,
@@ -1915,6 +1954,8 @@ slackApp.view('submit_move_dept', async ({ ack, body, view, client }) => {
       ...(unitValue && { unitId: unitValue })
     },
     reason: v.blk_reason.inp.value ?? '',
+    managerCurrent: managerCurr || undefined,
+    managerNew: managerFut || undefined,
     ...(actionDate && { actionDate })
   };
   if (newRoleId) details.newRoleId = newRoleId;
@@ -1935,6 +1976,8 @@ slackApp.view('submit_move_cargo', async ({ ack, body, view, client }) => {
   const [newRoleId, newRoleName] = roleSelectVal.includes('|') ? roleSelectVal.split('|', 2) : [roleSelectVal, ''];
   const deptDisplay = newDeptName || deptSelectVal;
   const actionDate = v.data_acao?.picker?.selected_date ?? null;
+  const managerCurr = v.blk_manager_curr?.inp?.value?.trim();
+  const managerFut = v.blk_manager_fut?.inp?.value?.trim();
   const details: Record<string, unknown> = {
     info: `Mudança de Cargo: ${name}`,
     collaboratorName: name,
@@ -1948,6 +1991,8 @@ slackApp.view('submit_move_cargo', async ({ ack, body, view, client }) => {
       ...(unitValue && { unitId: unitValue })
     },
     reason: v.blk_reason.inp.value ?? '',
+    managerCurrent: managerCurr || undefined,
+    managerNew: managerFut || undefined,
     ...(actionDate && { actionDate })
   };
   if (newRoleId) details.newRoleId = newRoleId;
@@ -1963,7 +2008,8 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   const name = v.blk_name.inp.value;
   const startDate = v.blk_date.picker?.selected_date || 'A definir';
   const unitName = v.blk_unit?.unit_select?.selected_option?.value ?? '';
-  const details = {
+  const contractOpt = v.blk_contract_type?.inp_select?.selected_option;
+  const details: Record<string, unknown> = {
     info: `Contratação: ${name}`,
     collaboratorName: name,
     startDate,
@@ -1971,7 +2017,10 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
     role: v.blk_role.inp.value,
     dept: v.blk_dept.inp.value,
     department: v.blk_dept.inp.value,
-    obs: v.blk_obs?.inp?.value ?? ''
+    managerName: v.blk_manager?.inp?.value?.trim() || undefined,
+    corporateEmail: v.blk_email?.inp?.value?.trim() || undefined,
+    contractType: contractOpt?.value ?? contractOpt?.text?.text ?? undefined,
+    obs: v.blk_obs?.inp?.value?.trim() || undefined
   };
   await saveRequest(body, client, 'HIRING', details, `Início: ${startDate}`, `✅ Contratação de *${name}* registrada.`);
 });
@@ -1980,17 +2029,21 @@ slackApp.view('submit_fire', async ({ ack, body, view, client }) => {
   await ack();
   const v = view.state.values;
   const name = v.blk_name.inp.value;
-  const reason = v.blk_reason.inp.value ?? '';
+  const reason = v.blk_reason?.inp?.value ?? '';
   const actionDate = v.data_acao?.picker?.selected_date ?? null;
-  const details = {
+  const equipmentOpt = v.blk_equipment?.inp_select?.selected_option;
+  const details: Record<string, unknown> = {
     info: `Desligamento: ${name}`,
     collaboratorName: name,
     role: v.blk_role.inp.value,
     dept: v.blk_dept.inp.value,
-    reason,
+    reason: reason || undefined,
+    managerName: v.blk_manager?.inp?.value?.trim() || undefined,
+    equipmentReturn: equipmentOpt?.value ?? equipmentOpt?.text?.text ?? undefined,
+    obs: v.blk_obs?.inp?.value?.trim() || undefined,
     ...(actionDate && { actionDate })
   };
-  await saveRequest(body, client, 'FIRING', details, reason, `⚠️ Desligamento de *${name}* registrado. Processo de offboarding iniciado.`, false, actionDate);
+  await saveRequest(body, client, 'FIRING', details, reason || 'Desligamento', `⚠️ Desligamento de *${name}* registrado. Processo de offboarding iniciado.`, false, actionDate);
 });
 
 slackApp.view('submit_tool_access', async ({ ack, body, view, client }) => {
