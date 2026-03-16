@@ -2364,11 +2364,7 @@ export const sendSlackNotification = async (
       elements: [{ type: 'mrkdwn', text: 'Theris OS • Governança de Acessos' }]
     });
 
-    await slackApp.client.chat.postMessage({
-      channel: slackUserId,
-      text: `Sua solicitação foi ${actionText}`,
-      blocks
-    });
+    await sendDmToSlackUser(slackApp.client, slackUserId, `Sua solicitação foi ${actionText}`, blocks);
 
     console.log(`🔔 Notificação enviada para ${email} — ${status} [${requestType || 'n/a'}]`);
   } catch (error) {
@@ -2386,10 +2382,7 @@ export const sendChangeRoleApprovedDM = async (requesterEmail: string, collabora
       console.warn(`⚠️ sendChangeRoleApprovedDM: usuário Slack não encontrado para ${requesterEmail}`);
       return;
     }
-    await slackApp.client.chat.postMessage({
-      channel: slackUserId,
-      text: `✅ A movimentação de ${collaboratorName} foi aprovada e já está refletida no sistema.`
-    });
+    await sendDmToSlackUser(slackApp.client, slackUserId, `✅ A movimentação de ${collaboratorName} foi aprovada e já está refletida no sistema.`);
     console.log(`🔔 DM movimentação aprovada enviada para ${requesterEmail}`);
   } catch (e) {
     console.error('❌ Erro ao enviar DM de movimentação aprovada:', e);
@@ -2413,6 +2406,21 @@ const SLACK_GRUPO_SEGURANCA_CHANNEL_ID = process.env.SLACK_GRUPO_SEGURANCA_CHANN
 const SI_MEMBERS = [SLACK_ID_LUAN, SLACK_ID_VLADIMIR, SLACK_ID_ALLAN].filter(Boolean) as string[];
 
 /**
+ * Abre uma DM com o usuário (conversations.open) e envia a mensagem. Evita channel_not_found quando o bot ainda não conversou com o usuário.
+ */
+export async function sendDmToSlackUser(
+  client: { conversations: { open: (opts: { users: string }) => Promise<{ channel?: { id: string } }> }; chat: { postMessage: (opts: any) => Promise<any> } },
+  slackUserId: string,
+  text: string,
+  blocks?: any[]
+): Promise<void> {
+  const dm = await client.conversations.open({ users: slackUserId });
+  const channelId = dm.channel?.id;
+  if (!channelId) throw new Error('conversations.open did not return channel id');
+  await client.chat.postMessage({ channel: channelId, text, ...(blocks && blocks.length > 0 ? { blocks } : {}) });
+}
+
+/**
  * Notifica SLACK_ID_LUAN quando a automação CHANGE_ROLE não encontra cargo ou departamento no banco.
  * Chamar em try/catch para não bloquear o fluxo.
  */
@@ -2426,7 +2434,7 @@ export async function notificarLuanErroChangeRole(chamadoId: string, cargoBuscad
     `Depto buscado: ${deptoBuscado} → não encontrado no banco\n` +
     `Ação necessária: revisar manualmente\n\n` +
     `👉 Ver chamado: ${linkChamado}`;
-  await slackApp.client.chat.postMessage({ channel: SLACK_ID_LUAN, text });
+  await sendDmToSlackUser(slackApp.client, SLACK_ID_LUAN, text);
   console.log('[notificarLuanErroChangeRole] DM enviada para SLACK_ID_LUAN.');
 }
 
@@ -2524,7 +2532,7 @@ export async function notificarSINovoTicket(ticket: TicketForSINotification): Pr
 
     for (const memberId of SI_MEMBERS) {
       try {
-        await client.chat.postMessage({ channel: memberId, text: dmText });
+        await sendDmToSlackUser(client, memberId, dmText);
         console.log('[Chamado] notificarSINovoTicket: DM enviada para', memberId);
       } catch (err) {
         console.error('[Chamado] Erro ao enviar Slack SI (DM):', memberId, err);

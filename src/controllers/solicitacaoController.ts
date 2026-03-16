@@ -1601,7 +1601,13 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
       }
     }
 
-    return res.json({ ...request, ownerIsSIMember, canAddSolution, solutionBlockReason });
+    const requestHistory = await prisma.historicoMudanca.findMany({
+      where: { entidadeTipo: 'Request', entidadeId: id },
+      orderBy: { createdAt: 'asc' },
+      include: { autor: { select: { name: true } } }
+    });
+
+    return res.json({ ...request, ownerIsSIMember, canAddSolution, solutionBlockReason, requestHistory });
   } catch (error) {
     console.error('SOLICITACOES ERROR (getSolicitacaoById):', error);
     if (error instanceof Error) console.error('Stack:', error.stack);
@@ -1727,6 +1733,16 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           descricao: 'Chamado reaberto',
           dadosAntes: { status: 'RESOLVIDO' },
           dadosDepois: { status: newStatus || 'ABERTO' },
+          autorId: userId ?? undefined,
+        }).catch(() => {});
+      } else {
+        await registrarMudanca({
+          tipo: 'STATUS_CHANGED',
+          entidadeTipo: 'Request',
+          entidadeId: id,
+          descricao: `Status alterado: ${existing.status} → ${newStatus}`,
+          dadosAntes: { status: existing.status },
+          dadosDepois: { status: newStatus },
           autorId: userId ?? undefined,
         }).catch(() => {});
       }
@@ -1959,7 +1975,13 @@ export const createComment = async (req: Request, res: Response) => {
     const { notifyTicketEvent } = await import('../services/ticketEventService');
     console.log('[Chamado] Tentando enviar notificação Slack para chamado:', id, 'tipo: COMMENT_ADDED');
     try {
-      await notifyTicketEvent(id, 'COMMENT_ADDED', { commentId: comment.id, kind: comment.kind, body: comment.body.slice(0, 200) });
+      await notifyTicketEvent(id, 'COMMENT_ADDED', {
+        commentId: comment.id,
+        kind: comment.kind,
+        body: comment.body.slice(0, 200),
+        authorId: comment.authorId ?? comment.author?.id,
+        authorName: comment.author?.name ?? 'Alguém'
+      });
       console.log('[Chamado] Slack enviado com sucesso para chamado:', id);
     } catch (err) {
       console.error('[Chamado] Erro ao enviar Slack:', err);
@@ -2018,7 +2040,10 @@ export const createAttachment = async (req: Request, res: Response) => {
     const { notifyTicketEvent } = await import('../services/ticketEventService');
     console.log('[Chamado] Tentando enviar notificação Slack para chamado:', id, 'tipo: ATTACHMENT_ADDED');
     try {
-      await notifyTicketEvent(id, 'ATTACHMENT_ADDED', { filename: attachment.filename });
+      await notifyTicketEvent(id, 'ATTACHMENT_ADDED', {
+        filename: attachment.filename,
+        uploadedById: attachment.uploadedById ?? attachment.uploadedBy?.id
+      });
       console.log('[Chamado] Slack enviado com sucesso para chamado:', id);
     } catch (err) {
       console.error('[Chamado] Erro ao enviar Slack:', err);

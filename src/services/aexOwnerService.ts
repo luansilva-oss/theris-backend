@@ -3,7 +3,7 @@
  * Usa nome exato como está no banco de usuários.
  */
 import { PrismaClient } from '@prisma/client';
-import { getSlackApp } from './slackService';
+import { getSlackApp, sendDmToSlackUser } from './slackService';
 
 const prisma = new PrismaClient();
 
@@ -151,7 +151,7 @@ Por favor, avalie a solicitação #${shortId}:`;
 
   for (const channel of ownerIds) {
     try {
-      await client.chat.postMessage({ channel, text: ownerMessage, blocks: ownerBlocks });
+      await sendDmToSlackUser(client as any, channel, ownerMessage, ownerBlocks);
     } catch (e) {
       console.error(`[AEX] Erro ao enviar DM para owner/sub (${channel}):`, e);
     }
@@ -169,7 +169,7 @@ Aguardando aprovação do owner. Você será notificado quando o owner decidir p
   for (const channel of siIds) {
     if (ownerIds.includes(channel)) continue;
     try {
-      await client.chat.postMessage({ channel, text: siMessage });
+      await sendDmToSlackUser(client as any, channel, siMessage);
     } catch (e) {
       console.error(`[AEX] Erro ao enviar DM para SI (${channel}):`, e);
     }
@@ -186,9 +186,7 @@ export async function sendAexRequesterCreatedDM(
 ): Promise<void> {
   const shortId = requestId.slice(0, 8);
   try {
-    await client.chat.postMessage({
-      channel: requesterSlackId,
-      text: `📋 *Chamado criado com sucesso!*
+    await sendDmToSlackUser(client as any, requesterSlackId, `📋 *Chamado criado com sucesso!*
 
 Seu pedido de acesso extraordinário foi registrado.
 
@@ -196,8 +194,7 @@ Seu pedido de acesso extraordinário foi registrado.
 *Nível solicitado:* ${accessLevel}
 *ID do chamado:* #${shortId}
 
-A solicitação foi enviada para aprovação do responsável pela ferramenta. Você será notificado a cada atualização.`
-    });
+A solicitação foi enviada para aprovação do responsável pela ferramenta. Você será notificado a cada atualização.`);
   } catch (e) {
     console.error('[AEX] Erro ao notificar solicitante (criação):', e);
   }
@@ -213,9 +210,7 @@ export async function sendAexRequesterOwnerApprovedDM(
 ): Promise<void> {
   const shortId = requestId.slice(0, 8);
   try {
-    await client.chat.postMessage({
-      channel: requesterSlackId,
-      text: `✅ *Etapa 1 concluída — Owner aprovou!*
+    await sendDmToSlackUser(client as any, requesterSlackId, `✅ *Etapa 1 concluída — Owner aprovou!*
 
 O responsável pela ferramenta aprovou sua solicitação.
 
@@ -223,8 +218,7 @@ O responsável pela ferramenta aprovou sua solicitação.
 *Nível:* ${accessLevel}
 *Chamado:* #${shortId}
 
-Agora aguarda aprovação final do time de Segurança da Informação. Você será notificado quando concluído.`
-    });
+Agora aguarda aprovação final do time de Segurança da Informação. Você será notificado quando concluído.`);
   } catch (e) {
     console.error('[AEX] Erro ao notificar solicitante (owner aprovou):', e);
   }
@@ -243,9 +237,7 @@ export async function sendAexRequesterSIApprovedFirstDM(
   const shortId = requestId.slice(0, 8);
   const subLine = subOwnerName ? `\n*Sub-owner:* ${subOwnerName}` : '';
   try {
-    await client.chat.postMessage({
-      channel: requesterSlackId,
-      text: `✅ *Etapa 1 concluída — Time de SI aprovou!*
+    await sendDmToSlackUser(client as any, requesterSlackId, `✅ *Etapa 1 concluída — Time de SI aprovou!*
 
 O time de Segurança da Informação aprovou sua solicitação.
 
@@ -253,8 +245,7 @@ O time de Segurança da Informação aprovou sua solicitação.
 *Nível:* ${accessLevel}
 *Chamado:* #${shortId}
 
-Aguardando aprovação do responsável pela ferramenta.`
-    });
+Aguardando aprovação do responsável pela ferramenta.`);
   } catch (e) {
     console.error('[AEX] Erro ao notificar solicitante (SI aprovou primeiro):', e);
   }
@@ -275,10 +266,7 @@ export async function sendAexOwnerApprovedDMs(
   const ticketsUrl = `${FRONTEND_URL}/tickets`;
 
   try {
-    await client.chat.postMessage({
-      channel: ownerSlackId,
-      text: '✅ Você aprovou o acesso. Aguardando validação final do time de SI.'
-    });
+    await sendDmToSlackUser(client as any, ownerSlackId, '✅ Você aprovou o acesso. Aguardando validação final do time de SI.');
   } catch (e) {
     console.error('[AEX] Erro ao confirmar DM para owner:', e);
   }
@@ -306,7 +294,7 @@ Acesse o painel para a aprovação final: ${ticketsUrl}`;
 
   for (const channel of siIds) {
     try {
-      await client.chat.postMessage({ channel, text: siMessage });
+      await sendDmToSlackUser(client as any, channel, siMessage);
     } catch (e) {
       console.error(`[AEX] Erro ao notificar SI (${channel}):`, e);
     }
@@ -322,16 +310,13 @@ export async function sendAexRejectedByOwnerDM(
 ): Promise<void> {
   const shortId = requestId.slice(0, 8);
   try {
-    await client.chat.postMessage({
-      channel: requesterSlackId,
-      text: `❌ *Solicitação reprovada*
+    await sendDmToSlackUser(client as any, requesterSlackId, `❌ *Solicitação reprovada*
 
 Sua solicitação de acesso extraordinário foi reprovada.
 
 *Ferramenta:* ${toolName}
 *Chamado:* #${shortId}
-*Reprovado por:* Owner/Responsável pela ferramenta`
-    });
+*Reprovado por:* Owner/Responsável pela ferramenta`);
   } catch (e) {
     console.error('[AEX] Erro ao notificar solicitante da rejeição:', e);
   }
@@ -346,16 +331,13 @@ export async function sendAexRejectedBySIDM(
 ): Promise<void> {
   const shortId = requestId.slice(0, 8);
   try {
-    await client.chat.postMessage({
-      channel: requesterSlackId,
-      text: `❌ *Solicitação reprovada*
+    await sendDmToSlackUser(client as any, requesterSlackId, `❌ *Solicitação reprovada*
 
 Sua solicitação de acesso extraordinário foi reprovada.
 
 *Ferramenta:* ${toolName}
 *Chamado:* #${shortId}
-*Reprovado por:* Time de SI`
-    });
+*Reprovado por:* Time de SI`);
   } catch (e) {
     console.error('[AEX] Erro ao notificar solicitante da rejeição pelo SI:', e);
   }
@@ -371,9 +353,7 @@ export async function sendAexApprovedBySIDM(
 ): Promise<void> {
   const shortId = requestId.slice(0, 8);
   try {
-    await client.chat.postMessage({
-      channel: requesterSlackId,
-      text: `🎉 *Acesso liberado!*
+    await sendDmToSlackUser(client as any, requesterSlackId, `🎉 *Acesso liberado!*
 
 Sua solicitação foi totalmente aprovada.
 
@@ -381,8 +361,7 @@ Sua solicitação foi totalmente aprovada.
 *Nível de acesso:* ${accessLevel}
 *Chamado:* #${shortId}
 
-O acesso já está ativo no sistema.`
-    });
+O acesso já está ativo no sistema.`);
   } catch (e) {
     console.error('[AEX] Erro ao notificar solicitante da aprovação:', e);
   }

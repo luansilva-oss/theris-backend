@@ -105,6 +105,17 @@ interface RequestAttachment {
   createdAt: string;
   uploadedBy?: { id: string; name: string } | null;
 }
+/** Entrada do histórico do chamado (HistoricoMudanca) retornada pelo backend. */
+interface RequestHistoryEntry {
+  id: string;
+  tipo: string;
+  createdAt: string;
+  descricao?: string;
+  dadosAntes?: { status?: string; responsavel?: string | null };
+  dadosDepois?: { status?: string; responsavel?: string | null };
+  autor?: { name: string } | null;
+}
+
 interface Request {
   id: string;
   details: string;
@@ -123,6 +134,7 @@ interface Request {
   actionDate?: string | null;
   comments?: RequestComment[];
   attachments?: RequestAttachment[];
+  requestHistory?: RequestHistoryEntry[];
 }
 
 interface KBUFerramenta {
@@ -274,6 +286,19 @@ function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 
   return { category: 'Acessos', categoryColor: '#38BDF8', title, lines };
 }
 
+/** Formata timestamp em horário de Brasília (America/Sao_Paulo) para exibição no histórico do chamado. */
+function formatEventDateBRT(createdAt: string): string {
+  return new Date(createdAt).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
+
 /** Formata valor para exibição de data (YYYY-MM-DD → dd/MM/yyyy ou Date). */
 function formatDateValue(val: unknown): string | null {
   if (val == null || val === '') return null;
@@ -404,6 +429,46 @@ function getTicketHistoryDetailLines(chamado: Request): { label: string; value: 
   push('Motivo', d.reason);
   push('Info', d.info);
   return lines;
+}
+
+type ChamadoTimelineEvent =
+  | { kind: 'TICKET_CREATED'; createdAt: string; request: Request }
+  | { kind: 'STATUS_CHANGED'; createdAt: string; from: string; to: string; authorName: string }
+  | { kind: 'ASSIGNEE_CHANGED'; createdAt: string; assigneeName: string; authorName: string }
+  | { kind: 'COMMENT_ADDED'; createdAt: string; comment: RequestComment }
+  | { kind: 'ATTACHMENT_ADDED'; createdAt: string; attachment: RequestAttachment };
+
+/** Monta a timeline do chamado (abertura + histórico + comentários + anexos) ordenada por createdAt asc. */
+function buildChamadoTimeline(request: Request): ChamadoTimelineEvent[] {
+  const events: ChamadoTimelineEvent[] = [];
+
+  events.push({ kind: 'TICKET_CREATED', createdAt: request.createdAt, request });
+
+  const history = (request as Request & { requestHistory?: RequestHistoryEntry[] }).requestHistory || [];
+  for (const h of history) {
+    if (h.tipo === 'TICKET_CREATED') continue;
+    if (h.tipo === 'TICKET_ASSIGNED') {
+      const to = (h.dadosDepois?.responsavel ?? '—') as string;
+      events.push({ kind: 'ASSIGNEE_CHANGED', createdAt: h.createdAt, assigneeName: to, authorName: h.autor?.name ?? 'Sistema' });
+      continue;
+    }
+    if (h.tipo === 'STATUS_CHANGED' || h.tipo === 'TICKET_RESOLVED' || h.tipo === 'TICKET_REOPENED') {
+      const from = (h.dadosAntes?.status ?? '—') as string;
+      const to = (h.dadosDepois?.status ?? '—') as string;
+      events.push({ kind: 'STATUS_CHANGED', createdAt: h.createdAt, from, to, authorName: h.autor?.name ?? 'Sistema' });
+      continue;
+    }
+  }
+
+  for (const c of request.comments || []) {
+    events.push({ kind: 'COMMENT_ADDED', createdAt: c.createdAt, comment: c });
+  }
+  for (const a of request.attachments || []) {
+    events.push({ kind: 'ATTACHMENT_ADDED', createdAt: a.createdAt, attachment: a });
+  }
+
+  events.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return events;
 }
 
 export default function App() {
@@ -2944,45 +3009,76 @@ export default function App() {
                             }
                             return null;
                           })()}
-                          <div style={{ padding: 12, background: '#1E293B', borderRadius: 8, borderLeft: '3px solid #0EA5E9' }}>
-                            <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Abertura · {new Date(chamadoDetail.createdAt).toLocaleString('pt-BR')}</div>
-                            <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              Solicitação criada · {chamadoDetail.type}
-                            </div>
-                            {chamadoDetail.status === 'PENDING_SI' && ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(chamadoDetail.type) && (chamadoDetail as { ownerApprovedByName?: string }).ownerApprovedByName && (
-                              <>
-                                <div style={{ fontSize: 12, color: '#a1a1aa', marginBottom: 4 }}>
-                                  Aprovado pelo Owner: {(chamadoDetail as { ownerApprovedByName: string }).ownerApprovedByName}
+                          {buildChamadoTimeline(chamadoDetail).map((ev, idx) => {
+                            const ts = formatEventDateBRT(ev.createdAt);
+                            const boxStyle = { padding: 12, background: '#1E293B', borderRadius: 8, borderLeft: '3px solid #0EA5E9' } as const;
+                            const boxStyleAlt = { padding: 12, background: '#18181b', borderRadius: 8 } as const;
+                            const labelStyle = { fontSize: 12, color: '#a1a1aa' };
+                            const metaStyle = { fontSize: 11, color: '#71717a', marginBottom: 4 };
+
+                            if (ev.kind === 'TICKET_CREATED') {
+                              return (
+                                <div key={`created-${idx}`} style={boxStyle}>
+                                  <div style={metaStyle}>Abertura · {ts}</div>
+                                  <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 8 }}>Solicitação criada · {ev.request.type}</div>
+                                  {ev.request.status === 'PENDING_SI' && ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(ev.request.type) && (ev.request as { ownerApprovedByName?: string }).ownerApprovedByName && (
+                                    <>
+                                      <div style={labelStyle}>Aprovado pelo Owner: {(ev.request as { ownerApprovedByName: string }).ownerApprovedByName}</div>
+                                      {(ev.request as { ownerIsSIMember?: boolean }).ownerIsSIMember && (
+                                        <div style={{ ...labelStyle, marginBottom: 8, background: 'rgba(251, 191, 36, 0.1)', padding: '8px 12px', borderRadius: 8 }}>⚠️ O Owner desta ferramenta é do time de SI. A aprovação final deve ser feita por outro integrante do time.</div>
+                                      )}
+                                    </>
+                                  )}
+                                  {getTicketHistoryDetailLines(ev.request).map((l, i) => (
+                                    <div key={i} style={{ marginTop: 6, ...labelStyle }}>
+                                      <span style={{ color: '#71717a' }}>{l.label}:</span> {l.value}
+                                    </div>
+                                  ))}
                                 </div>
-                                {(chamadoDetail as { ownerIsSIMember?: boolean }).ownerIsSIMember && (
-                                  <div style={{ fontSize: 12, color: '#fbbf24', marginBottom: 8, background: 'rgba(251, 191, 36, 0.1)', padding: '8px 12px', borderRadius: 8 }}>
-                                    ⚠️ O Owner desta ferramenta é do time de SI. A aprovação final deve ser feita por outro integrante do time.
-                                  </div>
-                                )}
-                              </>
-                            )}
-                            {getTicketHistoryDetailLines(chamadoDetail).map((l, i) => (
-                              <div key={i} style={{ marginTop: 6, fontSize: 12, color: '#a1a1aa' }}>
-                                <span style={{ color: '#71717a' }}>{l.label}:</span> {l.value}
-                              </div>
-                            ))}
-                          </div>
-                          {(chamadoDetail.comments || []).map(c => (
-                            <div key={c.id} style={{ padding: 12, background: '#18181b', borderRadius: 8 }}>
-                              <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>
-                                {c.author?.name || 'Sistema'} · {new Date(c.createdAt).toLocaleString('pt-BR')}
-                                {c.kind !== 'COMMENT' && <span style={{ marginLeft: 8, color: '#38BDF8' }}>({c.kind === 'SOLUTION' ? 'Solução' : 'Tarefa agendada'})</span>}
-                              </div>
-                              <div style={{ fontSize: 13, color: '#e4e4e7', whiteSpace: 'pre-wrap' }}>{c.body}</div>
-                            </div>
-                          ))}
-                          {(chamadoDetail.attachments || []).map(a => (
-                            <div key={a.id} style={{ padding: 12, background: '#18181b', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <FileText size={18} color="#71717a" />
-                              <a href={a.fileUrl.startsWith('http') ? a.fileUrl : `${API_URL}${a.fileUrl}`} target="_blank" rel="noopener noreferrer" style={{ color: '#38BDF8', fontSize: 13 }}>{a.filename}</a>
-                              <span style={{ fontSize: 11, color: '#52525b' }}>{a.uploadedBy?.name} · {new Date(a.createdAt).toLocaleString('pt-BR')}</span>
-                            </div>
-                          ))}
+                              );
+                            }
+                            if (ev.kind === 'STATUS_CHANGED') {
+                              return (
+                                <div key={`status-${idx}-${ev.createdAt}`} style={boxStyleAlt}>
+                                  <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 6 }}>🔄 Status atualizado</div>
+                                  <div style={{ ...labelStyle, marginTop: 4 }}><span style={{ color: '#71717a' }}>De:</span> {getStatusLabel(ev.from)} → <span style={{ color: '#71717a' }}>Para:</span> {getStatusLabel(ev.to)}</div>
+                                  <div style={metaStyle}>Por: {ev.authorName} · {ts}</div>
+                                </div>
+                              );
+                            }
+                            if (ev.kind === 'ASSIGNEE_CHANGED') {
+                              return (
+                                <div key={`assignee-${idx}-${ev.createdAt}`} style={boxStyleAlt}>
+                                  <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 6 }}>👤 Responsável atualizado</div>
+                                  <div style={{ ...labelStyle, marginTop: 4 }}><span style={{ color: '#71717a' }}>Para:</span> {ev.assigneeName}</div>
+                                  <div style={metaStyle}>Por: {ev.authorName} · {ts}</div>
+                                </div>
+                              );
+                            }
+                            if (ev.kind === 'COMMENT_ADDED') {
+                              const c = ev.comment;
+                              return (
+                                <div key={c.id} style={boxStyleAlt}>
+                                  <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 6 }}>💬 Novo comentário</div>
+                                  <div style={{ ...labelStyle, marginTop: 4 }}><span style={{ color: '#71717a' }}>Por:</span> {c.author?.name || 'Sistema'} · {ts}</div>
+                                  <div style={{ fontSize: 13, color: '#e4e4e7', whiteSpace: 'pre-wrap', marginTop: 6 }}>&quot;{c.body}&quot;</div>
+                                  {c.kind !== 'COMMENT' && <span style={{ marginTop: 4, display: 'block', fontSize: 11, color: '#38BDF8' }}>({c.kind === 'SOLUTION' ? 'Solução' : 'Tarefa agendada'})</span>}
+                                </div>
+                              );
+                            }
+                            if (ev.kind === 'ATTACHMENT_ADDED') {
+                              const a = ev.attachment;
+                              return (
+                                <div key={a.id} style={boxStyleAlt}>
+                                  <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 6 }}>📎 Anexo adicionado</div>
+                                  <div style={{ ...labelStyle, marginTop: 4 }}><span style={{ color: '#71717a' }}>Arquivo:</span> {a.filename}</div>
+                                  <div style={metaStyle}>Por: {a.uploadedBy?.name ?? 'Sistema'} · {ts}</div>
+                                  <a href={a.fileUrl.startsWith('http') ? a.fileUrl : `${API_URL}${a.fileUrl}`} target="_blank" rel="noopener noreferrer" style={{ color: '#38BDF8', fontSize: 12, marginTop: 4, display: 'inline-block' }}>Abrir arquivo</a>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })}
                         </div>
                         <div style={{ padding: 16, borderTop: '1px solid #27272a' }}>
                           {(chamadoDetail.status === 'APROVADO' || chamadoDetail.status === 'REPROVADO') ? (

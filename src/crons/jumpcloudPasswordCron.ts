@@ -17,7 +17,7 @@ const CRON_SCHEDULE = '*/5 * * * *'; // a cada 5 minutos
 
 function getDefaultStartTime(): string {
   const d = new Date();
-  d.setMinutes(d.getMinutes() - 60); // janela padrão: últimos 60 min (enquanto persistência não estiver estável)
+  d.setMinutes(d.getMinutes() - 10); // janela padrão: últimos 10 min (fallback quando não há timestamp persistido)
   return d.toISOString();
 }
 
@@ -29,7 +29,7 @@ export function startJumpCloudPasswordCron(): void {
       try {
         const lastStored = await getLastProcessedEventTimestamp();
         const startTime = lastStored || getDefaultStartTime();
-        if (!lastStored) console.log('[JumpCloud] Sem timestamp armazenado; usando janela padrão (últimos 60 min)');
+        if (!lastStored) console.log('[JumpCloud] Sem timestamp armazenado; usando janela padrão (últimos 10 min)');
         console.log('[JumpCloud] startTime usado:', startTime);
         const events = await fetchPasswordManagerEvents(startTime);
         console.log('[JumpCloud] Eventos recebidos para processamento:', events.length);

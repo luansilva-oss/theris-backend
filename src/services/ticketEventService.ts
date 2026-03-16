@@ -5,7 +5,9 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-import { getSlackApp } from './slackService';
+import { getSlackApp, sendDmToSlackUser } from './slackService';
+
+const FRONTEND_URL = process.env.FRONTEND_URL || process.env.VITE_API_URL || 'https://theris.grupo-3c.com';
 
 const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT'];
 const ACCESS_REQUEST_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
@@ -71,13 +73,23 @@ function getRequestContext(request: { type: string; details: string | null; just
   return { title, summary };
 }
 
-const EVENT_LABELS: Record<string, string> = {
-  TICKET_CREATED: 'Seu chamado foi criado',
-  COMMENT_ADDED: 'Novo comentário no seu chamado',
-  ATTACHMENT_ADDED: 'Novo documento anexado ao chamado',
-  STATUS_CHANGED: 'Status do chamado atualizado',
-  ASSIGNEE_CHANGED: 'Responsável pelo chamado alterado'
+/** Rótulos de status para mensagens de DM ao solicitante (STATUS_CHANGED). */
+const STATUS_LABELS: Record<string, string> = {
+  PENDING_SI: 'PENDENTE_SI',
+  PENDENTE_SI: 'PENDENTE_SI',
+  EM_ANDAMENTO: 'EM_ANDAMENTO',
+  IN_PROGRESS: 'EM_ANDAMENTO',
+  RESOLVED: 'RESOLVIDO',
+  RESOLVIDO: 'RESOLVIDO',
+  REJECTED: 'REJEITADO',
+  REJEITADO: 'REJEITADO',
+  PENDING_OWNER: 'PENDENTE_OWNER',
+  PENDENTE_OWNER: 'PENDENTE_OWNER'
 };
+
+function statusLabel(s: string): string {
+  return STATUS_LABELS[s] || s;
+}
 
 export async function notifyTicketEvent(
   requestId: string,
@@ -120,33 +132,48 @@ export async function notifyTicketEvent(
       return;
     }
 
-    const label = EVENT_LABELS[eventType] || eventType;
-    let text = `*${label}*`;
-
-    if (eventType === 'STATUS_CHANGED' && payload?.from !== undefined && payload?.to !== undefined) {
-      text += `\nDe: \`${payload.from}\` → \`${payload.to}\``;
+    // Não enviar DM ao solicitante quando o autor do evento é o próprio solicitante
+    if (eventType === 'COMMENT_ADDED' && payload?.authorId && String(payload.authorId) === request.requesterId) {
+      console.log('[Chamado] DM omitida: comentário do próprio solicitante, requestId:', requestId);
+      return;
     }
-    if (eventType === 'ASSIGNEE_CHANGED' && request.assignee) {
-      text += `\nNovo responsável: ${request.assignee.name}`;
-    }
-    if (eventType === 'COMMENT_ADDED' && payload?.body) {
-      const snippet = String(payload.body).slice(0, 300);
-      text += `\n\n_${snippet}${snippet.length >= 300 ? '…' : ''}_`;
-    }
-    if (eventType === 'ATTACHMENT_ADDED' && payload?.filename) {
-      text += `\nArquivo: ${payload.filename}`;
+    if (eventType === 'ATTACHMENT_ADDED' && payload?.uploadedById && String(payload.uploadedById) === request.requesterId) {
+      console.log('[Chamado] DM omitida: anexo do próprio solicitante, requestId:', requestId);
+      return;
     }
 
-    text += `\n\nChamado: ${title}\nResumo: ${summary}`;
+    const link = `${FRONTEND_URL}/tickets?id=${requestId}`;
+    let text: string;
 
-    await slackApp.client.chat.postMessage({
-      channel: slackUserId,
-      text,
-      blocks: [
-        { type: 'section', text: { type: 'mrkdwn', text } },
-        { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${requestId.slice(0, 8)} · Theris Service Desk` }] }
-      ]
-    });
+    switch (eventType) {
+      case 'TICKET_CREATED':
+        text = `🎫 *Seu chamado foi aberto com sucesso!*\nTipo: ${title}\nStatus: ${statusLabel(request.status)}\nVer chamado: ${link}`;
+        break;
+      case 'STATUS_CHANGED':
+        const from = payload?.from != null ? statusLabel(String(payload.from)) : request.status;
+        const to = payload?.to != null ? statusLabel(String(payload.to)) : request.status;
+        text = `🔄 *Seu chamado teve o status atualizado*\nDe: ${from} → Para: ${to}\nVer chamado: ${link}`;
+        break;
+      case 'COMMENT_ADDED': {
+        const authorName = (payload?.authorName && String(payload.authorName)) || 'Alguém';
+        const snippet = (payload?.body && String(payload.body).slice(0, 200)) || '—';
+        text = `💬 *Novo comentário no seu chamado*\nPor: ${authorName}\n"${snippet}${snippet.length >= 200 ? '…' : ''}"\nVer chamado: ${link}`;
+        break;
+      }
+      case 'ATTACHMENT_ADDED':
+        text = `📎 *Um anexo foi adicionado ao seu chamado*\nArquivo: ${(payload?.filename && String(payload.filename)) || '—'}\nVer chamado: ${link}`;
+        break;
+      case 'ASSIGNEE_CHANGED':
+        text = `👤 *Responsável pelo chamado alterado*\nNovo responsável: ${request.assignee?.name || '—'}\nVer chamado: ${link}`;
+        break;
+      default:
+        text = `Chamado: ${title}\nResumo: ${summary}\nVer chamado: ${link}`;
+    }
+
+    await sendDmToSlackUser(slackApp.client, slackUserId, text, [
+      { type: 'section', text: { type: 'mrkdwn', text } },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${requestId.slice(0, 8)} · Theris Service Desk` }] }
+    ]);
     console.log('[Chamado] Slack enviado com sucesso para chamado:', requestId);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
