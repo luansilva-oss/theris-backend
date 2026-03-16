@@ -1376,6 +1376,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
             await notificarVpnFalhaInserção(requesterEmail);
             return res.json(updatedRequest);
           }
+          console.log('[VPN] Inserindo usuário no grupo JumpCloud:', { email: requesterEmail, groupId, vpnLevel });
           const added = await addUserToVpnGroup(groupId, jcUserId);
           if (added) {
             await prisma.request.update({
@@ -1394,6 +1395,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               siName
             });
           } else {
+            console.error('[VPN] Falha ao inserir no JumpCloud');
             await notificarVpnFalhaInserção(requesterEmail);
           }
         } catch (e) {
@@ -1663,14 +1665,16 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
       }
     }
 
-    // AEX: canAddSolution — bloqueio de "Adicionar uma solução" até aprovação dupla completa
+    // AEX / VPN: canAddSolution — bloqueio de "Adicionar uma solução" até aprovação dupla completa
     let canAddSolution = true;
     let solutionBlockReason: string | null = null;
-    const isAexDetail = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary);
-    if (isAexDetail && request.status !== 'APROVADO' && request.status !== 'REPROVADO') {
+    const isAexDetail = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary) || request.type === 'VPN_ACCESS';
+    if (isAexDetail && request.status !== 'APROVADO' && request.status !== 'REPROVADO' && request.status !== 'RESOLVED') {
       if (request.status === 'PENDING_OWNER') {
         canAddSolution = false;
-        solutionBlockReason = 'Não é possível adicionar uma solução ainda. Aguardando aprovação do Owner/Sub-owner da ferramenta antes que o Time de SI possa encerrar este chamado.';
+        solutionBlockReason = request.type === 'VPN_ACCESS'
+          ? 'Não é possível adicionar uma solução ainda. Aguardando aprovação do líder direto antes que o Time de SI possa encerrar este chamado.'
+          : 'Não é possível adicionar uma solução ainda. Aguardando aprovação do Owner/Sub-owner da ferramenta antes que o Time de SI possa encerrar este chamado.';
       } else if (request.status === 'PENDING_SI') {
         const ownerApprovedBy = (request as { ownerApprovedBy?: string }).ownerApprovedBy;
         if (ownerApprovedBy && userId) {
@@ -1689,7 +1693,9 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
           }
           if (isOwner) {
             canAddSolution = false;
-            solutionBlockReason = 'Você já aprovou como Owner/Sub-owner. A solução final deve ser adicionada pelo Time de Segurança da Informação.';
+            solutionBlockReason = request.type === 'VPN_ACCESS'
+              ? 'Você já aprovou como líder direto. A solução final deve ser adicionada pelo Time de Segurança da Informação.'
+              : 'Você já aprovou como Owner/Sub-owner. A solução final deve ser adicionada pelo Time de Segurança da Informação.';
           } else if (!isSI) {
             canAddSolution = false;
             solutionBlockReason = 'A solução final deve ser adicionada pelo Time de Segurança da Informação.';
@@ -1724,8 +1730,24 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     if (!existing) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
     const isAex = existing.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) && existing.isExtraordinary);
+    const isVpnMetadata = existing.type === 'VPN_ACCESS';
     const ownerApprovedBy = (existing as { ownerApprovedBy?: string }).ownerApprovedBy;
     let siApprovedBy = (existing as { siApprovedBy?: string }).siApprovedBy;
+
+    if (status !== undefined && (String(status) === 'RESOLVED' || String(status) === 'RESOLVIDO' || String(status) === 'APROVADO')) {
+      if (isVpnMetadata) {
+        if (!ownerApprovedBy || !siApprovedBy) {
+          return res.status(403).json({
+            error: 'VPN_DUAL_APPROVAL_REQUIRED',
+            message: 'Chamado de Acesso a VPN requer aprovação do líder direto e do time de SI antes de ser encerrado.'
+          });
+        }
+        return res.status(403).json({
+          error: 'VPN_USE_APPROVE_FLOW',
+          message: 'Chamado de Acesso a VPN deve ser encerrado pelo botão Aprovar no fluxo de aprovação (que dispara a inserção no JumpCloud), não pela alteração manual de status.'
+        });
+      }
+    }
 
     if (status !== undefined && String(status) === 'APROVADO' && isAex) {
       if (!ownerApprovedBy) {

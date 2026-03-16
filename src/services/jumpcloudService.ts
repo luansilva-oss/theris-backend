@@ -13,10 +13,10 @@ const INSIGHTS_EVENTS_URL = 'https://api.jumpcloud.com/insights/directory/v1/eve
 const SYSTEM_USERS_URL = 'https://console.jumpcloud.com/api/systemusers';
 const JUMPCLOUD_API_V2 = 'https://console.jumpcloud.com/api/v2';
 
-/** IDs dos grupos VPN no JumpCloud (para Acesso a VPN). */
+/** IDs dos grupos VPN no JumpCloud (lidos do .env). */
 export const VPN_GROUP_IDS: Record<string, string> = {
-  'VPN - Default': '69b8557d20a8d90001298eaa',
-  'VPN - Admin': '69b855ca20a8d90001298eb1'
+  'VPN - Default': process.env.VPN_GROUP_DEFAULT_ID || '',
+  'VPN - Admin': process.env.VPN_GROUP_ADMIN_ID || ''
 };
 
 /**
@@ -61,12 +61,13 @@ export async function addUserToVpnGroup(groupId: string, jumpcloudUserId: string
       body: JSON.stringify({ op: 'add', type: 'user', id: jumpcloudUserId })
     });
     if (!res.ok) {
-      console.error('[JumpCloud] addUserToVpnGroup status:', res.status, await res.text());
+      const errText = await res.text();
+      console.error('[VPN] Falha ao inserir no JumpCloud:', { status: res.status, body: errText });
       return false;
     }
     return true;
   } catch (e) {
-    console.error('[JumpCloud] addUserToVpnGroup:', e);
+    console.error('[VPN] Falha ao inserir no JumpCloud:', e);
     return false;
   }
 }

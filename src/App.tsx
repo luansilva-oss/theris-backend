@@ -2725,7 +2725,7 @@ export default function App() {
 
                         // 3. Filtro de Categoria
                         const GESTAO_PESSOAS_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
-                        const GESTAO_ACESSOS_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+                        const GESTAO_ACESSOS_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'VPN_ACCESS'];
                         const TI_INFRA_TYPES = ['INFRA_SUPPORT'];
                         if (reportCategoryFilter === 'GESTAO_PESSOAS' && !GESTAO_PESSOAS_TYPES.includes(r.type)) return false;
                         if (reportCategoryFilter === 'GESTAO_ACESSOS' && !GESTAO_ACESSOS_TYPES.includes(r.type)) return false;
@@ -2760,7 +2760,7 @@ export default function App() {
                         let category = "Geral";
                         let subject = r.type;
 
-                        const TOOL_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'];
+                        const TOOL_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA', 'VPN_ACCESS'];
                         const PEOPLE_TYPES = ['DEPUTY_DESIGNATION', 'CHANGE_ROLE', 'HIRING', 'FIRING', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'];
                         const INFRA_TYPES = ['INFRA_SUPPORT'];
 
@@ -2916,7 +2916,7 @@ export default function App() {
                         if (statusFilter !== 'PENDENTE' && r.status !== statusFilter) return false;
                       }
                       const GESTAO_PESSOAS_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
-                      const GESTAO_ACESSOS_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
+                      const GESTAO_ACESSOS_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'VPN_ACCESS'];
                       const TI_INFRA_TYPES = ['INFRA_SUPPORT'];
                       if (reportCategoryFilter === 'GESTAO_PESSOAS' && !GESTAO_PESSOAS_TYPES.includes(r.type)) return false;
                       if (reportCategoryFilter === 'GESTAO_ACESSOS' && !GESTAO_ACESSOS_TYPES.includes(r.type)) return false;

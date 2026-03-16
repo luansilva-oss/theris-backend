@@ -1495,7 +1495,7 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
     include: { requester: { select: { id: true, name: true, email: true } } }
   });
   if (!req || req.type !== 'VPN_ACCESS') return;
-  if (req.status !== 'PENDING_SI' && req.status !== 'PENDENTE_SI') return;
+  if (req.status !== 'PENDING_OWNER' && req.status !== 'PENDING_SI' && req.status !== 'PENDENTE_SI') return;
   if ((req as any).ownerApprovedBy || (req as any).ownerRejectedAt) {
     try {
       await sendDmToSlackUser(client, leaderSlackId, 'Esta solicitação de VPN já foi respondida.');
@@ -1514,6 +1514,8 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
     await prisma.request.update({
       where: { id: requestId },
       data: {
+        status: 'PENDING_SI',
+        currentApproverRole: 'SI_ANALYST',
         ownerApprovedAt: new Date(),
         ownerApprovedBy: leaderSlackId,
         ownerApprovedByName: leaderName,
@@ -1545,6 +1547,7 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
         const requesterEmail = updatedReq.requester.email;
         const jcUserId = await getSystemUserIdByEmail(requesterEmail);
         const groupId = VPN_GROUP_IDS[vpnLevel];
+        console.log('[VPN] Inserindo usuário no grupo JumpCloud:', { email: requesterEmail, groupId, vpnLevel });
         if (jcUserId && groupId && (await addUserToVpnGroup(groupId, jcUserId))) {
           await prisma.request.update({
             where: { id: requestId },
@@ -2408,10 +2411,10 @@ slackApp.view('vpn_access_request', async ({ ack, body, view, client }) => {
     data: {
       requesterId,
       type: 'VPN_ACCESS',
-      status: 'PENDING_SI',
+      status: 'PENDING_OWNER',
       details: JSON.stringify(details),
       justification,
-      currentApproverRole: 'SI_ANALYST',
+      currentApproverRole: 'LEADER',
       approverId: null
     }
   });
@@ -2438,6 +2441,7 @@ slackApp.view('vpn_access_request', async ({ ack, body, view, client }) => {
     console.error('[VPN] Líder não encontrado no Slack:', leader.email);
   }
   if (leaderSlackId) {
+    console.log('[VPN] Enviando DM ao líder:', leader.email, 'Slack ID:', leaderSlackId);
     const leaderMsg =
       `🔐 *Solicitação de Acesso a VPN*\n\n` +
       `Solicitante: ${requester?.name ?? '—'}\n` +
