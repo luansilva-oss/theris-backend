@@ -225,7 +225,7 @@ export async function notifyPasswordEventToSlack(event: JumpCloudInsightEvent): 
   } catch (_) {}
 
   const text =
-    `🔐 *Monitoramento de Credenciais — JumpCloud*\n\n` +
+    `🔐 *Monitoramento de Credenciais — JumpCloud Password Manager*\n\n` +
     `Ação: [${actionEmoji} ${actionLabel}]\n` +
     `👤 Usuário: ${userEmail}\n` +
     `🛠️ Recurso: ${resourceName}\n` +
