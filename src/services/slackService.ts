@@ -1,4 +1,5 @@
 import { App, LogLevel, ExpressReceiver } from '@slack/bolt';
+import { WebClient } from '@slack/web-api';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -2409,15 +2410,21 @@ const SI_MEMBERS = [SLACK_ID_LUAN, SLACK_ID_VLADIMIR, SLACK_ID_ALLAN].filter(Boo
  * Abre uma DM com o usuário (conversations.open) e envia a mensagem. Evita channel_not_found quando o bot ainda não conversou com o usuário.
  */
 export async function sendDmToSlackUser(
-  client: { conversations: { open: (opts: { users: string }) => Promise<{ channel?: { id: string } }> }; chat: { postMessage: (opts: any) => Promise<any> } },
+  client: WebClient,
   slackUserId: string,
   text: string,
   blocks?: any[]
 ): Promise<void> {
-  const dm = await client.conversations.open({ users: slackUserId });
-  const channelId = dm.channel?.id;
-  if (!channelId) throw new Error('conversations.open did not return channel id');
-  await client.chat.postMessage({ channel: channelId, text, ...(blocks && blocks.length > 0 ? { blocks } : {}) });
+  const response = await client.conversations.open({ users: slackUserId });
+  const channelId = response.channel?.id;
+  if (!channelId) {
+    throw new Error(`Não foi possível abrir DM com usuário ${slackUserId}`);
+  }
+  await client.chat.postMessage({
+    channel: channelId,
+    text,
+    ...(blocks ? { blocks } : {}),
+  });
 }
 
 /**
