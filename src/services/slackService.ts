@@ -290,7 +290,8 @@ function buildAcessosInitialBlocks() {
         placeholder: { type: 'plain_text' as const, text: 'Selecione...' },
         options: [
           { text: { type: 'plain_text' as const, text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
-          { text: { type: 'plain_text' as const, text: 'Indicar Deputy' }, value: 'indicar_deputy' }
+          { text: { type: 'plain_text' as const, text: 'Indicar Deputy' }, value: 'indicar_deputy' },
+          { text: { type: 'plain_text' as const, text: '🔐 Acesso a VPN' }, value: 'vpn_access' }
         ]
       }
     }
@@ -730,6 +731,77 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
   if (!view?.id || !selected) return;
 
   const actionType = selected;
+  if (actionType === 'vpn_access') {
+    try {
+      await client.views.push({
+        trigger_id: b.trigger_id,
+        view: {
+          type: 'modal',
+          callback_id: 'vpn_access_request',
+          title: { type: 'plain_text', text: 'Acesso a VPN' },
+          submit: { type: 'plain_text', text: 'Enviar' },
+          close: { type: 'plain_text', text: 'Cancelar' },
+          blocks: [
+            { type: 'section', text: { type: 'mrkdwn', text: '🔐 Solicitação de Acesso a VPN\nPreencha os campos abaixo.' } },
+            {
+              type: 'input',
+              block_id: 'vpn_level',
+              label: { type: 'plain_text', text: 'Nível de acesso' },
+              element: {
+                type: 'static_select',
+                action_id: 'vpn_level_sel',
+                placeholder: { type: 'plain_text', text: 'Selecione...' },
+                options: [
+                  { text: { type: 'plain_text', text: 'VPN - Default' }, value: 'VPN - Default' },
+                  { text: { type: 'plain_text', text: 'VPN - Admin' }, value: 'VPN - Admin' }
+                ]
+              }
+            },
+            {
+              type: 'input',
+              block_id: 'vpn_asset',
+              label: { type: 'plain_text', text: 'Patrimônio da máquina' },
+              element: {
+                type: 'plain_text_input',
+                action_id: 'vpn_asset_inp',
+                placeholder: { type: 'plain_text', text: 'Apenas números' }
+              }
+            },
+            {
+              type: 'input',
+              block_id: 'vpn_os',
+              label: { type: 'plain_text', text: 'Sistema operacional' },
+              element: {
+                type: 'static_select',
+                action_id: 'vpn_os_sel',
+                placeholder: { type: 'plain_text', text: 'Selecione...' },
+                options: [
+                  { text: { type: 'plain_text', text: 'Windows' }, value: 'Windows' },
+                  { text: { type: 'plain_text', text: 'Mac' }, value: 'Mac' },
+                  { text: { type: 'plain_text', text: 'Linux' }, value: 'Linux' }
+                ]
+              }
+            },
+            {
+              type: 'input',
+              block_id: 'vpn_justification',
+              label: { type: 'plain_text', text: 'Justificativa' },
+              element: {
+                type: 'plain_text_input',
+                action_id: 'vpn_just_inp',
+                multiline: true,
+                placeholder: { type: 'plain_text', text: 'Descreva a necessidade do acesso à VPN...' }
+              }
+            }
+          ]
+        }
+      });
+    } catch (e) {
+      console.error('❌ Erro ao abrir modal VPN:', e);
+    }
+    return;
+  }
+
   const metadata = { actionType };
   const actionLabels: Record<string, string> = { acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
 
@@ -771,7 +843,8 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
         initial_option: { text: { type: 'plain_text', text: actionLabels[actionType] || actionType }, value: actionType },
         options: [
           { text: { type: 'plain_text', text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
-          { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' }
+          { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' },
+          { text: { type: 'plain_text', text: '🔐 Acesso a VPN' }, value: 'vpn_access' }
         ]
       }
     }
@@ -901,7 +974,8 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
         initial_option: { text: { type: 'plain_text', text: actionLabels[actionType] || actionType }, value: actionType },
         options: [
           { text: { type: 'plain_text', text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
-          { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' }
+          { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' },
+          { text: { type: 'plain_text', text: '🔐 Acesso a VPN' }, value: 'vpn_access' }
         ]
       }
     },
@@ -1402,6 +1476,144 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
     }
   } catch (e) {
     console.error('❌ Erro ao processar decisão AEX pelo owner:', e);
+  }
+});
+
+// ============================================================
+// VPN: Líder Aprovar / Recusar (action_id: vpn_leader_approve | vpn_leader_reject, value: requestId)
+// ============================================================
+slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_leader_decision' }, async ({ ack, body, client }) => {
+  const b = body as any;
+  await ack();
+  const action = b.actions?.[0];
+  const requestId = action?.value;
+  const leaderSlackId = b.user?.id;
+  if (!requestId || !leaderSlackId) return;
+
+  const req = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, name: true, email: true } } }
+  });
+  if (!req || req.type !== 'VPN_ACCESS') return;
+  if (req.status !== 'PENDING_SI' && req.status !== 'PENDENTE_SI') return;
+  if ((req as any).ownerApprovedBy || (req as any).ownerRejectedAt) {
+    try {
+      await sendDmToSlackUser(client, leaderSlackId, 'Esta solicitação de VPN já foi respondida.');
+    } catch (_) {}
+    return;
+  }
+
+  const isApprove = action?.action_id === 'vpn_leader_approve';
+  let leaderName: string | null = null;
+  try {
+    const userInfo = await client.users.info({ user: leaderSlackId });
+    leaderName = userInfo.user?.real_name ?? userInfo.user?.name ?? null;
+  } catch (_) {}
+
+  if (isApprove) {
+    await prisma.request.update({
+      where: { id: requestId },
+      data: {
+        ownerApprovedAt: new Date(),
+        ownerApprovedBy: leaderSlackId,
+        ownerApprovedByName: leaderName,
+        updatedAt: new Date()
+      } as any
+    });
+    const { registrarMudanca } = await import('../lib/auditLog');
+    await registrarMudanca({
+      tipo: 'VPN_LEADER_APPROVED',
+      entidadeTipo: 'Request',
+      entidadeId: requestId,
+      descricao: 'Líder aprovou solicitação de Acesso a VPN',
+      dadosDepois: { ownerApprovedBy: leaderSlackId },
+      autorId: req.requesterId ?? undefined
+    }).catch(() => {});
+
+    const updatedReq = await prisma.request.findUnique({
+      where: { id: requestId },
+      include: { requester: { select: { email: true } } }
+    });
+    const siApprovedBy = updatedReq ? (updatedReq as { siApprovedBy?: string }).siApprovedBy : null;
+    if (siApprovedBy && updatedReq?.requester?.email) {
+      try {
+        const { getSystemUserIdByEmail, addUserToVpnGroup, VPN_GROUP_IDS } = await import('./jumpcloudService');
+        const detailsObj = JSON.parse(updatedReq.details || '{}');
+        const vpnLevel = detailsObj.vpnLevel || 'VPN - Default';
+        const assetNumber = detailsObj.assetNumber || '—';
+        const operatingSystem = detailsObj.operatingSystem || '—';
+        const requesterEmail = updatedReq.requester.email;
+        const jcUserId = await getSystemUserIdByEmail(requesterEmail);
+        const groupId = VPN_GROUP_IDS[vpnLevel];
+        if (jcUserId && groupId && (await addUserToVpnGroup(groupId, jcUserId))) {
+          await prisma.request.update({
+            where: { id: requestId },
+            data: { status: 'RESOLVED', updatedAt: new Date() }
+          });
+          const leaderName = (updatedReq as { ownerApprovedByName?: string }).ownerApprovedByName || 'Líder';
+          let siName = 'SI';
+          try {
+            const siInfo = await client.users.info({ user: siApprovedBy });
+            siName = siInfo.user?.real_name ?? siInfo.user?.name ?? siName;
+          } catch (_) {}
+          await notificarVpnConcedido({
+            requesterEmail,
+            vpnLevel,
+            assetNumber,
+            operatingSystem,
+            leaderName,
+            siName
+          });
+        } else {
+          await notificarVpnFalhaInserção(requesterEmail);
+        }
+      } catch (e) {
+        console.error('[VPN] Erro ao concluir após aprovação do líder:', e);
+        if (updatedReq?.requester?.email) await notificarVpnFalhaInserção(updatedReq.requester.email);
+      }
+    } else if (req.requester?.email) {
+      try {
+        const lookup = await client.users.lookupByEmail({ email: req.requester.email });
+        if (lookup.user?.id) {
+          await sendDmToSlackUser(
+            client,
+            lookup.user.id,
+            '✅ Seu líder aprovou sua solicitação de Acesso a VPN. Aguardando aprovação do time de SI.'
+          );
+        }
+      } catch (_) {}
+    }
+  } else {
+    await prisma.request.update({
+      where: { id: requestId },
+      data: {
+        status: 'REJECTED',
+        ownerRejectedAt: new Date(),
+        ownerRejectedBy: leaderSlackId,
+        updatedAt: new Date()
+      } as any
+    });
+    const { registrarMudanca } = await import('../lib/auditLog');
+    await registrarMudanca({
+      tipo: 'VPN_LEADER_REJECTED',
+      entidadeTipo: 'Request',
+      entidadeId: requestId,
+      descricao: 'Líder recusou solicitação de Acesso a VPN',
+      dadosDepois: { ownerRejectedBy: leaderSlackId },
+      autorId: req.requesterId ?? undefined
+    }).catch(() => {});
+    if (req.requester?.email) {
+      try {
+        const lookup = await client.users.lookupByEmail({ email: req.requester.email });
+        if (lookup.user?.id) {
+          await sendDmToSlackUser(
+            client,
+            lookup.user.id,
+            '❌ Sua solicitação de Acesso a VPN foi recusada pelo seu líder.'
+          );
+        }
+      } catch (_) {}
+    }
   }
 });
 
@@ -2121,6 +2333,172 @@ slackApp.view('submit_infra', async ({ ack, body, view, client }) => {
 });
 
 // ============================================================
+// SUBMISSÃO DO MODAL VPN (vpn_access_request)
+// ============================================================
+slackApp.view('vpn_access_request', async ({ ack, body, view, client }) => {
+  await ack();
+  const v = view.state.values;
+  const vpnLevel = v.vpn_level?.vpn_level_sel?.selected_option?.value ?? '';
+  const assetRaw = (v.vpn_asset?.vpn_asset_inp?.value ?? '').trim();
+  const operatingSystem = v.vpn_os?.vpn_os_sel?.selected_option?.value ?? '';
+  const justification = (v.vpn_justification?.vpn_just_inp?.value ?? '').trim();
+
+  if (!vpnLevel || !operatingSystem || !justification) {
+    await sendDmToSlackUser(client, body.user.id, '⚠️ Preencha todos os campos obrigatórios: Nível, Patrimônio, SO e Justificativa.');
+    return;
+  }
+  const assetNumber = assetRaw.replace(/\D/g, '');
+  if (!assetNumber) {
+    await sendDmToSlackUser(client, body.user.id, '⚠️ Patrimônio da máquina deve conter apenas números.');
+    return;
+  }
+
+  let requesterId: string | null = null;
+  let requesterEmail: string | null = null;
+  try {
+    const info = await client.users.info({ user: body.user.id });
+    requesterEmail = info.user?.profile?.email ?? null;
+    if (requesterEmail) {
+      const userDb = await prisma.user.findUnique({
+        where: { email: requesterEmail },
+        include: { manager: { select: { id: true, name: true, email: true } } }
+      });
+      if (userDb) {
+        requesterId = userDb.id;
+        if (!userDb.managerId || !userDb.manager?.email) {
+          await sendDmToSlackUser(client, body.user.id, '⚠️ Seu perfil não possui líder direto cadastrado. Entre em contato com o time de SI para registrar seu gestor.');
+          return;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[VPN] Erro ao buscar usuário:', e);
+    await sendDmToSlackUser(client, body.user.id, '❌ Erro ao identificar seu usuário. Verifique se seu e-mail do Slack está cadastrado no Theris.');
+    return;
+  }
+  if (!requesterId) {
+    await sendDmToSlackUser(client, body.user.id, '❌ Usuário não encontrado no sistema Theris. Cadastre-se no painel antes de solicitar acesso à VPN.');
+    return;
+  }
+
+  const requester = await prisma.user.findUnique({
+    where: { id: requesterId },
+    include: {
+      manager: { select: { id: true, name: true, email: true } },
+      departmentRef: { select: { name: true } }
+    }
+  });
+  const leader = requester?.manager;
+  if (!leader?.email) {
+    await sendDmToSlackUser(client, body.user.id, '⚠️ Seu líder direto não possui e-mail cadastrado. Entre em contato com o time de SI.');
+    return;
+  }
+
+  const details = {
+    vpnLevel,
+    assetNumber,
+    operatingSystem,
+    justification,
+    slackRequesterId: body.user.id,
+    requesterEmail: requesterEmail ?? undefined,
+    source: 'slack'
+  };
+
+  const created = await prisma.request.create({
+    data: {
+      requesterId,
+      type: 'VPN_ACCESS',
+      status: 'PENDING_SI',
+      details: JSON.stringify(details),
+      justification,
+      currentApproverRole: 'SI_ANALYST',
+      approverId: null
+    }
+  });
+
+  const dataHora = new Date().toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+
+  // DM ao líder: Slack ID obtido dinamicamente via users.lookupByEmail(manager.email)
+  let leaderSlackId: string | null = null;
+  try {
+    const leaderSlackUser = await client.users.lookupByEmail({ email: leader.email });
+    leaderSlackId = leaderSlackUser.user?.id ?? null;
+  } catch (e) {
+    console.error('[VPN] Líder não encontrado no Slack (lookupByEmail):', leader.email, e);
+  }
+  if (!leaderSlackId) {
+    console.error('[VPN] Líder não encontrado no Slack:', leader.email);
+  }
+  if (leaderSlackId) {
+    const leaderMsg =
+      `🔐 *Solicitação de Acesso a VPN*\n\n` +
+      `Solicitante: ${requester?.name ?? '—'}\n` +
+      `Nível: ${vpnLevel}\n` +
+      `Patrimônio: ${assetNumber}\n` +
+      `SO: ${operatingSystem}\n` +
+      `Justificativa: ${justification.slice(0, 500)}${justification.length > 500 ? '…' : ''}`;
+    const leaderBlocks: any[] = [
+      { type: 'section', text: { type: 'mrkdwn', text: leaderMsg } },
+      {
+        type: 'actions',
+        block_id: 'vpn_leader_decision',
+        elements: [
+          { type: 'button', text: { type: 'plain_text', text: '✅ Aprovar', emoji: true }, action_id: 'vpn_leader_approve', value: created.id, style: 'primary' },
+          { type: 'button', text: { type: 'plain_text', text: '❌ Recusar', emoji: true }, action_id: 'vpn_leader_reject', value: created.id }
+        ]
+      }
+    ];
+    try {
+      await sendDmToSlackUser(client, leaderSlackId, leaderMsg, leaderBlocks);
+    } catch (e) {
+      console.error('[VPN] Erro ao enviar DM ao líder:', e);
+    }
+  }
+
+  // Mensagem informativa no canal SI (sem botões)
+  const siChannelId = process.env.SLACK_SI_CHANNEL_ID || '';
+  const deptName = requester?.departmentRef?.name ?? '—';
+  let siMsg =
+    `🔐 *Nova Solicitação de Acesso a VPN*\n\n` +
+    `Solicitante: ${requester?.name ?? '—'} · ${deptName}\n` +
+    `Nível: ${vpnLevel}\n` +
+    `Patrimônio: ${assetNumber}\n` +
+    `SO: ${operatingSystem}\n` +
+    `Justificativa: ${justification.slice(0, 400)}${justification.length > 400 ? '…' : ''}\n` +
+    `Data: ${dataHora}\n\n` +
+    `👉 Acesse o Theris para aprovar ou recusar.`;
+  if (!leaderSlackId) {
+    siMsg += `\n\n⚠️ *Não foi possível notificar o líder direto (${leader.name ?? leader.email}) via DM no Slack.* A aprovação do líder deverá ser feita manualmente pelo painel do Theris.`;
+  }
+  if (siChannelId) {
+    try {
+      await client.chat.postMessage({ channel: siChannelId, text: siMsg });
+    } catch (e) {
+      console.error('[VPN] Erro ao postar no canal SI:', e);
+    }
+  }
+
+  // DM ao solicitante
+  const requesterSlackId = body.user.id;
+  try {
+    await sendDmToSlackUser(
+      client,
+      requesterSlackId,
+      'Sua solicitação de Acesso a VPN foi aberta e aguarda aprovação do seu líder e do time de SI.'
+    );
+  } catch (_) {}
+
+});
+
+// ============================================================
 // SUBMISSÃO DO MODAL /acessos (acessos_main_modal)
 // ============================================================
 slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
@@ -2231,6 +2609,7 @@ const TYPE_LABELS: Record<string, string> = {
   ACCESS_CHANGE: 'Alteração de Acesso',
   ACCESS_TOOL_EXTRA: 'Acesso Extraordinário',
   DEPUTY_DESIGNATION: 'Indicar Deputy',
+  VPN_ACCESS: 'Acesso a VPN',
   CHANGE_ROLE: 'Mudança de Cargo',
   HIRING: 'Contratação',
   FIRING: 'Desligamento',
@@ -2443,6 +2822,84 @@ export async function notificarLuanErroChangeRole(chamadoId: string, cargoBuscad
     `👉 Ver chamado: ${linkChamado}`;
   await sendDmToSlackUser(slackApp.client, SLACK_ID_LUAN, text);
   console.log('[notificarLuanErroChangeRole] DM enviada para SLACK_ID_LUAN.');
+}
+
+const JUMPCLOUD_SLACK_CHANNEL_ID = process.env.JUMPCLOUD_SLACK_CHANNEL_ID || '';
+
+/**
+ * Notificação no canal SI (Password Manager) e DM ao solicitante quando o Acesso a VPN é concedido (inserção JumpCloud ok).
+ */
+export async function notificarVpnConcedido(params: {
+  requesterEmail: string;
+  vpnLevel: string;
+  assetNumber: string;
+  operatingSystem: string;
+  leaderName: string;
+  siName: string;
+}): Promise<void> {
+  if (!slackApp?.client) return;
+  const { requesterEmail, vpnLevel, assetNumber, operatingSystem, leaderName, siName } = params;
+  const horario = new Date().toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  const text =
+    `🔐 *Acesso a VPN Concedido*\n\n` +
+    `👤 Usuário: ${requesterEmail}\n` +
+    `🌐 Nível: ${vpnLevel}\n` +
+    `💻 Patrimônio: ${assetNumber}\n` +
+    `🖥️ SO: ${operatingSystem}\n` +
+    `✅ Aprovado por: ${leaderName} (Líder) + ${siName} (SI)\n` +
+    `🕒 Horário: ${horario}`;
+  if (JUMPCLOUD_SLACK_CHANNEL_ID) {
+    try {
+      await slackApp.client.chat.postMessage({ channel: JUMPCLOUD_SLACK_CHANNEL_ID, text });
+    } catch (e) {
+      console.error('[VPN] Erro ao postar no canal (concedido):', e);
+    }
+  }
+  try {
+    const lookup = await slackApp.client.users.lookupByEmail({ email: requesterEmail });
+    const slackUserId = lookup.user?.id;
+    if (slackUserId) {
+      await sendDmToSlackUser(
+        slackApp.client,
+        slackUserId,
+        `🎉 Sua solicitação de Acesso a VPN foi aprovada e o acesso foi concedido! Nível: ${vpnLevel}.`
+      );
+    }
+  } catch (_) {}
+}
+
+/**
+ * DM ao solicitante e aviso no canal quando a inserção no JumpCloud falha (solicitação já aprovada).
+ */
+export async function notificarVpnFalhaInserção(requesterEmail: string): Promise<void> {
+  if (!slackApp?.client) return;
+  try {
+    const lookup = await slackApp.client.users.lookupByEmail({ email: requesterEmail });
+    const slackUserId = lookup.user?.id;
+    if (slackUserId) {
+      await sendDmToSlackUser(
+        slackApp.client,
+        slackUserId,
+        '⚠️ Sua solicitação foi aprovada, mas ocorreu um erro ao conceder o acesso. O time de SI foi notificado.'
+      );
+    }
+  } catch (_) {}
+  if (JUMPCLOUD_SLACK_CHANNEL_ID) {
+    try {
+      await slackApp.client.chat.postMessage({
+        channel: JUMPCLOUD_SLACK_CHANNEL_ID,
+        text: '⚠️ *Acesso a VPN* — Falha ao adicionar usuário ao grupo no JumpCloud. Verifique o chamado no Theris.'
+      });
+    } catch (_) {}
+  }
 }
 
 /** Payload mínimo do chamado para notificar o time de SI (após criação no banco). */

@@ -11,6 +11,65 @@ const JUMPCLOUD_SLACK_CHANNEL_ID = process.env.JUMPCLOUD_SLACK_CHANNEL_ID || '';
 /** POST https://api.jumpcloud.com/insights/directory/v1/events — Directory Insights API */
 const INSIGHTS_EVENTS_URL = 'https://api.jumpcloud.com/insights/directory/v1/events';
 const SYSTEM_USERS_URL = 'https://console.jumpcloud.com/api/systemusers';
+const JUMPCLOUD_API_V2 = 'https://console.jumpcloud.com/api/v2';
+
+/** IDs dos grupos VPN no JumpCloud (para Acesso a VPN). */
+export const VPN_GROUP_IDS: Record<string, string> = {
+  'VPN - Default': '69b8557d20a8d90001298eaa',
+  'VPN - Admin': '69b855ca20a8d90001298eb1'
+};
+
+/**
+ * Busca o _id do usuário JumpCloud pelo e-mail (GET /api/systemusers?filter=email:eq:xxx).
+ */
+export async function getSystemUserIdByEmail(email: string): Promise<string | null> {
+  if (!JUMPCLOUD_API_KEY) return null;
+  try {
+    const encoded = encodeURIComponent(email);
+    const url = `${SYSTEM_USERS_URL}?filter=email:eq:${encoded}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'x-api-key': JUMPCLOUD_API_KEY }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : (data.results ?? data.data ?? []);
+    const user = list.find((u: { email?: string }) => (u.email || '').toLowerCase() === email.toLowerCase());
+    return user?._id ?? user?.id ?? null;
+  } catch (e) {
+    console.error('[JumpCloud] getSystemUserIdByEmail:', e);
+    return null;
+  }
+}
+
+/**
+ * Adiciona um usuário a um grupo VPN (POST /api/v2/usergroups/{groupId}/members).
+ */
+export async function addUserToVpnGroup(groupId: string, jumpcloudUserId: string): Promise<boolean> {
+  if (!JUMPCLOUD_API_KEY) {
+    console.error('[JumpCloud] JUMPCLOUD_API_KEY não configurada.');
+    return false;
+  }
+  try {
+    const url = `${JUMPCLOUD_API_V2}/usergroups/${groupId}/members`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': JUMPCLOUD_API_KEY
+      },
+      body: JSON.stringify({ op: 'add', type: 'user', id: jumpcloudUserId })
+    });
+    if (!res.ok) {
+      console.error('[JumpCloud] addUserToVpnGroup status:', res.status, await res.text());
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('[JumpCloud] addUserToVpnGroup:', e);
+    return false;
+  }
+}
 
 const CONFIG_KEY_LAST_PASSWORD_EVENT_TS = 'jumpcloud_password_events_last_start';
 

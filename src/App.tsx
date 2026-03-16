@@ -410,6 +410,15 @@ function getTicketHistoryDetailLines(chamado: Request): { label: string; value: 
     return lines;
   }
 
+  // VPN_ACCESS (Acesso a VPN)
+  if (type === 'VPN_ACCESS') {
+    push('Nível', d.vpnLevel);
+    push('Patrimônio', d.assetNumber);
+    push('SO', d.operatingSystem);
+    push('Justificativa', d.justification ?? chamado.justification);
+    return lines;
+  }
+
   // Acessos / AEX / Infra / genérico
   if (actionDateFormatted) lines.push({ label: 'Data de Ação', value: actionDateFormatted });
   if (chamado.justification) lines.push({ label: 'Justificativa', value: chamado.justification });
@@ -542,6 +551,7 @@ export default function App() {
     { value: 'ACCESS_TOOL', label: 'Kit Padrão / Acesso Ferramenta' },
     { value: 'ACCESS_CHANGE', label: 'Alteração de Acesso' },
     { value: 'ACCESS_TOOL_EXTRA', label: 'Kit Especial / Acesso Extraordinário' },
+    { value: 'VPN_ACCESS', label: 'Acesso a VPN' },
     { value: 'CHANGE_ROLE', label: 'Mudança de Cargo' },
     { value: 'HIRING', label: 'Contratação' },
     { value: 'FIRING', label: 'Desligamento' },
@@ -2765,6 +2775,7 @@ export default function App() {
                           'ACCESS_CHANGE': 'Alteração de Acesso',
                           'EXTRAORDINARIO': 'Acesso Extraordinário',
                           'ACCESS_TOOL_EXTRA': 'Acesso Extraordinário',
+                          'VPN_ACCESS': 'Acesso a VPN',
                           'DEPUTY_DESIGNATION': 'Designação de Substituto',
                           'CHANGE_ROLE': 'Mudança de Cargo',
                           'PROMOCAO': 'Promoção',
@@ -2975,27 +2986,30 @@ export default function App() {
                         <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                           {(() => {
                             const isAex = ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(chamadoDetail.type) || chamadoDetail.isExtraordinary;
+                            const isVpn = chamadoDetail.type === 'VPN_ACCESS';
+                            const isDualApproval = isAex || isVpn;
                             const ownerApprovedBy = (chamadoDetail as { ownerApprovedBy?: string }).ownerApprovedBy;
                             const siApprovedBy = (chamadoDetail as { siApprovedBy?: string }).siApprovedBy;
-                            if (!isAex || chamadoDetail.status === 'APROVADO' || chamadoDetail.status === 'REPROVADO') return null;
+                            const firstApproverLabel = isVpn ? 'Líder' : 'Owner';
+                            if (!isDualApproval || chamadoDetail.status === 'APROVADO' || chamadoDetail.status === 'REPROVADO' || chamadoDetail.status === 'RESOLVED') return null;
                             if (chamadoDetail.status === 'PENDING_OWNER' && !ownerApprovedBy && !siApprovedBy) {
                               return (
                                 <div style={{ background: 'rgba(167, 139, 250, 0.15)', borderRadius: 12, padding: 16, border: '1px solid rgba(167, 139, 250, 0.4)' }}>
-                                  <span style={{ color: '#38BDF8', fontSize: 14 }}>🔒 Este chamado requer aprovação dupla: Owner/Sub-owner da ferramenta + Time de SI. Aguardando aprovação do Owner.</span>
+                                  <span style={{ color: '#38BDF8', fontSize: 14 }}>🔒 Este chamado requer aprovação dupla: {isVpn ? 'Líder direto' : 'Owner/Sub-owner da ferramenta'} + Time de SI. Aguardando aprovação do {firstApproverLabel}.</span>
                                 </div>
                               );
                             }
                             if (chamadoDetail.status === 'PENDING_SI' && ownerApprovedBy) {
                               return (
                                 <div style={{ background: 'rgba(34, 197, 94, 0.1)', borderRadius: 12, padding: 16, border: '1px solid rgba(34, 197, 94, 0.4)' }}>
-                                  <span style={{ color: '#22c55e', fontSize: 14 }}>✅ Owner aprovou. Aguardando aprovação final do Time de SI.</span>
+                                  <span style={{ color: '#22c55e', fontSize: 14 }}>✅ {firstApproverLabel} aprovou. Aguardando aprovação final do Time de SI.</span>
                                 </div>
                               );
                             }
                             if (chamadoDetail.status === 'PENDENTE_OWNER' && siApprovedBy) {
                               return (
                                 <div style={{ background: 'rgba(34, 197, 94, 0.1)', borderRadius: 12, padding: 16, border: '1px solid rgba(34, 197, 94, 0.4)' }}>
-                                  <span style={{ color: '#22c55e', fontSize: 14 }}>✅ Time de SI aprovou. Aguardando aprovação do Owner/Sub-owner.</span>
+                                  <span style={{ color: '#22c55e', fontSize: 14 }}>✅ Time de SI aprovou. Aguardando aprovação do {isVpn ? 'líder' : 'Owner/Sub-owner'}.</span>
                                 </div>
                               );
                             }
@@ -3003,7 +3017,7 @@ export default function App() {
                               return (
                                 <div style={{ background: 'rgba(39, 39, 42, 0.6)', borderRadius: 12, padding: 20, display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #3f3f46' }}>
                                   <Lock size={24} color="#71717a" />
-                                  <span style={{ color: '#a1a1aa', fontSize: 14 }}>🔒 Não é possível encerrar este chamado ainda. Ambas as partes precisam aprovar antes do fechamento. Aguardando: {ownerApprovedBy ? 'Time de SI' : 'Owner'}</span>
+                                  <span style={{ color: '#a1a1aa', fontSize: 14 }}>🔒 Não é possível encerrar este chamado ainda. Ambas as partes precisam aprovar antes do fechamento. Aguardando: {ownerApprovedBy ? 'Time de SI' : firstApproverLabel}</span>
                                 </div>
                               );
                             }
@@ -3021,9 +3035,9 @@ export default function App() {
                                 <div key={`created-${idx}`} style={boxStyle}>
                                   <div style={metaStyle}>Abertura · {ts}</div>
                                   <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 8 }}>Solicitação criada · {ev.request.type}</div>
-                                  {ev.request.status === 'PENDING_SI' && ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(ev.request.type) && (ev.request as { ownerApprovedByName?: string }).ownerApprovedByName && (
+                                  {ev.request.status === 'PENDING_SI' && (['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(ev.request.type) || ev.request.type === 'VPN_ACCESS') && (ev.request as { ownerApprovedByName?: string }).ownerApprovedByName && (
                                     <>
-                                      <div style={labelStyle}>Aprovado pelo Owner: {(ev.request as { ownerApprovedByName: string }).ownerApprovedByName}</div>
+                                      <div style={labelStyle}>Aprovado pelo {ev.request.type === 'VPN_ACCESS' ? 'Líder' : 'Owner'}: {(ev.request as { ownerApprovedByName: string }).ownerApprovedByName}</div>
                                       {(ev.request as { ownerIsSIMember?: boolean }).ownerIsSIMember && (
                                         <div style={{ ...labelStyle, marginBottom: 8, background: 'rgba(251, 191, 36, 0.1)', padding: '8px 12px', borderRadius: 8 }}>⚠️ O Owner desta ferramenta é do time de SI. A aprovação final deve ser feita por outro integrante do time.</div>
                                       )}
@@ -3174,12 +3188,13 @@ export default function App() {
                         </div>
                         {(() => {
                           const isAex = ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(chamadoDetail.type) || chamadoDetail.isExtraordinary;
-                          const showAexApproveButtons = isAex && chamadoDetail.status === 'PENDING_SI' && (chamadoDetail as { ownerApprovedBy?: string }).ownerApprovedBy && activeTab !== 'MY_TICKETS' && ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(systemProfile);
+                          const isVpn = chamadoDetail.type === 'VPN_ACCESS';
+                          const showDualApprovalButtons = (isAex || isVpn) && chamadoDetail.status === 'PENDING_SI' && (chamadoDetail as { ownerApprovedBy?: string }).ownerApprovedBy && activeTab !== 'MY_TICKETS' && ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(systemProfile);
                           return (
                             <>
-                              {showAexApproveButtons && (
+                              {showDualApprovalButtons && (
                                 <div className="card-base" style={{ padding: 20 }}>
-                                  <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Ação AEX</label>
+                                  <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>{isVpn ? 'Ação VPN' : 'Ação AEX'}</label>
                                   <div style={{ display: 'flex', gap: 8 }}>
                                     <button type="button" className="btn-mini approve" style={{ flex: 1 }} onClick={() => handleChamadoApprove('APROVAR')}>Aprovar</button>
                                     <button type="button" className="btn-mini" style={{ flex: 1, background: '#dc2626', color: 'white' }} onClick={() => handleChamadoApprove('REPROVADO')}>Reprovar</button>

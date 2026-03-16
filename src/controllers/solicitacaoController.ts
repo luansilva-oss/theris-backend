@@ -1113,18 +1113,25 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
 
     // AEX: controle de fechamento — ambas as partes devem aprovar, e quem aprovou não pode fechar
     const isAex = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary);
+    const isVpn = request.type === 'VPN_ACCESS';
     const ownerApprovedBy = (request as { ownerApprovedBy?: string }).ownerApprovedBy;
     const siApprovedBy = (request as { siApprovedBy?: string }).siApprovedBy;
     const isAexPendingSI = request.status === 'PENDING_SI' && isAex;
 
-    if (action === 'APROVADO' && isAex) {
-      if (!ownerApprovedBy) {
+    if (action === 'APROVADO' && (isAex || isVpn)) {
+      if (isVpn && !ownerApprovedBy) {
+        return res.status(403).json({
+          error: 'PARTIAL_APPROVAL',
+          message: 'Este chamado requer aprovação do líder direto e do time de SI. Aguardando aprovação pendente.'
+        });
+      }
+      if (isAex && !ownerApprovedBy) {
         return res.status(403).json({
           error: 'PARTIAL_APPROVAL',
           message: 'Este chamado requer aprovação das duas partes. Aguardando aprovação pendente para encerrar.'
         });
       }
-      if (isAexPendingSI && approverId) {
+      if ((isAexPendingSI || (isVpn && request.status === 'PENDING_SI')) && approverId) {
         try {
           const approverUser = await prisma.user.findUnique({
             where: { id: approverId },
@@ -1139,7 +1146,9 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               if (approverSlackId && approverSlackId === ownerApprovedBy) {
                 return res.status(403).json({
                   error: 'SAME_APPROVER',
-                  message: 'Você já aprovou este chamado na etapa anterior. O fechamento deve ser feito pela outra parte.'
+                  message: isVpn
+                    ? 'Você já aprovou este chamado como líder direto e não pode aprovar também pelo SI.'
+                    : 'Você já aprovou este chamado na etapa anterior. O fechamento deve ser feito pela outra parte.'
                 });
               }
             }
@@ -1173,6 +1182,20 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           dadosDepois: { status: 'REJECTED', siRejectedBy: approverId },
           autorId: approverId ?? undefined
         });
+      }
+      if (request.type === 'VPN_ACCESS' && request.requester?.email) {
+        try {
+          const { getSlackApp, sendDmToSlackUser } = await import('../services/slackService');
+          const app = getSlackApp();
+          if (app?.client) {
+            const lookup = await app.client.users.lookupByEmail({ email: request.requester.email });
+            if (lookup.user?.id) {
+              await sendDmToSlackUser(app.client, lookup.user.id, '❌ Sua solicitação de Acesso a VPN foi recusada pelo time de SI.');
+            }
+          }
+        } catch (e) {
+          console.error('[VPN] Erro ao notificar rejeição SI:', e);
+        }
       }
 
       if (request.requester.email) {
@@ -1269,39 +1292,30 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
 
     if (isAex && isAexPendingSI) {
       const { registrarMudanca } = await import('../lib/auditLog');
-      let siApprovedBySlack: string | undefined;
-      if (approverId) {
-        try {
-          const approverUser = await prisma.user.findUnique({ where: { id: approverId }, select: { email: true } });
-          if (approverUser?.email) {
-            const { getSlackApp } = await import('../services/slackService');
-            const app = getSlackApp();
-            if (app?.client) {
-              const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
-              siApprovedBySlack = lookup.user?.id;
-            }
-          }
-        } catch (_) {}
-      }
       await registrarMudanca({
         tipo: 'AEX_SI_APPROVED',
         entidadeTipo: 'Request',
         entidadeId: id,
         descricao: 'Time de SI aprovou a solicitação AEX',
         dadosAntes: { status: 'PENDING_SI' },
-        dadosDepois: { status: 'APPROVED', siApprovedBy: siApprovedBySlack },
+        dadosDepois: { status: 'APPROVED', siApprovedBy: siApprovedBySlackForVpn },
+        autorId: approverId ?? undefined
+      });
+    }
+    if (isVpn && siApprovedBySlackForVpn) {
+      const { registrarMudanca } = await import('../lib/auditLog');
+      await registrarMudanca({
+        tipo: 'VPN_SI_APPROVED',
+        entidadeTipo: 'Request',
+        entidadeId: id,
+        descricao: 'Time de SI aprovou solicitação de Acesso a VPN',
+        dadosDepois: { siApprovedBy: siApprovedBySlackForVpn },
         autorId: approverId ?? undefined
       });
     }
 
-    const updateData: any = {
-      status: 'APROVADO',
-      adminNote: adminNote || 'Aprovado.',
-      approverId: approverId,
-      details: JSON.stringify(updatedDetails),
-      updatedAt: new Date()
-    };
-    if (isAex && isAexPendingSI && approverId) {
+    let siApprovedBySlackForVpn: string | undefined;
+    if (approverId && (isAexPendingSI || isVpn)) {
       try {
         const approverUser = await prisma.user.findUnique({
           where: { id: approverId },
@@ -1312,20 +1326,103 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           const app = getSlackApp();
           if (app?.client) {
             const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
-            const approverSlackId = lookup.user?.id;
-            if (approverSlackId) {
-              updateData.siApprovedBy = approverSlackId;
-              updateData.siApprovedAt = new Date();
-            }
+            siApprovedBySlackForVpn = lookup.user?.id ?? undefined;
           }
         }
       } catch (_) {}
+    }
+
+    const updateData: any = {
+      status: 'APROVADO',
+      adminNote: adminNote || 'Aprovado.',
+      approverId: approverId,
+      details: JSON.stringify(updatedDetails),
+      updatedAt: new Date()
+    };
+    if (isAex && isAexPendingSI && siApprovedBySlackForVpn) {
+      updateData.siApprovedBy = siApprovedBySlackForVpn;
+      updateData.siApprovedAt = new Date();
+    }
+    if (isVpn) {
+      updateData.siApprovedBy = siApprovedBySlackForVpn;
+      updateData.siApprovedAt = new Date();
+      updateData.status = undefined; // mantém PENDING_SI; RESOLVED será setado em completeVpnAccess
     }
 
     const updatedRequest = await prisma.request.update({
       where: { id },
       data: updateData
     });
+
+    // VPN: se líder já aprovou, concluir (JumpCloud + RESOLVED). Senão, apenas notificar e encerrar resposta.
+    if (isVpn && action === 'APROVADO') {
+      const reqWithOwner = updatedRequest as { ownerApprovedBy?: string };
+      if (reqWithOwner.ownerApprovedBy) {
+        try {
+          const { getSystemUserIdByEmail, addUserToVpnGroup, VPN_GROUP_IDS } = await import('../services/jumpcloudService');
+          const { notificarVpnConcedido, notificarVpnFalhaInserção } = await import('../services/slackService');
+          const detailsObj = JSON.parse(updatedRequest.details || '{}');
+          const vpnLevel = detailsObj.vpnLevel || 'VPN - Default';
+          const assetNumber = detailsObj.assetNumber || '—';
+          const operatingSystem = detailsObj.operatingSystem || '—';
+          const requesterEmail = request.requester?.email;
+          if (!requesterEmail) {
+            return res.json(updatedRequest);
+          }
+          const jcUserId = await getSystemUserIdByEmail(requesterEmail);
+          const groupId = VPN_GROUP_IDS[vpnLevel];
+          if (!jcUserId || !groupId) {
+            console.error('[VPN] JumpCloud: usuário ou grupo não encontrado', { jcUserId: !!jcUserId, groupId: !!groupId });
+            await notificarVpnFalhaInserção(requesterEmail);
+            return res.json(updatedRequest);
+          }
+          const added = await addUserToVpnGroup(groupId, jcUserId);
+          if (added) {
+            await prisma.request.update({
+              where: { id },
+              data: { status: 'RESOLVED', updatedAt: new Date() }
+            });
+            const leaderName = (updatedRequest as { ownerApprovedByName?: string }).ownerApprovedByName || 'Líder';
+            const approverUser = approverId ? await prisma.user.findUnique({ where: { id: approverId }, select: { name: true } }) : null;
+            const siName = approverUser?.name || 'SI';
+            await notificarVpnConcedido({
+              requesterEmail,
+              vpnLevel,
+              assetNumber,
+              operatingSystem,
+              leaderName,
+              siName
+            });
+          } else {
+            await notificarVpnFalhaInserção(requesterEmail);
+          }
+        } catch (e) {
+          console.error('[VPN] Erro ao concluir acesso:', e);
+          if (request.requester?.email) {
+            const { notificarVpnFalhaInserção } = await import('../services/slackService');
+            await notificarVpnFalhaInserção(request.requester.email);
+          }
+        }
+        return res.json(updatedRequest);
+      }
+      if (request.requester?.email) {
+        try {
+          const { getSlackApp, sendDmToSlackUser } = await import('../services/slackService');
+          const app = getSlackApp();
+          if (app?.client) {
+            const lookup = await app.client.users.lookupByEmail({ email: request.requester.email });
+            if (lookup.user?.id) {
+              await sendDmToSlackUser(
+                app.client,
+                lookup.user.id,
+                '✅ O time de SI aprovou sua solicitação de Acesso a VPN. Aguardando aprovação do seu líder.'
+              );
+            }
+          }
+        } catch (_) {}
+      }
+      return res.json(updatedRequest);
+    }
 
     // Notificação Slack (AEX e CHANGE_ROLE usam mensagem específica após execução)
     const isAexApproval = action === 'APROVADO' && (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary);
