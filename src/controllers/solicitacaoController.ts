@@ -1467,10 +1467,8 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           console.log('[VPN] Inserindo usuário no grupo JumpCloud:', { email: requesterEmail, groupId, vpnLevel });
           const added = await addUserToVpnGroup(groupId, jcUserId);
           if (added) {
-            await prisma.request.update({
-              where: { id },
-              data: { status: 'RESOLVED', updatedAt: new Date() }
-            });
+            const { resolveVpnTicket } = await import('../services/vpnService');
+            const resolvedRequest = await resolveVpnTicket(id, approverId ?? undefined);
             const leaderName = (updatedRequest as { ownerApprovedByName?: string }).ownerApprovedByName || 'Líder';
             const approverUser = approverId ? await prisma.user.findUnique({ where: { id: approverId }, select: { name: true } }) : null;
             const siName = approverUser?.name || 'SI';
@@ -1482,6 +1480,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               leaderName,
               siName
             });
+            return res.json(resolvedRequest ?? updatedRequest);
           } else {
             console.error('[VPN] Falha ao inserir no JumpCloud:', new Error('addUserToVpnGroup retornou false'));
             await notificarVpnFalhaInserção(requesterEmail);
