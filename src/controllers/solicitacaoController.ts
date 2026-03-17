@@ -1337,6 +1337,25 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       }
     }
 
+    // Obter Slack ID do aprovador (SI) antes de qualquer uso — evita TDZ
+    let siApprovedBySlackForVpn: string | undefined;
+    if (approverId && (isAexPendingSI || isVpn)) {
+      try {
+        const approverUser = await prisma.user.findUnique({
+          where: { id: approverId },
+          select: { email: true }
+        });
+        if (approverUser?.email) {
+          const { getSlackApp } = await import('../services/slackService');
+          const app = getSlackApp();
+          if (app?.client) {
+            const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+            siApprovedBySlackForVpn = lookup.user?.id ?? undefined;
+          }
+        }
+      } catch (_) {}
+    }
+
     // APROVAÇÃO FINAL — para AEX, registrar siApprovedBy
     const updatedDetails = {
       ...JSON.parse(request.details || '{}'),
@@ -1365,24 +1384,6 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         dadosDepois: { siApprovedBy: siApprovedBySlackForVpn },
         autorId: approverId ?? undefined
       });
-    }
-
-    let siApprovedBySlackForVpn: string | undefined;
-    if (approverId && (isAexPendingSI || isVpn)) {
-      try {
-        const approverUser = await prisma.user.findUnique({
-          where: { id: approverId },
-          select: { email: true }
-        });
-        if (approverUser?.email) {
-          const { getSlackApp } = await import('../services/slackService');
-          const app = getSlackApp();
-          if (app?.client) {
-            const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
-            siApprovedBySlackForVpn = lookup.user?.id ?? undefined;
-          }
-        }
-      } catch (_) {}
     }
 
     const updateData: any = {
@@ -1801,6 +1802,19 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     const existing = await prisma.request.findUnique({ where: { id }, include: { requester: true, assignee: true } });
     if (!existing) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
+    // Cancelamento: apenas SUPER_ADMIN; chamado não pode já estar encerrado
+    if (status !== undefined && String(status) === 'CANCELADO') {
+      if (!userId) return res.status(401).json({ error: 'Usuário não identificado.' });
+      const caller = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true, name: true } });
+      if (caller?.systemProfile !== 'SUPER_ADMIN') {
+        return res.status(403).json({ error: 'Apenas Super Admins podem cancelar chamados.' });
+      }
+      const currentStatus = (existing.status || '').toUpperCase();
+      if (['CANCELADO', 'RESOLVIDO', 'CONCLUIDO', 'RESOLVED', 'APROVADO', 'REPROVADO'].includes(currentStatus)) {
+        return res.status(400).json({ error: 'Chamado já encerrado e não pode ser cancelado.' });
+      }
+    }
+
     // Solicitante não pode aprovar/reprovar o próprio chamado (genérico para qualquer perfil), antes de qualquer outra checagem
     if (status !== undefined && (String(status) === 'APROVADO' || String(status) === 'RESOLVED' || String(status) === 'RESOLVIDO') && userId && existing.requesterId === userId) {
       return res.status(403).json({ error: 'O solicitante não pode aprovar ou reprovar o próprio chamado.' });
@@ -1861,7 +1875,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     if (status !== undefined) data.status = String(status);
     // Responsável é preenchido apenas automaticamente por fase; edição manual bloqueada
     const statusStr = status !== undefined ? String(status) : '';
-    const autoAssigneeStatuses = ['IN_PROGRESS', 'EM_ANDAMENTO', 'RESOLVED', 'RESOLVIDO', 'CONCLUIDO', 'APROVADO'];
+    const autoAssigneeStatuses = ['IN_PROGRESS', 'EM_ANDAMENTO', 'RESOLVED', 'RESOLVIDO', 'CONCLUIDO', 'APROVADO', 'CANCELADO'];
     const autoAssigneeId = (status !== undefined && autoAssigneeStatuses.includes(statusStr) && userId) ? userId : undefined;
     if (autoAssigneeId !== undefined) (data as any).assigneeId = autoAssigneeId;
     if (scheduledAt !== undefined) data.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
@@ -1883,8 +1897,13 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     const { notifyTicketEvent } = await import('../services/ticketEventService');
     if (status !== undefined && status !== existing.status) {
       console.log('[Chamado] Tentando enviar notificação Slack para chamado:', id, 'tipo: STATUS_CHANGED');
+      const notifPayload: Record<string, unknown> = { from: existing.status, to: status };
+      if (String(status) === 'CANCELADO' && userId) {
+        const canceler = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+        if (canceler?.name) notifPayload.cancelledByName = canceler.name;
+      }
       try {
-        await notifyTicketEvent(id, 'STATUS_CHANGED', { from: existing.status, to: status });
+        await notifyTicketEvent(id, 'STATUS_CHANGED', notifPayload);
         console.log('[Chamado] Slack enviado com sucesso para chamado:', id);
       } catch (err) {
         console.error('[Chamado] Erro ao enviar Slack:', err);

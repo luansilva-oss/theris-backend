@@ -169,6 +169,7 @@ const STATUS_LABELS: Record<string, string> = {
   AGENDADO: 'Agendado',
   APROVADO: 'Aprovado',
   REPROVADO: 'Recusado',
+  CANCELADO: 'Cancelado',
 };
 function getStatusLabel(status: string): string {
   if (!status) return '—';
@@ -184,6 +185,7 @@ function getRequestStatusBadgeStyle(status: string): { label: string; bg: string
   if (s === 'APROVADO') return { label: getStatusLabel(status), bg: 'rgba(34, 197, 94, 0.2)', color: '#22c55e' };
   if (s === 'REPROVADO') return { label: getStatusLabel(status), bg: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' };
   if (s === 'RESOLVIDO' || s === 'EM_ATENDIMENTO' || s === 'CONCLUIDO' || s === 'AGENDADO') return { label: getStatusLabel(status), bg: 'rgba(21, 128, 61, 0.2)', color: '#15803d' };
+  if (s === 'CANCELADO') return { label: getStatusLabel(status), bg: 'rgba(113, 113, 122, 0.2)', color: '#71717a' };
   return { label: getStatusLabel(status), bg: 'rgba(100, 116, 139, 0.2)', color: '#64748b' };
 }
 
@@ -611,6 +613,7 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar' | 'pendente'>('aprovar');
   const [modalTargetId, setModalTargetId] = useState<string | null>(null);
+  const [showCancelChamadoModal, setShowCancelChamadoModal] = useState(false);
 
   // EDIT MODAL
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -3049,11 +3052,18 @@ export default function App() {
                               );
                             }
                             if (ev.kind === 'STATUS_CHANGED') {
+                              const isCancel = ev.to === 'CANCELADO';
                               return (
                                 <div key={`status-${idx}-${ev.createdAt}`} style={boxStyleAlt}>
-                                  <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 6 }}>🔄 Status atualizado</div>
-                                  <div style={{ ...labelStyle, marginTop: 4 }}><span style={{ color: '#71717a' }}>De:</span> {getStatusLabel(ev.from)} → <span style={{ color: '#71717a' }}>Para:</span> {getStatusLabel(ev.to)}</div>
-                                  <div style={metaStyle}>Por: {ev.authorName} · {ts}</div>
+                                  <div style={{ fontSize: 13, color: '#e4e4e7', marginBottom: 6 }}>{isCancel ? '❌ Chamado cancelado' : '🔄 Status atualizado'}</div>
+                                  {isCancel ? (
+                                    <div style={metaStyle}>Por: {ev.authorName} · {ts}</div>
+                                  ) : (
+                                    <>
+                                      <div style={{ ...labelStyle, marginTop: 4 }}><span style={{ color: '#71717a' }}>De:</span> {getStatusLabel(ev.from)} → <span style={{ color: '#71717a' }}>Para:</span> {getStatusLabel(ev.to)}</div>
+                                      <div style={metaStyle}>Por: {ev.authorName} · {ts}</div>
+                                    </>
+                                  )}
                                 </div>
                               );
                             }
@@ -3092,10 +3102,10 @@ export default function App() {
                           })}
                         </div>
                         <div style={{ padding: 16, borderTop: '1px solid #27272a' }}>
-                          {(chamadoDetail.status === 'APROVADO' || chamadoDetail.status === 'REPROVADO') ? (
+                          {(chamadoDetail.status === 'APROVADO' || chamadoDetail.status === 'REPROVADO' || chamadoDetail.status === 'CANCELADO') ? (
                             <div style={{ background: 'rgba(39, 39, 42, 0.6)', borderRadius: 12, padding: 20, display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #3f3f46' }}>
                               <Lock size={24} color="#71717a" />
-                              <span style={{ color: '#a1a1aa', fontSize: 14 }}>🔒 Este chamado foi encerrado e não aceita novas mensagens.</span>
+                              <span style={{ color: '#a1a1aa', fontSize: 14 }}>{chamadoDetail.status === 'CANCELADO' ? '🔒 Este chamado foi cancelado e não aceita novas ações.' : '🔒 Este chamado foi encerrado e não aceita novas mensagens.'}</span>
                             </div>
                           ) : (
                             <>
@@ -3200,7 +3210,7 @@ export default function App() {
                               )}
                               <div className="card-base" style={{ padding: 20 }}>
                                 <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Status</label>
-                                {(activeTab === 'MY_TICKETS') ? (
+                                {(activeTab === 'MY_TICKETS' || ['CANCELADO', 'APROVADO', 'REPROVADO', 'RESOLVIDO', 'CONCLUIDO'].includes(chamadoDetail.status)) ? (
                                   <div style={{ color: '#e4e4e7', fontSize: 13 }}>{getStatusLabel(chamadoDetail.status)}</div>
                                 ) : (
                                   <select
@@ -3215,6 +3225,18 @@ export default function App() {
                                   </select>
                                 )}
                               </div>
+                              {systemProfile === 'SUPER_ADMIN' && selectedChamadoId && !['CANCELADO', 'RESOLVIDO', 'CONCLUIDO', 'APROVADO', 'REPROVADO'].includes(chamadoDetail.status) && (
+                                <div className="card-base" style={{ padding: 20 }}>
+                                  <button
+                                    type="button"
+                                    className="input-base"
+                                    style={{ width: '100%', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.5)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+                                    onClick={() => setShowCancelChamadoModal(true)}
+                                  >
+                                    Cancelar Chamado
+                                  </button>
+                                </div>
+                              )}
                             </>
                           );
                         })()}
@@ -3406,6 +3428,17 @@ export default function App() {
       </main >
 
       <ModalObservacao isOpen={modalOpen} onClose={() => setModalOpen(false)} onConfirm={handleConfirmApprove} titulo={modalAction === 'aprovar' ? 'Confirmar Aprovação' : 'Confirmar Reprovação'} tipo={modalAction} />
+
+      <CustomConfirmModal
+        isOpen={showCancelChamadoModal}
+        onClose={() => setShowCancelChamadoModal(false)}
+        onConfirm={() => { if (selectedChamadoId) handleChamadoMetadataChange('status', 'CANCELADO'); }}
+        title="Cancelar chamado"
+        message="Tem certeza que deseja cancelar este chamado? Esta ação não pode ser desfeita."
+        confirmLabel="Confirmar cancelamento"
+        cancelLabel="Voltar"
+        isDestructive
+      />
 
       {
         selectedTool && (

@@ -84,7 +84,8 @@ const STATUS_LABELS: Record<string, string> = {
   REJECTED: 'REJEITADO',
   REJEITADO: 'REJEITADO',
   PENDING_OWNER: 'PENDENTE_OWNER',
-  PENDENTE_OWNER: 'PENDENTE_OWNER'
+  PENDENTE_OWNER: 'PENDENTE_OWNER',
+  CANCELADO: 'CANCELADO'
 };
 
 function statusLabel(s: string): string {
@@ -149,11 +150,18 @@ export async function notifyTicketEvent(
       case 'TICKET_CREATED':
         text = `🎫 *Seu chamado foi aberto com sucesso!*\nTipo: ${title}\nStatus: ${statusLabel(request.status)}\nVer chamado: ${link}`;
         break;
-      case 'STATUS_CHANGED':
-        const from = payload?.from != null ? statusLabel(String(payload.from)) : request.status;
-        const to = payload?.to != null ? statusLabel(String(payload.to)) : request.status;
-        text = `🔄 *Seu chamado teve o status atualizado*\nDe: ${from} → Para: ${to}\nVer chamado: ${link}`;
+      case 'STATUS_CHANGED': {
+        const to = payload?.to != null ? String(payload.to) : request.status;
+        if (to === 'CANCELADO') {
+          const cancelledByName = (payload?.cancelledByName && String(payload.cancelledByName)) || 'Super Admin';
+          text = `❌ *Seu chamado foi cancelado.*\nChamado: ${title}\nCancelado por: ${cancelledByName}\nVer chamado: ${link}`;
+        } else {
+          const from = payload?.from != null ? statusLabel(String(payload.from)) : request.status;
+          const toLabel = statusLabel(to);
+          text = `🔄 *Seu chamado teve o status atualizado*\nDe: ${from} → Para: ${toLabel}\nVer chamado: ${link}`;
+        }
         break;
+      }
       case 'COMMENT_ADDED': {
         const authorName = (payload?.authorName && String(payload.authorName)) || 'Alguém';
         const snippet = (payload?.body && String(payload.body).slice(0, 200)) || '—';
