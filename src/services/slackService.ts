@@ -1681,14 +1681,21 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
     const siApprovedBy = updatedReq ? (updatedReq as { siApprovedBy?: string }).siApprovedBy : null;
     if (siApprovedBy && updatedReq?.requester?.email) {
       try {
-        const { getSystemUserIdByEmail, addUserToVpnGroup, VPN_GROUP_IDS } = await import('./jumpcloudService');
+        const { getSystemUserIdByEmail, addUserToVpnGroup, getVpnGroupIds } = await import('./jumpcloudService');
         const detailsObj = JSON.parse(updatedReq.details || '{}');
-        const vpnLevel = detailsObj.vpnLevel || 'VPN - Default';
+        const vpnLevel = (detailsObj.vpnLevel || 'VPN - Default').trim();
         const assetNumber = detailsObj.assetNumber || '—';
         const operatingSystem = detailsObj.operatingSystem || '—';
         const requesterEmail = updatedReq.requester.email;
         const jcUserId = await getSystemUserIdByEmail(requesterEmail);
-        const groupId = VPN_GROUP_IDS[vpnLevel];
+        const vpnGroupIds = getVpnGroupIds();
+        const groupId = vpnGroupIds[vpnLevel];
+        console.log('[VPN] GROUP IDS:', {
+          default: process.env.VPN_GROUP_DEFAULT_ID,
+          admin: process.env.VPN_GROUP_ADMIN_ID,
+          vpnLevel: detailsObj.vpnLevel,
+          resolvedGroupId: vpnGroupIds[vpnLevel]
+        });
         console.log('[VPN] Inserindo usuário no grupo JumpCloud:', { email: requesterEmail, groupId, vpnLevel });
         if (jcUserId && groupId && (await addUserToVpnGroup(groupId, jcUserId))) {
           await prisma.request.update({
@@ -1710,6 +1717,7 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
             siName
           });
         } else {
+          console.error('[VPN] Falha ao inserir no JumpCloud:', new Error('usuário ou grupo não encontrado ou addUserToVpnGroup retornou false'));
           await notificarVpnFalhaInserção(requesterEmail);
         }
       } catch (e) {
@@ -3075,7 +3083,7 @@ export async function notificarVpnConcedido(params: {
 }
 
 /**
- * DM ao solicitante e aviso no canal quando a inserção no JumpCloud falha (solicitação já aprovada).
+ * Em caso de falha na inserção no JumpCloud: apenas DM ao solicitante (não envia nada no canal).
  */
 export async function notificarVpnFalhaInserção(requesterEmail: string): Promise<void> {
   if (!slackApp?.client) return;
@@ -3090,14 +3098,6 @@ export async function notificarVpnFalhaInserção(requesterEmail: string): Promi
       );
     }
   } catch (_) {}
-  if (JUMPCLOUD_SLACK_CHANNEL_ID) {
-    try {
-      await slackApp.client.chat.postMessage({
-        channel: JUMPCLOUD_SLACK_CHANNEL_ID,
-        text: '⚠️ *Acesso a VPN* — Falha ao adicionar usuário ao grupo no JumpCloud. Verifique o chamado no Theris.'
-      });
-    } catch (_) {}
-  }
 }
 
 /** Payload mínimo do chamado para notificar o time de SI (após criação no banco). */

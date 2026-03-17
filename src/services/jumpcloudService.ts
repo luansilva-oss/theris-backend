@@ -13,11 +13,21 @@ const INSIGHTS_EVENTS_URL = 'https://api.jumpcloud.com/insights/directory/v1/eve
 const SYSTEM_USERS_URL = 'https://console.jumpcloud.com/api/systemusers';
 const JUMPCLOUD_API_V2 = 'https://console.jumpcloud.com/api/v2';
 
-/** IDs dos grupos VPN no JumpCloud (lidos do .env). */
-export const VPN_GROUP_IDS: Record<string, string> = {
-  'VPN - Default': process.env.VPN_GROUP_DEFAULT_ID || '',
-  'VPN - Admin': process.env.VPN_GROUP_ADMIN_ID || ''
-};
+/** Chaves aceitas para nível VPN: Slack envia 'VPN - Default' / 'VPN - Admin'; aceitamos também 'default' / 'admin'. */
+const VPN_LEVEL_DEFAULT = 'VPN - Default';
+const VPN_LEVEL_ADMIN = 'VPN - Admin';
+
+/** IDs dos grupos VPN no JumpCloud — lidos do .env em tempo de execução. Mapeia todos os formatos possíveis de vpnLevel. */
+export function getVpnGroupIds(): Record<string, string | undefined> {
+  const defaultId = process.env.VPN_GROUP_DEFAULT_ID?.trim() || undefined;
+  const adminId = process.env.VPN_GROUP_ADMIN_ID?.trim() || undefined;
+  return {
+    default: defaultId,
+    admin: adminId,
+    [VPN_LEVEL_DEFAULT]: defaultId,
+    [VPN_LEVEL_ADMIN]: adminId
+  };
+}
 
 /**
  * Busca o _id do usuário JumpCloud pelo e-mail (GET /api/systemusers?filter=email:eq:xxx).

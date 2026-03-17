@@ -1432,10 +1432,10 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       const reqWithOwner = updatedRequest as { ownerApprovedBy?: string };
       if (reqWithOwner.ownerApprovedBy) {
         try {
-          const { getSystemUserIdByEmail, addUserToVpnGroup, VPN_GROUP_IDS } = await import('../services/jumpcloudService');
+          const { getSystemUserIdByEmail, addUserToVpnGroup, getVpnGroupIds } = await import('../services/jumpcloudService');
           const { notificarVpnConcedido, notificarVpnFalhaInserção } = await import('../services/slackService');
           const detailsObj = JSON.parse(updatedRequest.details || '{}');
-          const vpnLevel = detailsObj.vpnLevel || 'VPN - Default';
+          const vpnLevel = (detailsObj.vpnLevel || 'VPN - Default').trim();
           const assetNumber = detailsObj.assetNumber || '—';
           const operatingSystem = detailsObj.operatingSystem || '—';
           const requesterEmail = request.requester?.email;
@@ -1443,9 +1443,24 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
             return res.json(updatedRequest);
           }
           const jcUserId = await getSystemUserIdByEmail(requesterEmail);
-          const groupId = VPN_GROUP_IDS[vpnLevel];
+          const vpnGroupIds = getVpnGroupIds();
+          const groupId = vpnGroupIds[vpnLevel];
+          console.log('[VPN] GROUP IDS:', {
+            default: process.env.VPN_GROUP_DEFAULT_ID,
+            admin: process.env.VPN_GROUP_ADMIN_ID,
+            vpnLevel: detailsObj.vpnLevel,
+            resolvedGroupId: vpnGroupIds[vpnLevel]
+          });
           if (!jcUserId || !groupId) {
-            console.error('[VPN] JumpCloud: usuário ou grupo não encontrado', { jcUserId: !!jcUserId, groupId: !!groupId });
+            const hasDefaultId = !!process.env.VPN_GROUP_DEFAULT_ID?.trim();
+            const hasAdminId = !!process.env.VPN_GROUP_ADMIN_ID?.trim();
+            console.error('[VPN] JumpCloud: usuário ou grupo não encontrado', {
+              jcUserId: !!jcUserId,
+              groupId: !!groupId,
+              vpnLevel,
+              envVPN_GROUP_DEFAULT_ID: hasDefaultId,
+              envVPN_GROUP_ADMIN_ID: hasAdminId
+            });
             await notificarVpnFalhaInserção(requesterEmail);
             return res.json(updatedRequest);
           }
@@ -1468,7 +1483,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               siName
             });
           } else {
-            console.error('[VPN] Falha ao inserir no JumpCloud');
+            console.error('[VPN] Falha ao inserir no JumpCloud:', new Error('addUserToVpnGroup retornou false'));
             await notificarVpnFalhaInserção(requesterEmail);
           }
         } catch (e) {
