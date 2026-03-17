@@ -28,6 +28,7 @@ import { EntityAuditHistory } from './components/EntityAuditHistory';
 import { ReportExportModal } from './components/ReportExportModal';
 import { AuditLog } from './pages/AuditLog';
 import { CollaboratorDetails } from './pages/CollaboratorDetails';
+import { getRequestStatusLabel as getStatusLabel, getRequestStatusBadgeStyle, STATUS_FILTER_OPTIONS } from './constants/requestStatusConfig';
 import { LoginAttempts } from './pages/LoginAttempts';
 import { ActiveSessions } from './pages/ActiveSessions';
 import LandingPage from './pages/LandingPage';
@@ -156,38 +157,6 @@ const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 Horas
 const ACCESS_REQUEST_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
 const PEOPLE_REQUEST_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
 const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT'];
-
-// Labels de status padronizados em toda a UI
-const STATUS_LABELS: Record<string, string> = {
-  PENDENTE_GESTOR: 'Pendente (gestor)',
-  PENDENTE_SUB_OWNER: 'Pendente (sub-responsável)',
-  PENDENTE_SI: 'Pendente (SI)',
-  PENDENTE_OWNER: 'Pendente (responsável)',
-  PENDING_OWNER: 'Pendente (Owner)',
-  PENDING_SI: 'Pendente (SI)',
-  EM_ATENDIMENTO: 'Em atendimento',
-  AGENDADO: 'Agendado',
-  APROVADO: 'Aprovado',
-  REPROVADO: 'Recusado',
-  CANCELADO: 'Cancelado',
-};
-function getStatusLabel(status: string): string {
-  if (!status) return '—';
-  if (STATUS_LABELS[status]) return STATUS_LABELS[status];
-  if (status.startsWith('PENDENTE_')) return 'Pendente';
-  return status;
-}
-
-function getRequestStatusBadgeStyle(status: string): { label: string; bg: string; color: string } {
-  const s = (status || '').toUpperCase();
-  if (s === 'PENDENTE_OWNER' || s === 'PENDING_OWNER') return { label: getStatusLabel(status), bg: 'rgba(249, 115, 22, 0.2)', color: '#f97316' };
-  if (s === 'PENDENTE_SI' || s === 'PENDING_SI') return { label: getStatusLabel(status), bg: 'rgba(14, 165, 233, 0.2)', color: '#0EA5E9' };
-  if (s === 'APROVADO') return { label: getStatusLabel(status), bg: 'rgba(34, 197, 94, 0.2)', color: '#22c55e' };
-  if (s === 'REPROVADO') return { label: getStatusLabel(status), bg: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' };
-  if (s === 'RESOLVIDO' || s === 'EM_ATENDIMENTO' || s === 'CONCLUIDO' || s === 'AGENDADO') return { label: getStatusLabel(status), bg: 'rgba(21, 128, 61, 0.2)', color: '#15803d' };
-  if (s === 'CANCELADO') return { label: getStatusLabel(status), bg: 'rgba(113, 113, 122, 0.2)', color: '#71717a' };
-  return { label: getStatusLabel(status), bg: 'rgba(100, 116, 139, 0.2)', color: '#64748b' };
-}
 
 function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 'Infra'; categoryColor: string; title: string; lines: { label: string; value: string }[] } {
   let detailsObj: Record<string, unknown> = {};
@@ -2841,27 +2810,24 @@ export default function App() {
                               </td>
                             )}
                             {visibleColumns.assunto !== false && <td style={{ padding: '16px', fontSize: 13 }}>{subject}</td>}
-                            {visibleColumns.status !== false && (
-                              <td style={{ padding: '16px' }}>
-                                <span style={{
-                                  padding: '4px 10px', borderRadius: '20px', fontSize: 11, fontWeight: 700,
-                                  backgroundColor: r.status === 'APROVADO' ? 'rgba(16, 185, 129, 0.2)' :
-                                    r.status === 'REPROVADO' ? 'rgba(239, 68, 68, 0.2)' :
-                                      r.status.startsWith('PENDENTE') ? 'rgba(245, 158, 11, 0.15)' : 'rgba(113, 113, 122, 0.2)',
-                                  color: r.status === 'APROVADO' ? '#34d399' :
-                                    r.status === 'REPROVADO' ? '#f87171' :
-                                      r.status.startsWith('PENDENTE') ? '#fbbf24' : '#a1a1aa',
-                                  border: r.status === 'APROVADO' ? '1px solid #059669' :
-                                    r.status === 'REPROVADO' ? '1px solid #b91c1c' :
-                                      r.status.startsWith('PENDENTE') ? '1px solid #d97706' : '1px solid #3f3f46',
-                                  display: 'inline-flex', alignItems: 'center', gap: 5
-                                }}>
-                                  {r.status === 'APROVADO' ? <CheckCircle size={10} /> :
-                                    r.status === 'REPROVADO' ? <XCircle size={10} /> : <Clock size={10} />}
-                                  {getStatusLabel(r.status)}
-                                </span>
-                              </td>
-                            )}
+                            {visibleColumns.status !== false && (() => {
+                              const statusStyle = getRequestStatusBadgeStyle(r.status);
+                              const border = statusStyle.variant === 'success' ? '1px solid #059669' : statusStyle.variant === 'danger' ? '1px solid #b91c1c' : '1px solid #3f3f46';
+                              return (
+                                <td style={{ padding: '16px' }}>
+                                  <span style={{
+                                    padding: '4px 10px', borderRadius: '20px', fontSize: 11, fontWeight: 700,
+                                    backgroundColor: statusStyle.bg,
+                                    color: statusStyle.color,
+                                    border,
+                                    display: 'inline-flex', alignItems: 'center', gap: 5
+                                  }}>
+                                    {statusStyle.variant === 'success' ? <CheckCircle size={10} /> : statusStyle.variant === 'danger' ? <XCircle size={10} /> : <Clock size={10} />}
+                                    {statusStyle.label}
+                                  </span>
+                                </td>
+                              );
+                            })()}
                             {visibleColumns.solicitante !== false && (
                               <td style={{ padding: '16px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -3219,8 +3185,8 @@ export default function App() {
                                     value={chamadoDetail.status}
                                     onChange={e => handleChamadoMetadataChange('status', e.target.value)}
                                   >
-                                    {Object.entries(STATUS_LABELS).map(([val, label]) => (
-                                      <option key={val} value={val}>{label}</option>
+                                    {STATUS_FILTER_OPTIONS.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>{opt.label}</option>
                                     ))}
                                   </select>
                                 )}
@@ -3306,8 +3272,8 @@ export default function App() {
                         onChange={e => setTicketFilters(f => ({ ...f, status: e.target.value }))}
                       >
                         <option value="ALL">Todos</option>
-                        {Object.entries(STATUS_LABELS).map(([val, label]) => (
-                          <option key={val} value={val}>{label}</option>
+                        {STATUS_FILTER_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>
                     </div>
