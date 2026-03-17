@@ -275,25 +275,26 @@ slackApp.command('/duvidas', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// COMANDO /acessos — Modal Gestão de Ferramentas/Acessos (com block actions)
+// COMANDO /acessos — Modal Gestão de Ferramentas/Acessos (botões no estilo /pessoas)
 // ============================================================
 function buildAcessosInitialBlocks() {
   return [
+    { type: 'section' as const, text: { type: 'mrkdwn' as const, text: '🛠️ *Gestão de Acessos*\nEscolha a ação:' } },
+    { type: 'divider' as const },
     {
-      type: 'input' as const,
+      type: 'actions' as const,
       block_id: 'blk_acao',
-      label: { type: 'plain_text' as const, text: 'Ação Principal' },
-      dispatch_action: true,
-      element: {
-        type: 'static_select' as const,
-        action_id: 'acessos_action_type',
-        placeholder: { type: 'plain_text' as const, text: 'Selecione...' },
-        options: [
-          { text: { type: 'plain_text' as const, text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
-          { text: { type: 'plain_text' as const, text: 'Indicar Deputy' }, value: 'indicar_deputy' },
-          { text: { type: 'plain_text' as const, text: '🔐 Acesso a VPN' }, value: 'vpn_access' }
-        ]
-      }
+      elements: [
+        { type: 'button' as const, text: { type: 'plain_text' as const, text: '🔑 Acesso Extraordinário', emoji: true }, action_id: 'acessos_action_type', value: 'acesso_extraordinario', style: 'primary' as const },
+        { type: 'button' as const, text: { type: 'plain_text' as const, text: '👤 Indicar Deputy', emoji: true }, action_id: 'acessos_action_type', value: 'indicar_deputy' }
+      ]
+    },
+    {
+      type: 'actions' as const,
+      block_id: 'blk_acao_row2',
+      elements: [
+        { type: 'button' as const, text: { type: 'plain_text' as const, text: '🔐 Acesso a VPN', emoji: true }, action_id: 'acessos_action_type', value: 'vpn_access', style: 'primary' as const }
+      ]
     }
   ];
 }
@@ -727,8 +728,9 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
   await ack();
   const b = body as any;
   const view = b.view;
-  const selected = (b.actions?.[0]?.selected_option?.value ?? '') as string;
-  if (!view?.id || !selected) return;
+  const selected = (b.actions?.[0]?.selected_option?.value ?? b.actions?.[0]?.value ?? '') as string;
+  if (!selected) return;
+  if (selected !== 'vpn_access' && !view?.id) return;
 
   const actionType = selected;
   if (actionType === 'vpn_access') {
