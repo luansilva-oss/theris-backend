@@ -815,6 +815,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
         status,
         currentApproverRole,
         approverId,
+        assigneeId: safeRequesterId,
         isExtraordinary: Boolean(isExtraordinary),
         extraordinaryDuration: detailsObj.duration ? parseInt(detailsObj.duration) : null,
         extraordinaryUnit: detailsObj.unit || null,
@@ -825,6 +826,15 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
     const requesterForAudit = await prisma.user.findUnique({ where: { id: safeRequesterId }, select: { name: true } });
     const { registrarMudanca } = await import('../lib/auditLog');
+    await registrarMudanca({
+      tipo: 'TICKET_ASSIGNED',
+      entidadeTipo: 'Request',
+      entidadeId: newRequest.id,
+      descricao: `Responsável atribuído: ${requesterForAudit?.name ?? '—'}`,
+      dadosAntes: { responsavel: null },
+      dadosDepois: { responsavel: requesterForAudit?.name ?? '—' },
+      autorId: safeRequesterId,
+    }).catch(() => {});
     await registrarMudanca({
       tipo: 'TICKET_CREATED',
       entidadeTipo: 'Request',
@@ -854,6 +864,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     console.log('[Chamado] Tentando enviar notificação Slack para chamado:', newRequest.id, 'tipo: TICKET_CREATED');
     try {
       await notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {});
+      await notifyTicketEvent(newRequest.id, 'ASSIGNEE_CHANGED', { assigneeId: safeRequesterId });
       console.log('[Chamado] Slack enviado com sucesso para chamado:', newRequest.id);
     } catch (err) {
       console.error('[Chamado] Erro ao enviar Slack:', err);
@@ -1065,7 +1076,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
   try {
     const request = await prisma.request.findUnique({
       where: { id },
-      include: { requester: true }
+      include: { requester: true, assignee: { select: { name: true } } }
     });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
@@ -1088,9 +1099,9 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
 
     const action = safeStatus === 'APROVAR' ? 'APROVADO' : 'REPROVADO';
 
-    // REGRA DE NEGÓCIO: BLOQUEAR AUTO-APROVAÇÃO
+    // REGRA DE NEGÓCIO: solicitante não pode aprovar/reprovar o próprio chamado (genérico para qualquer perfil: APPROVER, ADMIN, SUPER_ADMIN)
     if (approverId === request.requesterId) {
-      return res.status(403).json({ error: 'Você não pode aprovar ou reprovar sua própria solicitação.' });
+      return res.status(403).json({ error: 'O solicitante não pode aprovar ou reprovar o próprio chamado.' });
     }
 
     // REGRA BYPASS RH: só Luan, Allan ou Vladimir podem aprovar solicitações com bypassGestor (Renata)
@@ -1131,7 +1142,8 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           message: 'Este chamado requer aprovação das duas partes. Aguardando aprovação pendente para encerrar.'
         });
       }
-      if ((isAexPendingSI || (isVpn && request.status === 'PENDING_SI')) && approverId) {
+      // Conflito SI/Líder: bloquear apenas quem já aprovou como líder (ownerApprovedBy = Slack ID), não todos do SI
+      if (isVpn && request.status === 'PENDING_SI' && ownerApprovedBy && approverId) {
         try {
           const approverUser = await prisma.user.findUnique({
             where: { id: approverId },
@@ -1143,12 +1155,34 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
             if (app?.client) {
               const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
               const approverSlackId = lookup.user?.id;
-              if (approverSlackId && approverSlackId === ownerApprovedBy) {
+              if (approverSlackId === ownerApprovedBy) {
                 return res.status(403).json({
                   error: 'SAME_APPROVER',
-                  message: isVpn
-                    ? 'Você já aprovou este chamado como líder direto e não pode aprovar também pelo SI.'
-                    : 'Você já aprovou este chamado na etapa anterior. O fechamento deve ser feito pela outra parte.'
+                  message: 'Você já aprovou este chamado como líder direto e não pode aprovar também pelo time de SI.'
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.error('[AEX/VPN] Erro ao verificar ownerApprovedBy:', e);
+        }
+      }
+      if (isAexPendingSI && approverId && ownerApprovedBy) {
+        try {
+          const approverUser = await prisma.user.findUnique({
+            where: { id: approverId },
+            select: { email: true }
+          });
+          if (approverUser?.email) {
+            const { getSlackApp } = await import('../services/slackService');
+            const app = getSlackApp();
+            if (app?.client) {
+              const lookup = await app.client.users.lookupByEmail({ email: approverUser.email });
+              const approverSlackId = lookup.user?.id;
+              if (approverSlackId === ownerApprovedBy) {
+                return res.status(403).json({
+                  error: 'SAME_APPROVER',
+                  message: 'Você já aprovou este chamado na etapa anterior. O fechamento deve ser feito pela outra parte.'
                 });
               }
             }
@@ -1167,9 +1201,28 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           status: 'REPROVADO',
           adminNote: adminNote || 'Solicitação reprovada.',
           approverId: approverId,
+          assigneeId: approverId || undefined,
           updatedAt: new Date()
         }
       });
+
+      if (approverId && request.assigneeId !== approverId) {
+        const { registrarMudanca } = await import('../lib/auditLog');
+        const { notifyTicketEvent } = await import('../services/ticketEventService');
+        const newAssignee = await prisma.user.findUnique({ where: { id: approverId }, select: { name: true } });
+        await registrarMudanca({
+          tipo: 'TICKET_ASSIGNED',
+          entidadeTipo: 'Request',
+          entidadeId: id,
+          descricao: `Responsável atribuído: ${newAssignee?.name ?? '—'}`,
+          dadosAntes: { responsavel: (request as { assignee?: { name: string } }).assignee?.name ?? null },
+          dadosDepois: { responsavel: newAssignee?.name ?? null },
+          autorId: approverId,
+        }).catch(() => {});
+        try {
+          await notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId: approverId });
+        } catch (_) {}
+      }
 
       if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
         const { registrarMudanca } = await import('../lib/auditLog');
@@ -1339,6 +1392,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       details: JSON.stringify(updatedDetails),
       updatedAt: new Date()
     };
+    if (approverId) updateData.assigneeId = approverId;
     if (isAex && isAexPendingSI && siApprovedBySlackForVpn) {
       updateData.siApprovedBy = siApprovedBySlackForVpn;
       updateData.siApprovedAt = new Date();
@@ -1353,6 +1407,24 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       where: { id },
       data: updateData
     });
+
+    if (approverId && request.assigneeId !== approverId) {
+      const { registrarMudanca } = await import('../lib/auditLog');
+      const { notifyTicketEvent } = await import('../services/ticketEventService');
+      const newAssignee = await prisma.user.findUnique({ where: { id: approverId }, select: { name: true } });
+      await registrarMudanca({
+        tipo: 'TICKET_ASSIGNED',
+        entidadeTipo: 'Request',
+        entidadeId: id,
+        descricao: `Responsável atribuído: ${newAssignee?.name ?? '—'}`,
+        dadosAntes: { responsavel: request.assignee?.name ?? null },
+        dadosDepois: { responsavel: newAssignee?.name ?? null },
+        autorId: approverId,
+      }).catch(() => {});
+      try {
+        await notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId: approverId });
+      } catch (_) {}
+    }
 
     // VPN: se líder já aprovou, concluir (JumpCloud + RESOLVED). Senão, apenas notificar e encerrar resposta.
     if (isVpn && action === 'APROVADO') {
@@ -1729,6 +1801,11 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     const existing = await prisma.request.findUnique({ where: { id }, include: { requester: true, assignee: true } });
     if (!existing) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
+    // Solicitante não pode aprovar/reprovar o próprio chamado (genérico para qualquer perfil), antes de qualquer outra checagem
+    if (status !== undefined && (String(status) === 'APROVADO' || String(status) === 'RESOLVED' || String(status) === 'RESOLVIDO') && userId && existing.requesterId === userId) {
+      return res.status(403).json({ error: 'O solicitante não pode aprovar ou reprovar o próprio chamado.' });
+    }
+
     const isAex = existing.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) && existing.isExtraordinary);
     const isVpnMetadata = existing.type === 'VPN_ACCESS';
     const ownerApprovedBy = (existing as { ownerApprovedBy?: string }).ownerApprovedBy;
@@ -1782,7 +1859,11 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
 
     const data: Record<string, unknown> = {};
     if (status !== undefined) data.status = String(status);
-    if (assigneeId !== undefined) data.assigneeId = assigneeId || null;
+    // Responsável é preenchido apenas automaticamente por fase; edição manual bloqueada
+    const statusStr = status !== undefined ? String(status) : '';
+    const autoAssigneeStatuses = ['IN_PROGRESS', 'EM_ANDAMENTO', 'RESOLVED', 'RESOLVIDO', 'CONCLUIDO', 'APROVADO'];
+    const autoAssigneeId = (status !== undefined && autoAssigneeStatuses.includes(statusStr) && userId) ? userId : undefined;
+    if (autoAssigneeId !== undefined) (data as any).assigneeId = autoAssigneeId;
     if (scheduledAt !== undefined) data.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
     // Ao SI adicionar solução em AEX PENDING_SI: preencher siApprovedBy/siApprovedAt (acima já validado)
     if (status === 'APROVADO' && isAex && siApprovedBy && !(existing as { siApprovedBy?: string }).siApprovedBy) {
@@ -1809,10 +1890,10 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         console.error('[Chamado] Erro ao enviar Slack:', err);
       }
     }
-    if (assigneeId !== undefined && assigneeId !== existing.assigneeId) {
+    if (autoAssigneeId !== undefined && autoAssigneeId !== existing.assigneeId) {
       console.log('[Chamado] Tentando enviar notificação Slack para chamado:', id, 'tipo: ASSIGNEE_CHANGED');
       try {
-        await notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId });
+        await notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId: autoAssigneeId });
         console.log('[Chamado] Slack enviado com sucesso para chamado:', id);
       } catch (err) {
         console.error('[Chamado] Erro ao enviar Slack:', err);
@@ -1821,8 +1902,8 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
 
     const newStatus = (status !== undefined ? String(status) : existing.status) || '';
     const { registrarMudanca } = await import('../lib/auditLog');
-    if (assigneeId !== undefined && assigneeId !== existing.assigneeId) {
-      const newAssignee = assigneeId ? await prisma.user.findUnique({ where: { id: assigneeId }, select: { name: true } }) : null;
+    if (autoAssigneeId !== undefined && autoAssigneeId !== existing.assigneeId) {
+      const newAssignee = autoAssigneeId ? await prisma.user.findUnique({ where: { id: autoAssigneeId }, select: { name: true } }) : null;
       await registrarMudanca({
         tipo: 'TICKET_ASSIGNED',
         entidadeTipo: 'Request',

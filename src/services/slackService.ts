@@ -1254,6 +1254,7 @@ async function saveRequest(
         status,
         currentApproverRole,
         approverId,
+        assigneeId: requesterId,
         isExtraordinary,
         ...(isExtraordinary && toolName && { toolName }),
         ...(isExtraordinary && accessLevel && { accessLevel }),
@@ -1383,7 +1384,7 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
   try {
     req = await prisma.request.findUnique({
       where: { id: requestId },
-      include: { requester: { select: { id: true, name: true, email: true } } }
+      include: { requester: { select: { id: true, name: true, email: true } }, assignee: { select: { name: true } } }
     });
   } catch (e) {
     console.error('[AEX] Erro ao buscar request:', e);
@@ -1404,6 +1405,19 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
   if (!ownerSlackId) {
     console.warn('[AEX] Ignorando: user.id ausente no payload');
     return;
+  }
+
+  // Regra genérica: solicitante não pode aprovar/reprovar o próprio chamado (qualquer perfil)
+  if (req.requester?.email) {
+    try {
+      const requesterLookup = await client.users.lookupByEmail({ email: req.requester.email });
+      if (requesterLookup.user?.id === ownerSlackId) {
+        try {
+          await sendDmToSlackUser(client, ownerSlackId, 'O solicitante não pode aprovar ou reprovar o próprio chamado.');
+        } catch (_) {}
+        return;
+      }
+    } catch (_) {}
   }
 
   try {
@@ -1437,9 +1451,27 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
           ownerApprovedAt: new Date(),
           ownerApprovedBy: ownerSlackId,
           ownerApprovedByName: ownerName,
+          ...(ownerUserId && { assigneeId: ownerUserId }),
           updatedAt: new Date()
         } as any
       });
+
+      if (ownerUserId && req.assigneeId !== ownerUserId) {
+        const { registrarMudanca } = await import('../lib/auditLog');
+        const { notifyTicketEvent } = await import('./ticketEventService');
+        await registrarMudanca({
+          tipo: 'TICKET_ASSIGNED',
+          entidadeTipo: 'Request',
+          entidadeId: requestId,
+          descricao: `Responsável atribuído: ${ownerName ?? '—'}`,
+          dadosAntes: { responsavel: req.assignee?.name ?? null },
+          dadosDepois: { responsavel: ownerName ?? '—' },
+          autorId: ownerUserId,
+        }).catch(() => {});
+        try {
+          await notifyTicketEvent(requestId, 'ASSIGNEE_CHANGED', { assigneeId: ownerUserId });
+        } catch (_) {}
+      }
 
       const { registrarMudanca } = await import('../lib/auditLog');
       await registrarMudanca({
@@ -1471,9 +1503,32 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
           status: 'REJECTED',
           ownerRejectedAt: new Date(),
           ownerRejectedBy: ownerSlackId,
+          ...(ownerUserId && { assigneeId: ownerUserId }),
           updatedAt: new Date()
         } as any
       });
+
+      if (ownerUserId && req.assigneeId !== ownerUserId) {
+        const { registrarMudanca } = await import('../lib/auditLog');
+        const { notifyTicketEvent } = await import('./ticketEventService');
+        let ownerNameReject: string | null = null;
+        try {
+          const userInfo = await client.users.info({ user: ownerSlackId });
+          ownerNameReject = userInfo.user?.real_name ?? userInfo.user?.name ?? null;
+        } catch (_) {}
+        await registrarMudanca({
+          tipo: 'TICKET_ASSIGNED',
+          entidadeTipo: 'Request',
+          entidadeId: requestId,
+          descricao: `Responsável atribuído: ${ownerNameReject ?? '—'}`,
+          dadosAntes: { responsavel: req.assignee?.name ?? null },
+          dadosDepois: { responsavel: ownerNameReject ?? '—' },
+          autorId: ownerUserId,
+        }).catch(() => {});
+        try {
+          await notifyTicketEvent(requestId, 'ASSIGNEE_CHANGED', { assigneeId: ownerUserId });
+        } catch (_) {}
+      }
 
       const { registrarMudanca } = await import('../lib/auditLog');
       await registrarMudanca({
@@ -1516,10 +1571,34 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
 
   const req = await prisma.request.findUnique({
     where: { id: requestId },
-    include: { requester: { select: { id: true, name: true, email: true } } }
+    include: { requester: { select: { id: true, name: true, email: true } }, assignee: { select: { name: true } } }
   });
   if (!req || req.type !== 'VPN_ACCESS') return;
   if (req.status !== 'PENDING_OWNER' && req.status !== 'PENDING_SI' && req.status !== 'PENDENTE_SI') return;
+
+  let leaderUserId: string | undefined;
+  try {
+    const leaderInfo = await client.users.info({ user: leaderSlackId });
+    const leaderEmail = leaderInfo.user?.profile?.email;
+    if (leaderEmail) {
+      const leaderDb = await prisma.user.findUnique({ where: { email: leaderEmail }, select: { id: true } });
+      if (leaderDb) leaderUserId = leaderDb.id;
+    }
+  } catch (_) {}
+
+  // Regra genérica: solicitante não pode aprovar/reprovar o próprio chamado (qualquer perfil)
+  if (req.requester?.email) {
+    try {
+      const requesterLookup = await client.users.lookupByEmail({ email: req.requester.email });
+      if (requesterLookup.user?.id === leaderSlackId) {
+        try {
+          await sendDmToSlackUser(client, leaderSlackId, 'O solicitante não pode aprovar ou reprovar o próprio chamado.');
+        } catch (_) {}
+        return;
+      }
+    } catch (_) {}
+  }
+
   if ((req as any).ownerApprovedBy || (req as any).ownerRejectedAt) {
     try {
       await sendDmToSlackUser(client, leaderSlackId, 'Esta solicitação de VPN já foi respondida.');
@@ -1534,6 +1613,9 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
     leaderName = userInfo.user?.real_name ?? userInfo.user?.name ?? null;
   } catch (_) {}
 
+  const channelId = b.channel?.id ?? b.channel_id;
+  const messageTs = b.message?.ts ?? (b as any).message_ts;
+
   if (isApprove) {
     await prisma.request.update({
       where: { id: requestId },
@@ -1543,9 +1625,45 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
         ownerApprovedAt: new Date(),
         ownerApprovedBy: leaderSlackId,
         ownerApprovedByName: leaderName,
+        ...(leaderUserId && { assigneeId: leaderUserId }),
         updatedAt: new Date()
       } as any
     });
+    if (channelId && messageTs) {
+      try {
+        await client.chat.update({
+          channel: channelId,
+          ts: messageTs,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '✅ Você aprovou esta solicitação de Acesso a VPN.'
+              }
+            }
+          ]
+        });
+      } catch (e) {
+        console.warn('[VPN] chat.update (aprovar) falhou:', e);
+      }
+    }
+    if (leaderUserId && (req as { assigneeId?: string }).assigneeId !== leaderUserId) {
+      const { registrarMudanca } = await import('../lib/auditLog');
+      const { notifyTicketEvent } = await import('./ticketEventService');
+      await registrarMudanca({
+        tipo: 'TICKET_ASSIGNED',
+        entidadeTipo: 'Request',
+        entidadeId: requestId,
+        descricao: `Responsável atribuído: ${leaderName ?? '—'}`,
+        dadosAntes: { responsavel: (req as { assignee?: { name: string } }).assignee?.name ?? null },
+        dadosDepois: { responsavel: leaderName ?? '—' },
+        autorId: leaderUserId,
+      }).catch(() => {});
+      try {
+        await notifyTicketEvent(requestId, 'ASSIGNEE_CHANGED', { assigneeId: leaderUserId });
+      } catch (_) {}
+    }
     const { registrarMudanca } = await import('../lib/auditLog');
     await registrarMudanca({
       tipo: 'VPN_LEADER_APPROVED',
@@ -1617,9 +1735,45 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
         status: 'REJECTED',
         ownerRejectedAt: new Date(),
         ownerRejectedBy: leaderSlackId,
+        ...(leaderUserId && { assigneeId: leaderUserId }),
         updatedAt: new Date()
       } as any
     });
+    if (channelId && messageTs) {
+      try {
+        await client.chat.update({
+          channel: channelId,
+          ts: messageTs,
+          blocks: [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: '❌ Você recusou esta solicitação de Acesso a VPN.'
+              }
+            }
+          ]
+        });
+      } catch (e) {
+        console.warn('[VPN] chat.update (recusar) falhou:', e);
+      }
+    }
+    if (leaderUserId && (req as { assigneeId?: string }).assigneeId !== leaderUserId) {
+      const { registrarMudanca } = await import('../lib/auditLog');
+      const { notifyTicketEvent } = await import('./ticketEventService');
+      await registrarMudanca({
+        tipo: 'TICKET_ASSIGNED',
+        entidadeTipo: 'Request',
+        entidadeId: requestId,
+        descricao: `Responsável atribuído: ${leaderName ?? '—'}`,
+        dadosAntes: { responsavel: (req as { assignee?: { name: string } }).assignee?.name ?? null },
+        dadosDepois: { responsavel: leaderName ?? '—' },
+        autorId: leaderUserId,
+      }).catch(() => {});
+      try {
+        await notifyTicketEvent(requestId, 'ASSIGNEE_CHANGED', { assigneeId: leaderUserId });
+      } catch (_) {}
+    }
     const { registrarMudanca } = await import('../lib/auditLog');
     await registrarMudanca({
       tipo: 'VPN_LEADER_REJECTED',
@@ -2439,9 +2593,25 @@ slackApp.view('vpn_access_request', async ({ ack, body, view, client }) => {
       details: JSON.stringify(details),
       justification,
       currentApproverRole: 'LEADER',
-      approverId: null
+      approverId: null,
+      assigneeId: requesterId
     }
   });
+
+  const { registrarMudanca } = await import('../lib/auditLog');
+  const { notifyTicketEvent } = await import('./ticketEventService');
+  await registrarMudanca({
+    tipo: 'TICKET_ASSIGNED',
+    entidadeTipo: 'Request',
+    entidadeId: created.id,
+    descricao: `Responsável atribuído: ${requester?.name ?? '—'}`,
+    dadosAntes: { responsavel: null },
+    dadosDepois: { responsavel: requester?.name ?? '—' },
+    autorId: requesterId,
+  }).catch(() => {});
+  try {
+    await notifyTicketEvent(created.id, 'ASSIGNEE_CHANGED', { assigneeId: requesterId });
+  } catch (_) {}
 
   const dataHora = new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',

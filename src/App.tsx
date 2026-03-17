@@ -604,8 +604,6 @@ export default function App() {
   const [chamadoAttachmentUploading, setChamadoAttachmentUploading] = useState(false);
   const chamadoFileInputRef = useRef<HTMLInputElement>(null);
   const [chamadoScheduledAt, setChamadoScheduledAt] = useState('');
-  const [assigneeSearchOpen, setAssigneeSearchOpen] = useState(false);
-  const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
   const [expandedKbsSection, setExpandedKbsSection] = useState(false);
   const [isExtraordinaryOpen, setIsExtraordinaryOpen] = useState(false);
 
@@ -974,12 +972,11 @@ export default function App() {
     else setChamadoDetail(null);
   }, [selectedChamadoId, activeTab]);
 
-  const handleChamadoMetadataChange = async (field: 'status' | 'assigneeId' | 'scheduledAt', value: string | null) => {
+  const handleChamadoMetadataChange = async (field: 'status' | 'scheduledAt', value: string | null) => {
     if (!selectedChamadoId) return;
     try {
       const body: any = {};
       if (field === 'status') body.status = value;
-      if (field === 'assigneeId') body.assigneeId = value || null;
       if (field === 'scheduledAt') body.scheduledAt = value ? new Date(value).toISOString() : null;
       const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/metadata`, {
         method: 'PATCH',
@@ -3231,51 +3228,9 @@ export default function App() {
                             )}
                           </div>
                         )}
-                        <div className="card-base" style={{ padding: 20, position: 'relative' }}>
+                        <div className="card-base" style={{ padding: 20 }}>
                           <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Responsável</label>
-                          {(activeTab === 'MY_TICKETS') ? (
-                            <div style={{ color: '#e4e4e7', fontSize: 13 }}>{chamadoDetail.assignee?.name || '— Não atribuído'}</div>
-                          ) : (
-                            <>
-                              <input
-                                type="text"
-                                className="input-base"
-                                style={{ width: '100%', background: '#18181b', fontSize: 12 }}
-                                value={assigneeSearchOpen ? assigneeSearchQuery : (chamadoDetail.assignee?.name || '')}
-                                onChange={e => { setAssigneeSearchQuery(e.target.value); setAssigneeSearchOpen(true); }}
-                                onFocus={() => { setAssigneeSearchOpen(true); setAssigneeSearchQuery(''); }}
-                                onBlur={() => setTimeout(() => { setAssigneeSearchOpen(false); setAssigneeSearchQuery(''); }, 150)}
-                                placeholder="— Não atribuído ou busque por nome..."
-                              />
-                              {assigneeSearchOpen && (() => {
-                                const searchTerm = assigneeSearchQuery.trim();
-                                const filteredUsers = allUsers
-                                  .filter((u: User) => ['ADMIN', 'SUPER_ADMIN', 'APPROVER'].includes(u.systemProfile))
-                                  .filter((u: User) => !searchTerm || u.name.toLowerCase().includes(searchTerm.toLowerCase()) || (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()));
-                                return (
-                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#18181b', border: '1px solid #27272a', borderRadius: 8, zIndex: 50, maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
-                                  <div
-                                    style={{ padding: '10px 12px', cursor: 'pointer', color: '#e4e4e7', fontSize: 13, borderBottom: '1px solid #27272a' }}
-                                    onMouseDown={e => { e.preventDefault(); handleChamadoMetadataChange('assigneeId', null); setAssigneeSearchOpen(false); setAssigneeSearchQuery(''); }}
-                                  >
-                                    — Não atribuído
-                                  </div>
-                                  {filteredUsers.map((u: User) => (
-                                      <div
-                                        key={u.id}
-                                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#e4e4e7', fontSize: 13, borderBottom: '1px solid #27272a', display: 'flex', flexDirection: 'column', gap: 2 }}
-                                        className="hover:bg-zinc-800"
-                                        onMouseDown={(e) => { e.preventDefault(); handleChamadoMetadataChange('assigneeId', u.id); setAssigneeSearchOpen(false); setAssigneeSearchQuery(''); }}
-                                      >
-                                        <span>{u.name}</span>
-                                        {u.email && <span style={{ fontSize: 11, color: '#71717a' }}>{u.email}</span>}
-                                      </div>
-                                    ))}
-                                </div>
-                                );
-                              })()}
-                            </>
-                          )}
+                          <div style={{ color: '#e4e4e7', fontSize: 13 }}>{chamadoDetail.assignee?.name || '— Não atribuído'}</div>
                         </div>
                       </div>
                     </div>
