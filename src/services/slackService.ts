@@ -285,15 +285,15 @@ function buildAcessosInitialBlocks() {
       type: 'actions' as const,
       block_id: 'blk_acao',
       elements: [
-        { type: 'button' as const, text: { type: 'plain_text' as const, text: '🔑 Acesso Extraordinário', emoji: true }, action_id: 'acessos_action_type', value: 'acesso_extraordinario', style: 'primary' as const },
-        { type: 'button' as const, text: { type: 'plain_text' as const, text: '👤 Indicar Deputy', emoji: true }, action_id: 'acessos_action_type', value: 'indicar_deputy' }
+        { type: 'button' as const, text: { type: 'plain_text' as const, text: '🔑 Acesso Extraordinário', emoji: true }, action_id: 'acessos_extraordinario', value: 'acesso_extraordinario', style: 'primary' as const },
+        { type: 'button' as const, text: { type: 'plain_text' as const, text: '👤 Indicar Deputy', emoji: true }, action_id: 'acessos_deputy', value: 'indicar_deputy' }
       ]
     },
     {
       type: 'actions' as const,
       block_id: 'blk_acao_row2',
       elements: [
-        { type: 'button' as const, text: { type: 'plain_text' as const, text: '🔐 Acesso a VPN', emoji: true }, action_id: 'acessos_action_type', value: 'vpn_access', style: 'primary' as const }
+        { type: 'button' as const, text: { type: 'plain_text' as const, text: '🔐 Acesso a VPN', emoji: true }, action_id: 'acessos_vpn', value: 'vpn_access', style: 'primary' as const }
       ]
     }
   ];
@@ -724,11 +724,8 @@ slackApp.action('link_security', async ({ ack }) => await ack());
 // BLOCK ACTIONS DO MODAL /acessos — atualizam a view
 // ============================================================
 
-slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
-  await ack();
-  const b = body as any;
+async function handleAcessosActionType(b: any, client: any, selected: string): Promise<void> {
   const view = b.view;
-  const selected = (b.actions?.[0]?.selected_option?.value ?? b.actions?.[0]?.value ?? '') as string;
   if (!selected) return;
   if (selected !== 'vpn_access' && !view?.id) return;
 
@@ -892,6 +889,31 @@ slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
   } catch (e) {
     console.error('❌ Erro ao atualizar modal acessos (action_type):', e);
   }
+}
+
+slackApp.action('acessos_extraordinario', async ({ ack, body, client }) => {
+  await ack();
+  const selected = ((body as any).actions?.[0]?.value ?? '') as string;
+  await handleAcessosActionType(body as any, client, selected);
+});
+
+slackApp.action('acessos_deputy', async ({ ack, body, client }) => {
+  await ack();
+  const selected = ((body as any).actions?.[0]?.value ?? '') as string;
+  await handleAcessosActionType(body as any, client, selected);
+});
+
+slackApp.action('acessos_vpn', async ({ ack, body, client }) => {
+  await ack();
+  const selected = ((body as any).actions?.[0]?.value ?? '') as string;
+  await handleAcessosActionType(body as any, client, selected);
+});
+
+slackApp.action('acessos_action_type', async ({ ack, body, client }) => {
+  await ack();
+  const b = body as any;
+  const selected = (b.actions?.[0]?.selected_option?.value ?? b.actions?.[0]?.value ?? '') as string;
+  await handleAcessosActionType(b, client, selected);
 });
 
 function normalizeToolName(s: string): string {
