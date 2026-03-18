@@ -74,18 +74,40 @@ export async function getSlackIdByUserName(name: string): Promise<string | null>
 
 /** Retorna slackIds do owner e sub-owners para uma ferramenta */
 export async function getOwnerSlackIdsForTool(toolName: string): Promise<string[]> {
+  const { ownerSlackId, subOwnerSlackIds } = await getOwnerAndSubSlackIdsForTool(toolName);
+  const all = [ownerSlackId, ...subOwnerSlackIds].filter(Boolean) as string[];
+  return [...new Set(all)];
+}
+
+/** Retorna owner e sub-owners separadamente (para regra de conflito Líder = Owner).
+ * Sub-owners sem Slack ID resolvível são filtrados e gera console.warn com o email. */
+export async function getOwnerAndSubSlackIdsForTool(toolName: string): Promise<{ ownerSlackId: string | null; subOwnerSlackIds: string[] }> {
   const norm = normalizeToolName(toolName);
   const mapping = TOOL_OWNER_MAP[norm] ?? Object.entries(TOOL_OWNER_MAP).find(
     ([key]) => key.toLowerCase() === norm.toLowerCase()
   )?.[1];
-  if (!mapping) return [];
-  const allNames = [mapping.owner, ...mapping.subs].filter(Boolean);
-  const ids: string[] = [];
-  for (const n of allNames) {
-    const id = await getSlackIdByUserName(n);
-    if (id && !ids.includes(id)) ids.push(id);
+  if (!mapping) return { ownerSlackId: null, subOwnerSlackIds: [] };
+  const ownerSlackId = mapping.owner ? await getSlackIdByUserName(mapping.owner) : null;
+  const subOwnerSlackIds: string[] = [];
+  for (const n of mapping.subs.filter(Boolean)) {
+    const email = await getUserEmailByName(n);
+    let id: string | null = null;
+    try {
+      if (email) {
+        const app = getSlackApp();
+        const lookup = await app.client.users.lookupByEmail({ email });
+        id = lookup.user?.id ?? null;
+      }
+      if (!id) {
+        console.warn('[AEX] Sub-owner sem Slack ID resolvível:', email ?? n);
+      } else if (!subOwnerSlackIds.includes(id)) {
+        subOwnerSlackIds.push(id);
+      }
+    } catch (_) {
+      console.warn('[AEX] Sub-owner sem Slack ID resolvível:', email ?? n);
+    }
   }
-  return ids;
+  return { ownerSlackId: ownerSlackId ?? null, subOwnerSlackIds };
 }
 
 /** Retorna slackIds do time de SI */
@@ -114,7 +136,9 @@ export async function isOwnerSIMember(toolName: string): Promise<boolean> {
 
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.VITE_API_URL || 'https://theris.grupo-3c.com';
 
-/** Envia DMs para Owner/Sub e SI quando uma solicitação AEX é criada (sempre fluxo de 2 etapas) */
+/** Envia DMs para Owner/Sub e SI quando uma solicitação AEX é criada (sempre fluxo de 2 etapas).
+ * Se requesterId for informado e o Owner da ferramenta for o mesmo que o Líder do solicitante,
+ * envia apenas para os sub-owners; se não houver sub-owner, registra warning e envia para o owner. */
 export async function sendAexCreationDMs(
   client: { chat: { postMessage: (opts: any) => Promise<any> } },
   requestId: string,
@@ -122,10 +146,39 @@ export async function sendAexCreationDMs(
   accessLevel: string,
   requesterName: string,
   justification: string,
-  opts?: { period?: string }
+  opts?: { period?: string; requesterId?: string }
 ): Promise<void> {
   const shortId = requestId.slice(0, 8);
-  const ownerIds = await getOwnerSlackIdsForTool(toolName);
+  const { ownerSlackId, subOwnerSlackIds } = await getOwnerAndSubSlackIdsForTool(toolName);
+  let ownerIds: string[];
+  if (opts?.requesterId) {
+    const requester = await prisma.user.findUnique({
+      where: { id: opts.requesterId },
+      select: { managerId: true, manager: { select: { email: true } } }
+    });
+    const leaderEmail = requester?.manager?.email;
+    let leaderSlackId: string | null = null;
+    if (leaderEmail) {
+      try {
+        const lookup = await getSlackApp().client.users.lookupByEmail({ email: leaderEmail });
+        leaderSlackId = lookup.user?.id ?? null;
+      } catch (_) {}
+    }
+    const ownerIsLeader = ownerSlackId && leaderSlackId && ownerSlackId === leaderSlackId;
+    if (ownerIsLeader) {
+      const validSubIds = subOwnerSlackIds.filter(Boolean);
+      if (validSubIds.length > 0) {
+        ownerIds = validSubIds;
+      } else {
+        console.warn('[AEX] Conflito Líder = Owner: nenhum sub-owner com Slack ID válido. Aprovação pendente de revisão manual.');
+        ownerIds = ownerSlackId ? [ownerSlackId] : [];
+      }
+    } else {
+      ownerIds = [ownerSlackId, ...subOwnerSlackIds].filter(Boolean) as string[];
+    }
+  } else {
+    ownerIds = [ownerSlackId, ...subOwnerSlackIds].filter(Boolean) as string[];
+  }
   const siIds = await getSISlackIds();
 
   const ownerMessage = `🔐 *Solicitação de Acesso Extraordinário*

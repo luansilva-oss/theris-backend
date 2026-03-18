@@ -825,7 +825,8 @@ async function handleAcessosActionType(b: any, client: any, selected: string): P
     toolOptions = ownedTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.name }));
   } else {
     const catalogTools = await getCatalogToolsForSlack();
-    toolOptions = catalogTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.id }));
+    const aexTools = catalogTools.filter((f) => f.name.toLowerCase() !== 'vpn - ldap');
+    toolOptions = aexTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.id }));
   }
 
   // Subfluxo: não exibir novamente o dropdown "Ação Principal" (seleção já feita na etapa anterior)
@@ -960,8 +961,9 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
     selectedToolName = selectedToolId;
   } else {
     const catalogTools = await getCatalogToolsForSlack();
-    toolOptions = catalogTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.id }));
-    const selectedTool = catalogTools.find((t) => t.id === selectedToolId);
+    const aexTools = catalogTools.filter((f) => f.name.toLowerCase() !== 'vpn - ldap');
+    toolOptions = aexTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.id }));
+    const selectedTool = aexTools.find((t) => t.id === selectedToolId) ?? catalogTools.find((t) => t.id === selectedToolId);
     selectedToolName = selectedTool?.name ?? selectedToolId;
   }
 
@@ -1304,7 +1306,7 @@ async function saveRequest(
       const requester = await prisma.user.findUnique({ where: { id: requesterId }, select: { name: true, email: true } });
       const { sendAexCreationDMs, sendAexRequesterCreatedDM } = await import('./aexOwnerService');
       const period = accessPeriodRaw || (accessPeriodDays != null ? `${accessPeriodDays} dias` : '—');
-      sendAexCreationDMs(client, created.id, toolName, accessLevel || '—', requester?.name || 'Solicitante', reason, { period }).catch(err => console.error('[AEX] Erro ao enviar DMs:', err));
+      sendAexCreationDMs(client, created.id, toolName, accessLevel || '—', requester?.name || 'Solicitante', reason, { period, requesterId }).catch(err => console.error('[AEX] Erro ao enviar DMs:', err));
       if (requester?.email) {
         try {
           const lookup = await client.users.lookupByEmail({ email: requester.email });
@@ -1390,7 +1392,10 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
   try {
     req = await prisma.request.findUnique({
       where: { id: requestId },
-      include: { requester: { select: { id: true, name: true, email: true } }, assignee: { select: { name: true } } }
+      include: {
+        requester: { select: { id: true, name: true, email: true, managerId: true, manager: { select: { email: true } } } },
+        assignee: { select: { name: true } }
+      }
     });
   } catch (e) {
     console.error('[AEX] Erro ao buscar request:', e);
@@ -1411,6 +1416,24 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
   if (!ownerSlackId) {
     console.warn('[AEX] Ignorando: user.id ausente no payload');
     return;
+  }
+
+  // Regra de conflito: Líder que é também Owner não pode aprovar como Owner (já aprovou ou aprovará como Líder)
+  const toolNameForConflict = (req as { toolName?: string; details?: string }).toolName || (() => { try { const d = JSON.parse(req.details || '{}'); return d.tool || d.toolName; } catch { return null; } })();
+  const leaderEmail = (req.requester as { manager?: { email?: string } } | null)?.manager?.email;
+  if (toolNameForConflict && leaderEmail) {
+    try {
+      const { getOwnerAndSubSlackIdsForTool } = await import('./aexOwnerService');
+      const { ownerSlackId: toolOwnerSlackId } = await getOwnerAndSubSlackIdsForTool(toolNameForConflict);
+      const leaderLookup = await client.users.lookupByEmail({ email: leaderEmail });
+      const leaderSlackId = leaderLookup.user?.id ?? null;
+      if (toolOwnerSlackId && leaderSlackId && ownerSlackId === toolOwnerSlackId && ownerSlackId === leaderSlackId) {
+        const shortId = requestId.slice(0, 8);
+        const toolNameForDm = toolNameForConflict || '—';
+        await sendDmToSlackUser(client, ownerSlackId, `Você aprovou o chamado #${shortId} como Líder do solicitante. Por isso, a aprovação como Owner da ferramenta ${toolNameForDm} foi direcionada automaticamente ao sub-owner. Nenhuma ação é necessária da sua parte neste chamado.`);
+        return;
+      }
+    } catch (_) {}
   }
 
   // Regra genérica: solicitante não pode aprovar/reprovar o próprio chamado (qualquer perfil)
