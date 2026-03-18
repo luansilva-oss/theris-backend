@@ -802,7 +802,6 @@ async function handleAcessosActionType(b: any, client: any, selected: string): P
   }
 
   const metadata = { actionType };
-  const actionLabels: Record<string, string> = { acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
 
   let toolOptions: { text: { type: 'plain_text'; text: string }; value: string }[];
   if (actionType === 'indicar_deputy') {
@@ -829,25 +828,8 @@ async function handleAcessosActionType(b: any, client: any, selected: string): P
     toolOptions = catalogTools.map((t) => ({ text: { type: 'plain_text' as const, text: t.name }, value: t.id }));
   }
 
-  const blocks: any[] = [
-    {
-      type: 'input',
-      block_id: 'blk_acao',
-      label: { type: 'plain_text', text: 'Ação Principal' },
-      dispatch_action: true,
-      element: {
-        type: 'static_select',
-        action_id: 'acessos_action_type',
-        placeholder: { type: 'plain_text', text: 'Selecione...' },
-        initial_option: { text: { type: 'plain_text', text: actionLabels[actionType] || actionType }, value: actionType },
-        options: [
-          { text: { type: 'plain_text', text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
-          { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' },
-          { text: { type: 'plain_text', text: '🔐 Acesso a VPN' }, value: 'vpn_access' }
-        ]
-      }
-    }
-  ];
+  // Subfluxo: não exibir novamente o dropdown "Ação Principal" (seleção já feita na etapa anterior)
+  const blocks: any[] = [];
 
   if (actionType === 'indicar_deputy' && toolOptions.length === 0) {
     blocks.push({
@@ -983,26 +965,8 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
     selectedToolName = selectedTool?.name ?? selectedToolId;
   }
 
-  const actionLabels: Record<string, string> = { acesso_extraordinario: 'Acesso Extraordinário', indicar_deputy: 'Indicar Deputy' };
-
+  // Subfluxo: não exibir novamente o dropdown "Ação Principal"
   const blocks: any[] = [
-    {
-      type: 'input',
-      block_id: 'blk_acao',
-      label: { type: 'plain_text', text: 'Ação Principal' },
-      dispatch_action: true,
-      element: {
-        type: 'static_select',
-        action_id: 'acessos_action_type',
-        placeholder: { type: 'plain_text', text: 'Selecione...' },
-        initial_option: { text: { type: 'plain_text', text: actionLabels[actionType] || actionType }, value: actionType },
-        options: [
-          { text: { type: 'plain_text', text: 'Acesso Extraordinário' }, value: 'acesso_extraordinario' },
-          { text: { type: 'plain_text', text: 'Indicar Deputy' }, value: 'indicar_deputy' },
-          { text: { type: 'plain_text', text: '🔐 Acesso a VPN' }, value: 'vpn_access' }
-        ]
-      }
-    },
     {
       type: 'input',
       block_id: 'blk_tool',
@@ -1126,8 +1090,50 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
     );
   } else if (actionType === 'indicar_deputy') {
     blocks.push(
-      { type: 'input', block_id: 'blk_deputy_name', label: { type: 'plain_text', text: 'Nome do Substituto' }, element: { type: 'plain_text_input', action_id: 'inp' } },
-      { type: 'input', block_id: 'blk_deputy_email', label: { type: 'plain_text', text: 'E-mail do Substituto' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'email@empresa.com' } } }
+      {
+        type: 'input',
+        block_id: 'blk_deputy_user',
+        optional: true,
+        label: { type: 'plain_text', text: 'Responsável (opcional: selecione para preencher e-mail automaticamente)' },
+        element: {
+          type: 'users_select',
+          action_id: 'deputy_user_select',
+          placeholder: { type: 'plain_text', text: 'Selecione um usuário @...' }
+        }
+      },
+      { type: 'input', block_id: 'blk_deputy_name', optional: true, label: { type: 'plain_text', text: 'Nome do Substituto' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'Preenchido automaticamente se selecionar usuário acima' }, hint: { type: 'plain_text', text: 'Preenchido automaticamente se um usuário for selecionado acima. Verifique e edite se necessário.' } } },
+      { type: 'input', block_id: 'blk_deputy_email', label: { type: 'plain_text', text: 'E-mail do Substituto (obrigatório)' }, element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'email@empresa.com' } } },
+      {
+        type: 'input',
+        block_id: 'deputy_periodo_numero',
+        label: { type: 'plain_text', text: 'Período (Quantidade)' },
+        element: {
+          type: 'plain_text_input',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Ex: 7, 15, 30, 60 ou 90' }
+        }
+      },
+      {
+        type: 'input',
+        block_id: 'deputy_periodo_unidade',
+        label: { type: 'plain_text', text: 'Unidade' },
+        element: {
+          type: 'static_select',
+          action_id: 'deputy_periodo_unit_select',
+          placeholder: { type: 'plain_text', text: 'Selecione...' },
+          options: [
+            { text: { type: 'plain_text', text: 'Horas' }, value: 'horas' },
+            { text: { type: 'plain_text', text: 'Dias' }, value: 'dias' },
+            { text: { type: 'plain_text', text: 'Meses' }, value: 'meses' }
+          ]
+        }
+      },
+      {
+        type: 'context',
+        elements: [
+          { type: 'mrkdwn', text: 'ℹ️ O período máximo permitido é de 90 dias. Solicitações com período superior serão bloqueadas.' }
+        ]
+      }
     );
   }
 
@@ -2708,7 +2714,6 @@ slackApp.view('vpn_access_request', async ({ ack, body, view, client }) => {
 // SUBMISSÃO DO MODAL /acessos (acessos_main_modal)
 // ============================================================
 slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
-  await ack();
   const v = view.state.values;
   let metadata = { actionType: '' };
   try {
@@ -2717,9 +2722,53 @@ slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
 
   const actionType = metadata.actionType || '';
   if (!actionType) {
+    await ack();
     await (client as any).chat.postMessage({ channel: body.user.id, text: '⚠️ Selecione primeiro uma ação (Acesso Extraordinário ou Indicar Deputy) e preencha os campos.' });
     return;
   }
+
+  // Validação Indicar Deputy: período <= 90 dias e e-mail obrigatório (bloqueia envio com erros no modal)
+  if (actionType === 'indicar_deputy') {
+    const deputyUserId = (v.blk_deputy_user?.deputy_user_select as any)?.selected_user ?? (v.blk_deputy_user?.deputy_user_select as any)?.value;
+    const deputyEmailInput = (v.blk_deputy_email?.inp?.value ?? '').trim();
+    const periodoNumStr = (v.deputy_periodo_numero?.inp?.value ?? '').trim();
+    const periodoUnit = v.deputy_periodo_unidade?.deputy_periodo_unit_select?.selected_option?.value ?? 'dias';
+    const periodoNum = parseInt(periodoNumStr, 10) || 0;
+    let periodDays: number | null = null;
+    if (periodoNum > 0 && periodoUnit) {
+      if (periodoUnit === 'horas') periodDays = Math.round((periodoNum / 24) * 100) / 100;
+      else if (periodoUnit === 'dias') periodDays = periodoNum;
+      else if (periodoUnit === 'meses') {
+        const hoje = new Date();
+        const futuro = new Date(hoje.getTime());
+        futuro.setMonth(futuro.getMonth() + periodoNum);
+        periodDays = Math.round((futuro.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+      }
+    }
+    const validationErrors: Record<string, string> = {};
+    if (periodDays !== null && periodDays > 90) {
+      validationErrors.deputy_periodo_numero = 'O período máximo permitido é de 90 dias.';
+    }
+    let resolvedEmail = deputyEmailInput;
+    if (deputyUserId) {
+      try {
+        const info = await (client as any).users.info({ user: deputyUserId });
+        resolvedEmail = ((info.user?.profile?.email as string) ?? resolvedEmail).trim();
+      } catch (_) {}
+    }
+    if (deputyUserId && resolvedEmail && !resolvedEmail.toLowerCase().endsWith('@grupo-3c.com')) {
+      validationErrors.blk_deputy_user = 'Selecione um colaborador do Grupo 3C (@grupo-3c.com).';
+    }
+    if (!resolvedEmail) {
+      validationErrors.blk_deputy_email = 'E-mail do substituto é obrigatório.';
+    }
+    if (Object.keys(validationErrors).length > 0) {
+      await ack({ response_action: 'errors', errors: validationErrors });
+      return;
+    }
+  }
+
+  await ack();
 
   const toolBlock = v.blk_tool;
   const levelBlock = v.blk_level;
@@ -2730,8 +2779,8 @@ slackApp.view('acessos_main_modal', async ({ ack, body, view, client }) => {
   const levelValue = levelBlock?.acessos_level_select?.selected_option?.value ?? '';
   const levelLabel = levelBlock?.acessos_level_select?.selected_option?.text?.text ?? levelValue;
   const reason = reasonBlock?.inp?.value ?? '';
-  const deputyName = v.blk_deputy_name?.inp?.value ?? '';
-  const deputyEmail = v.blk_deputy_email?.inp?.value ?? '';
+  let deputyName = (v.blk_deputy_name?.inp?.value ?? '').trim();
+  let deputyEmail = (v.blk_deputy_email?.inp?.value ?? '').trim();
 
   if (actionType === 'acesso_extraordinario') {
     const periodoNumStr = v.periodo_numero?.inp?.value?.trim() ?? '';
@@ -2789,15 +2838,42 @@ Caso precise de acesso permanente, entre em contato com o time de Segurança da 
       await (client as any).chat.postMessage({ channel: body.user.id, text: '⚠️ Apenas Owners de ferramentas podem indicar um Deputy. Você não é proprietário de nenhuma ferramenta no momento.' });
       return;
     }
-    const details = {
+    const deputyUserId = (v.blk_deputy_user?.deputy_user_select as any)?.selected_user ?? (v.blk_deputy_user?.deputy_user_select as any)?.value;
+    if (deputyUserId) {
+      try {
+        const info = await (client as any).users.info({ user: deputyUserId });
+        const profile = info.user?.profile as { email?: string; real_name?: string } | undefined;
+        if (profile?.email) deputyEmail = profile.email.trim();
+        if (profile?.real_name && !deputyName) deputyName = profile.real_name.trim();
+      } catch (_) {}
+    }
+    const periodoNumStr = (v.deputy_periodo_numero?.inp?.value ?? '').trim();
+    const periodoUnit = v.deputy_periodo_unidade?.deputy_periodo_unit_select?.selected_option?.value ?? 'dias';
+    const periodoNum = parseInt(periodoNumStr, 10) || 0;
+    let deputyPeriodDays: number | null = null;
+    let deputyPeriodRaw: string | null = null;
+    if (periodoNum > 0 && periodoUnit) {
+      if (periodoUnit === 'horas') deputyPeriodDays = Math.round((periodoNum / 24) * 100) / 100;
+      else if (periodoUnit === 'dias') deputyPeriodDays = periodoNum;
+      else if (periodoUnit === 'meses') {
+        const hoje = new Date();
+        const futuro = new Date(hoje.getTime());
+        futuro.setMonth(futuro.getMonth() + periodoNum);
+        deputyPeriodDays = Math.round((futuro.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+      }
+      deputyPeriodRaw = `${periodoNum} ${periodoUnit}`;
+    }
+    const details: Record<string, unknown> = {
       info: `Indicar Deputy: ${toolName}`,
       tool: toolName,
-      substituteName: deputyName,
+      substituteName: deputyName || undefined,
       substituteEmail: deputyEmail,
       substitute: deputyName || deputyEmail,
       justification: reason || undefined,
       source: 'acessos'
     };
+    if (deputyPeriodRaw) details.deputyPeriodRaw = deputyPeriodRaw;
+    if (deputyPeriodDays != null) details.deputyPeriodDays = deputyPeriodDays;
     await saveRequest(body, client, 'DEPUTY_DESIGNATION', details, reason, `✅ Indicação de substituto (Deputy) para *${toolName}* enviada para aprovação do time de S.I.`);
   }
 });
