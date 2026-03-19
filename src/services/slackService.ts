@@ -2529,7 +2529,9 @@ slackApp.view('submit_deputy', async ({ ack, body, view, client }) => {
 
 slackApp.view('submit_infra', async ({ ack, body, view, client }) => {
   await ack();
-  const v = view.state.values;
+  const userId = body.user?.id;
+  console.log('[Chamado] submit_infra: view_submission recebido', { userId, callback_id: view?.callback_id });
+  const v = view.state?.values ?? {};
   const typeOpt = v.blk_infra_type?.inp?.selected_option;
   const urgencyOpt = v.blk_infra_urgency?.inp?.selected_option;
   const type = typeOpt?.value ?? '';
@@ -2547,7 +2549,18 @@ slackApp.view('submit_infra', async ({ ack, body, view, client }) => {
     urgencyLabel
   };
 
-  await saveRequest(body, client, 'INFRA_SUPPORT', details, `Urgência: ${urgencyLabel}\n${desc}`, `✅ Sua solicitação de infraestrutura foi enviada com sucesso ao time de suporte.`);
+  try {
+    await saveRequest(body, client, 'INFRA_SUPPORT', details, `Urgência: ${urgencyLabel}\n${desc}`, `✅ Sua solicitação de infraestrutura foi enviada com sucesso ao time de suporte.`);
+  } catch (err) {
+    console.error('[Chamado] submit_infra: erro ao salvar solicitação', err);
+    try {
+      if (userId) {
+        await sendDmToSlackUser(client, userId, '❌ Não foi possível criar o chamado no painel. O time de SI foi notificado. Tente novamente ou abra o chamado pelo painel Theris.');
+      }
+    } catch (dmErr) {
+      console.error('[Chamado] submit_infra: falha ao enviar DM de erro', dmErr);
+    }
+  }
 });
 
 // ============================================================
