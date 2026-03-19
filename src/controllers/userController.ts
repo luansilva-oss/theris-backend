@@ -365,11 +365,14 @@ export const updateUser = async (req: Request, res: Response) => {
   try {
     if (!requesterId) return res.status(401).json({ error: "Identificação do solicitante ausente." });
 
-    const requester = await prisma.user.findUnique({ where: { id: requesterId } });
+    const requester = await prisma.user.findUnique({
+      where: { id: requesterId },
+      select: { systemProfile: true }
+    });
     if (!requester) return res.status(403).json({ error: "Solicitante não encontrado." });
 
-    const isSuperAdmin = (requester as any).systemProfile === 'SUPER_ADMIN';
-    const isGestor = ['GESTOR', 'ADMIN'].includes((requester as any).systemProfile);
+    const isSuperAdmin = requester.systemProfile === 'SUPER_ADMIN';
+    const isGestor = ['GESTOR', 'ADMIN'].includes(requester.systemProfile);
 
     if (!isSuperAdmin && !isGestor) {
       return res.status(403).json({ error: "Sem permissão para editar usuários." });

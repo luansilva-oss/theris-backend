@@ -10,15 +10,19 @@ export const getTools = async (req: Request, res: Response) => {
     const tools = await prisma.tool.findMany({
       include: {
         owner: {
-          include: {
-            myDeputy: true
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            myDeputyId: true,
+            myDeputy: { select: { id: true, name: true, email: true } }
           }
         },
-        subOwner: true,
+        subOwner: { select: { id: true, name: true, email: true } },
         toolGroup: true,
         accesses: {
           include: {
-            user: true
+            user: { select: { id: true, name: true, email: true, isActive: true } }
           }
         }
       },
@@ -51,7 +55,9 @@ export const getTools = async (req: Request, res: Response) => {
         type: 'ACCESS_TOOL_EXTRA',
         status: 'APROVADO'
       },
-      include: { requester: true },
+      include: {
+        requester: { select: { id: true, name: true, email: true } }
+      },
       orderBy: { updatedAt: 'desc' }
     });
 

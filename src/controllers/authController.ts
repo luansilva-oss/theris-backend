@@ -96,10 +96,26 @@ export const googleLogin = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Acesso restrito ao domínio corporativo.' });
     }
 
+    const googleUserSelect = {
+      id: true,
+      name: true,
+      email: true,
+      jobTitle: true,
+      departmentId: true,
+      unitId: true,
+      roleId: true,
+      managerId: true,
+      systemProfile: true,
+      isActive: true,
+      lastPasswordChangeAt: true,
+      myDeputyId: true,
+      manager: { select: { id: true, name: true } as const }
+    } as const;
+
     // 3. Buscar ou Criar Usuário (com manager para exibir Gestor Direto no Dashboard)
     let user = await prisma.user.findUnique({
       where: { email },
-      include: { manager: { select: { id: true, name: true } } }
+      select: googleUserSelect
     });
 
     if (!user) {
@@ -112,10 +128,10 @@ export const googleLogin = async (req: Request, res: Response) => {
           departmentId: deptGeral?.id ?? null
         }
       });
-      user = await prisma.user.findUnique({
+      user = (await prisma.user.findUnique({
         where: { id: created.id },
-        include: { manager: { select: { id: true, name: true } } }
-      })!;
+        select: googleUserSelect
+      }))!;
     }
 
     // 4. Definir Perfil de Sistema Persistente
@@ -169,7 +185,10 @@ export const sendMfa = async (req: Request, res: Response) => {
   const { userId } = req.body;
 
   try {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true }
+    });
     if (!user) {
       await logLoginAttempt({ req, email: null, success: false, failReason: 'USER_NOT_FOUND', userId: undefined });
       return res.status(404).json({ error: 'Usuário não encontrado' });
@@ -209,7 +228,10 @@ export const verifyMfa = async (req: Request, res: Response) => {
   const { userId, code } = req.body;
 
   try {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, mfaCode: true, mfaExpiresAt: true }
+    });
 
     if (!user || user.mfaCode !== code) {
       await logLoginAttempt({ req, email: user?.email ?? null, success: false, failReason: 'MFA_INVALID', userId: user?.id ?? undefined });

@@ -41,7 +41,7 @@ export async function sendSuspiciousIpAlertToSI(params: {
 
   try {
     const siUsers = await prisma.user.findMany({
-      where: { systemProfile: 'SUPER_ADMIN' },
+      where: { systemProfile: 'SUPER_ADMIN', isActive: true },
       select: { email: true },
     });
     const emails = [...new Set(siUsers.map((u) => u.email).filter(Boolean))] as string[];

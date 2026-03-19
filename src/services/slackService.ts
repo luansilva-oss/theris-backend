@@ -1196,15 +1196,33 @@ async function saveRequest(
       const email = info.user?.profile?.email;
       requesterEmail = email || null;
       if (email) {
-        const userDb = await prisma.user.findUnique({ where: { email } });
+        const userDb = await prisma.user.findUnique({ where: { email }, select: { id: true } });
         if (userDb) requesterId = userDb.id;
       }
     } catch (err) { console.log('Erro ao buscar user Slack:', err); }
 
-    // Fallback: Se não achar, pega o primeiro admin ou user do banco (para não travar teste)
+    // Fallback: evita findFirst sem WHERE (full scan). Preferir env; senão um usuário ativo por id estável.
     if (!requesterId) {
-      const fallback = await prisma.user.findFirst();
-      if (fallback) requesterId = fallback.id;
+      const envFallback = process.env.SLACK_SAVE_REQUEST_FALLBACK_USER_ID?.trim();
+      if (envFallback) {
+        const byEnv = await prisma.user.findUnique({ where: { id: envFallback }, select: { id: true } });
+        if (byEnv) requesterId = byEnv.id;
+      }
+      if (!requesterId) {
+        const active = await prisma.user.findFirst({
+          where: { isActive: true },
+          orderBy: { id: 'asc' },
+          select: { id: true }
+        });
+        if (active) requesterId = active.id;
+      }
+      if (!requesterId) {
+        const anyUser = await prisma.user.findFirst({
+          orderBy: { id: 'asc' },
+          select: { id: true }
+        });
+        if (anyUser) requesterId = anyUser.id;
+      }
     }
 
     if (!requesterId) throw new Error("Usuário não encontrado no sistema Theris.");
@@ -1223,7 +1241,7 @@ async function saveRequest(
     if (PEOPLE_REQUEST_TYPES_SLACK.includes(dbType)) {
       const requester = await prisma.user.findUnique({
         where: { id: requesterId },
-        include: { manager: true }
+        select: { name: true, managerId: true }
       });
       if (isRhBypassRequester(requester?.name)) {
         status = 'PENDENTE_SI';
@@ -1868,6 +1886,7 @@ slackApp.action('offboarding_revoke_confirm', async ({ ack, body, client }) => {
     }
     let clickerUserId: string | null = null;
     let clickerName = '';
+    let clickerProfile: string | null = null;
     try {
       const info = await client.users.info({ user: clickerSlackId });
       const email = info.user?.profile?.email;
@@ -1879,11 +1898,11 @@ slackApp.action('offboarding_revoke_confirm', async ({ ack, body, client }) => {
         if (user) {
           clickerUserId = user.id;
           clickerName = user.name || '';
+          clickerProfile = user.systemProfile;
         }
       }
     } catch (_) {}
     const isOwner = clickerUserId && (tool.ownerId === clickerUserId || tool.subOwnerId === clickerUserId);
-    const clickerProfile = clickerUserId ? (await prisma.user.findUnique({ where: { id: clickerUserId }, select: { systemProfile: true } }))?.systemProfile : null;
     const isAdmin = clickerProfile && ['ADMIN', 'SUPER_ADMIN'].includes(clickerProfile);
     if (!isOwner && !isAdmin) {
       try {
@@ -2226,6 +2245,7 @@ slackApp.action('leaver_access_done', async ({ ack, body, client }) => {
       if (!OFFBOARDING_REQUEST_TYPES.includes(request.type)) return;
       let clickerUserId: string | null = null;
       let clickerName = '';
+      let clickerProfile: string | null = null;
       try {
         const info = await client.users.info({ user: clickerSlackId });
         const email = info.user?.profile?.email;
@@ -2234,11 +2254,11 @@ slackApp.action('leaver_access_done', async ({ ack, body, client }) => {
           if (user) {
             clickerUserId = user.id;
             clickerName = user.name || '';
+            clickerProfile = user.systemProfile;
           }
         }
       } catch (_) {}
       const isOwner = clickerUserId && (tool.ownerId === clickerUserId || tool.subOwnerId === clickerUserId);
-      const clickerProfile = clickerUserId ? (await prisma.user.findUnique({ where: { id: clickerUserId }, select: { systemProfile: true } }))?.systemProfile : null;
       const isAdmin = clickerProfile && ['ADMIN', 'SUPER_ADMIN'].includes(clickerProfile);
       if (!isOwner && !isAdmin) {
         try {
@@ -2592,7 +2612,11 @@ slackApp.view('vpn_access_request', async ({ ack, body, view, client }) => {
     if (requesterEmail) {
       const userDb = await prisma.user.findUnique({
         where: { email: requesterEmail },
-        include: { manager: { select: { id: true, name: true, email: true } } }
+        select: {
+          id: true,
+          managerId: true,
+          manager: { select: { id: true, name: true, email: true } }
+        }
       });
       if (userDb) {
         requesterId = userDb.id;

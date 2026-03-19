@@ -69,7 +69,11 @@ export const handleConveniaWebhook = async (req: Request, res: Response) => {
 
             if (employeeData.managerName) {
                 const manager = await prisma.user.findFirst({
-                    where: { name: { contains: employeeData.managerName, mode: 'insensitive' } }
+                    where: {
+                        isActive: true,
+                        name: { contains: employeeData.managerName, mode: 'insensitive' }
+                    },
+                    select: { id: true }
                 });
                 if (manager) {
                     await prisma.user.update({ where: { id: user.id }, data: { managerId: manager.id } });

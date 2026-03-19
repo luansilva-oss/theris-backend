@@ -53,7 +53,7 @@ function normalizeToolName(name: string): string {
 /** Busca usuário por nome (match exato) e retorna email */
 async function getUserEmailByName(name: string): Promise<string | null> {
   const u = await prisma.user.findFirst({
-    where: { name: { equals: name, mode: 'insensitive' }, isActive: true },
+    where: { isActive: true, name: { equals: name, mode: 'insensitive' } },
     select: { email: true }
   });
   return u?.email ?? null;

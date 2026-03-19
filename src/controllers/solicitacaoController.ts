@@ -77,7 +77,7 @@ async function runOffboardingAutomation(
     const name = (d.collaboratorName || d.substitute || '').trim();
     if (name) {
       const u = await prisma.user.findFirst({
-        where: { name: { equals: name, mode: 'insensitive' } },
+        where: { isActive: true, name: { equals: name, mode: 'insensitive' } },
         select: { id: true, name: true, roleId: true, departmentId: true, unitId: true }
       });
       if (u) targetUser = u;
@@ -218,7 +218,7 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
     : null;
   if (!user && collaboratorName) {
     user = await prisma.user.findFirst({
-      where: { name: { equals: collaboratorName, mode: 'insensitive' } }
+      where: { isActive: true, name: { equals: collaboratorName, mode: 'insensitive' } }
     });
   }
 
@@ -526,12 +526,12 @@ async function runChangeRoleAutomation(
   }
   if (!targetUser && collaboratorName) {
     let u = await prisma.user.findFirst({
-      where: { name: { equals: collaboratorName, mode: 'insensitive' } },
+      where: { isActive: true, name: { equals: collaboratorName, mode: 'insensitive' } },
       select: { id: true, name: true }
     });
     if (!u) {
       u = await prisma.user.findFirst({
-        where: { name: { contains: collaboratorName, mode: 'insensitive' } },
+        where: { isActive: true, name: { contains: collaboratorName, mode: 'insensitive' } },
         select: { id: true, name: true }
       });
     }
@@ -1688,7 +1688,8 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           const substituteName = currentDetails.substitute;
           // Tenta achar o usuário substituto pelo nome no banco
           const substituteUser = await prisma.user.findFirst({
-            where: { name: { contains: substituteName, mode: 'insensitive' } }
+            where: { isActive: true, name: { contains: substituteName, mode: 'insensitive' } },
+            select: { id: true, name: true }
           });
 
           if (substituteUser) {
