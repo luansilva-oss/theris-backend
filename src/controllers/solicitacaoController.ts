@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
 import { sendSlackNotification } from '../services/slackService';
+import { syncUserToJumpCloud } from '../services/jumpcloudSyncService';
 
 const prisma = new PrismaClient();
 
@@ -145,7 +146,18 @@ async function runOffboardingAutomation(
  * respeita a hierarquia Unidade → Departamento → Cargo: busca/cria cada nível e vincula o colaborador.
  * Dados extraídos de request.details: unit/Unidade, department/Depto/dept, role/Cargo, collaboratorName/Colaborador, collaboratorEmail/email.
  */
-type OnboardingResult = { requestId: string; roleId: string; userId: string; collaboratorName: string; jobTitle: string; departmentName: string; unitName: string; startDate: string };
+type OnboardingResult = {
+  requestId: string;
+  roleId: string;
+  userId: string;
+  collaboratorName: string;
+  jobTitle: string;
+  departmentName: string;
+  unitName: string;
+  startDate: string;
+  /** E-mail do colaborador após create/update (sync JumpCloud). */
+  userEmail: string;
+};
 async function runOnboardingAutomation(requestId: string, request: { type: string; details: string | null }): Promise<OnboardingResult | void> {
   if (!ONBOARDING_REQUEST_TYPES.includes(request.type)) return;
   let d: Record<string, unknown> = {};
@@ -238,7 +250,17 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
       }
     });
     console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${user.name} vinculado com sucesso (Chamado ${requestId}).`);
-    return { requestId, roleId: role.id, userId: user.id, collaboratorName: user.name, jobTitle: role.name, departmentName: departmentNameRes, unitName: unitNameRes, startDate };
+    return {
+      requestId,
+      roleId: role.id,
+      userId: user.id,
+      collaboratorName: user.name,
+      jobTitle: role.name,
+      departmentName: departmentNameRes,
+      unitName: unitNameRes,
+      startDate,
+      userEmail: user.email
+    };
   }
 
   if (!collaboratorEmail) {
@@ -258,7 +280,17 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
     }
   });
   console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${collaboratorName || collaboratorEmail} criado e vinculado com sucesso (Chamado ${requestId}).`);
-  return { requestId, roleId: role.id, userId: created.id, collaboratorName: collaboratorName || collaboratorEmail, jobTitle: role.name, departmentName: departmentNameRes, unitName: unitNameRes, startDate };
+  return {
+    requestId,
+    roleId: role.id,
+    userId: created.id,
+    collaboratorName: collaboratorName || collaboratorEmail,
+    jobTitle: role.name,
+    departmentName: departmentNameRes,
+    unitName: unitNameRes,
+    startDate,
+    userEmail: created.email
+  };
 }
 
 /** Tipos de solicitação que ao serem aprovados concedem acesso extraordinário (vinculam usuário à ferramenta na tabela Access). */
@@ -490,7 +522,18 @@ async function runChangeRoleAutomation(
   requestId: string,
   request: { type: string; requesterId: string | null; details: string | null; actionDate?: string | Date | null; requester?: { name?: string; email?: string } | null },
   approverId?: string | null
-): Promise<{ success: boolean; collaboratorName?: string; notifPayload?: { colaborador: { nome: string; cargoAnterior: string; deptAnterior: string; cargoNovo: string; deptNovo: string }; kbsAnterior: KBSItem[]; kbsNovo: KBSItem[]; dataAcao: string } }> {
+): Promise<{
+  success: boolean;
+  collaboratorName?: string;
+  /** E-mail do colaborador após update (sync JumpCloud). */
+  userEmail?: string;
+  notifPayload?: {
+    colaborador: { nome: string; cargoAnterior: string; deptAnterior: string; cargoNovo: string; deptNovo: string };
+    kbsAnterior: KBSItem[];
+    kbsNovo: KBSItem[];
+    dataAcao: string;
+  };
+}> {
   if (request.type !== 'CHANGE_ROLE') return { success: false };
   let d: Record<string, unknown> = {};
   try {
@@ -511,28 +554,28 @@ async function runChangeRoleAutomation(
   }
   console.log('[CHANGE_ROLE] Executando mudança de cargo para requestId:', requestId, 'future.role=', futureRole, 'future.dept=', futureDept, 'newRoleId=', newRoleId, 'newDepartmentId=', newDepartmentId);
 
-  let targetUser: { id: string; name: string } | null = null;
+  let targetUser: { id: string; name: string; email: string } | null = null;
   const collaboratorId = details.collaboratorId || details.targetUserId;
   const collaboratorEmail = (details.collaboratorEmail || details.email || '').toString().trim();
   const collaboratorName = (details.collaboratorName || details.info || '').toString().replace(/^[^:]+:\s*/, '').trim();
 
   if (collaboratorId) {
-    const u = await prisma.user.findUnique({ where: { id: collaboratorId }, select: { id: true, name: true } });
+    const u = await prisma.user.findUnique({ where: { id: collaboratorId }, select: { id: true, name: true, email: true } });
     if (u) targetUser = u;
   }
   if (!targetUser && collaboratorEmail) {
-    const u = await prisma.user.findUnique({ where: { email: collaboratorEmail }, select: { id: true, name: true } });
+    const u = await prisma.user.findUnique({ where: { email: collaboratorEmail }, select: { id: true, name: true, email: true } });
     if (u) targetUser = u;
   }
   if (!targetUser && collaboratorName) {
     let u = await prisma.user.findFirst({
       where: { isActive: true, name: { equals: collaboratorName, mode: 'insensitive' } },
-      select: { id: true, name: true }
+      select: { id: true, name: true, email: true }
     });
     if (!u) {
       u = await prisma.user.findFirst({
         where: { isActive: true, name: { contains: collaboratorName, mode: 'insensitive' } },
-        select: { id: true, name: true }
+        select: { id: true, name: true, email: true }
       });
     }
     if (u) targetUser = u;
@@ -679,6 +722,7 @@ async function runChangeRoleAutomation(
   return {
     success: true,
     collaboratorName: targetUser.name,
+    userEmail: targetUser.email,
     notifPayload: {
       colaborador: { nome: targetUser.name, cargoAnterior, deptAnterior, cargoNovo, deptNovo },
       kbsAnterior,
@@ -1535,6 +1579,9 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         try {
           const onboardingResult = await runOnboardingAutomation(id, request);
           if (onboardingResult) {
+            syncUserToJumpCloud(onboardingResult.userEmail).catch((err) =>
+              console.error('[JumpCloud Sync] Erro:', err)
+            );
             try {
               await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);
             } catch (syncErr) {
@@ -1611,6 +1658,11 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         try {
           const result = await runChangeRoleAutomation(id, request, approverId);
           if (result.success) {
+            if (result.userEmail) {
+              syncUserToJumpCloud(result.userEmail).catch((err) =>
+                console.error('[JumpCloud Sync] Erro:', err)
+              );
+            }
             console.log('[CHANGE_ROLE] Mudança aplicada com sucesso. userId atualizado; notificações em seguida.');
           } else {
             console.warn('[CHANGE_ROLE] runChangeRoleAutomation retornou success: false. Verifique details.future e colaborador.');
@@ -1989,6 +2041,11 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         try {
           const result = await runChangeRoleAutomation(id, existing, existing.approverId);
           if (result.success) {
+            if (result.userEmail) {
+              syncUserToJumpCloud(result.userEmail).catch((err) =>
+                console.error('[JumpCloud Sync] Erro:', err)
+              );
+            }
             console.log('[CHANGE_ROLE] (metadata) Mudança aplicada com sucesso.');
           } else {
             console.warn('[CHANGE_ROLE] (metadata) runChangeRoleAutomation retornou success: false.');
@@ -2050,6 +2107,9 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         try {
           const onboardingResult = await runOnboardingAutomation(id, existing);
           if (onboardingResult) {
+            syncUserToJumpCloud(onboardingResult.userEmail).catch((err) =>
+              console.error('[JumpCloud Sync] Erro:', err)
+            );
             try {
               await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);
             } catch (syncErr) {
