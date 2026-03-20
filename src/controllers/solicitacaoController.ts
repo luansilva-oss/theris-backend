@@ -1579,7 +1579,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         try {
           const onboardingResult = await runOnboardingAutomation(id, request);
           if (onboardingResult) {
-            syncUserToJumpCloud(onboardingResult.userEmail).catch((err) =>
+            syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
               console.error('[JumpCloud Sync] Erro:', err)
             );
             try {
@@ -2107,7 +2107,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         try {
           const onboardingResult = await runOnboardingAutomation(id, existing);
           if (onboardingResult) {
-            syncUserToJumpCloud(onboardingResult.userEmail).catch((err) =>
+            syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
               console.error('[JumpCloud Sync] Erro:', err)
             );
             try {

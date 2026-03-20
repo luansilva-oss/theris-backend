@@ -4,16 +4,18 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { getSystemUserIdByEmail } from './jumpcloudService';
+import { addUserToKBSGroups } from './jumpcloudGroupSyncService';
 
 const prisma = new PrismaClient();
 
 const SYSTEM_USERS_URL = 'https://console.jumpcloud.com/api/systemusers';
 
 /**
- * Atualiza jobTitle, department e company no JumpCloud para o usuário identificado pelo e-mail corporativo.
+ * Atualiza jobTitle, department, company e opcionalmente manager (JumpCloud _id do gestor) no Employment Information.
  * Se o usuário não existir no Theris ou no JumpCloud, retorna silenciosamente (apenas log informativo).
+ * @param roleId — Se informado (ex.: onboarding), após o PUT de Employment chama addUserToKBSGroups.
  */
-export async function syncUserToJumpCloud(userEmail: string): Promise<void> {
+export async function syncUserToJumpCloud(userEmail: string, roleId?: string | null): Promise<void> {
   const email = (userEmail || '').trim().toLowerCase();
   if (!email) {
     console.warn('[JumpCloud Sync] E-mail vazio; sync ignorado.');
@@ -47,10 +49,29 @@ export async function syncUserToJumpCloud(userEmail: string): Promise<void> {
       return;
     }
 
+    let managerJcId: string | undefined;
+    if (user.manager?.email) {
+      try {
+        const resolved = await getSystemUserIdByEmail(user.manager.email);
+        if (resolved) {
+          managerJcId = resolved;
+        } else {
+          console.log(
+            `[JumpCloud Sync] Gestor ${user.manager.email} não encontrado no JumpCloud; campo manager omitido no PUT para ${user.email}.`
+          );
+        }
+      } catch {
+        console.log(
+          `[JumpCloud Sync] Não foi possível resolver gestor no JumpCloud (${user.manager.email}); manager omitido no PUT para ${user.email}.`
+        );
+      }
+    }
+
     const body = {
       jobTitle: user.jobTitle ?? '',
       department: user.departmentRef?.name ?? '',
-      company: user.unitRef?.name ?? ''
+      company: user.unitRef?.name ?? '',
+      ...(managerJcId ? { manager: managerJcId } : {})
     };
 
     const res = await fetch(`${SYSTEM_USERS_URL}/${jumpcloudId}`, {
@@ -74,6 +95,17 @@ export async function syncUserToJumpCloud(userEmail: string): Promise<void> {
     }
 
     console.log(`[JumpCloud Sync] Employment Information atualizada no JumpCloud para ${user.email} (_id=${jumpcloudId}).`);
+
+    if (roleId) {
+      try {
+        const kbs = await addUserToKBSGroups(user.email, roleId);
+        console.log(
+          `[JumpCloud Sync] KBS grupos: adicionados=${kbs.added.length} [${kbs.added.join(', ')}] falhas=${kbs.failed.length} [${kbs.failed.join(', ')}]`
+        );
+      } catch (kbsErr) {
+        console.error('[JumpCloud Sync] Erro ao sincronizar grupos KBS:', kbsErr);
+      }
+    }
   } catch (err) {
     console.error('[JumpCloud Sync] Erro:', err);
   }

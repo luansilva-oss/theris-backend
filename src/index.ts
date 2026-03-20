@@ -32,6 +32,7 @@ import { startCleanupSessionsCron } from './crons/cleanupSessions';
 import { startReviewAccessCron } from './crons/reviewAccessCron';
 import { startJumpCloudPasswordCron } from './crons/jumpcloudPasswordCron';
 import { startJumpCloudPasswordExpiryCron } from './crons/jumpcloudPasswordExpiryCron';
+import { startJumpCloudDivergenceCron } from './jobs/jumpcloudDivergenceCheck';
 
 // Slack
 import { slackReceiver, getToolsAndLevelsMap } from './services/slackService';
@@ -85,6 +86,8 @@ startReviewAccessCron();
 startJumpCloudPasswordCron();
 // Cron: JumpCloud senha expirando em 7 dias, 1x/dia às 08:00 (Brasília)
 startJumpCloudPasswordExpiryCron();
+// Cron: divergências Employment Theris × JumpCloud, segundas às 08:00 (Brasília)
+startJumpCloudDivergenceCron();
 
 // --- CORS ---
 app.use(cors({
