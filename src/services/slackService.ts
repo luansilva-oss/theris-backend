@@ -3176,6 +3176,28 @@ export async function sendInfraTicketAssigneeDm(params: {
   ]);
 }
 
+/** Aviso no canal SI quando inbox de chamado Infra é definida (fire-and-forget pelo caller). */
+export async function notifyInfraInboxConfigured(params: {
+  requestId: string;
+  departmentName: string;
+  roleName: string;
+  adminName: string;
+}): Promise<void> {
+  const app = getSlackApp();
+  const channelId = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+  if (!app?.client || !channelId) {
+    console.log('[INFRA] Inbox definida (sem post Slack):', params);
+    return;
+  }
+  const shortId = params.requestId.slice(0, 8);
+  const text =
+    `📥 *Inbox de chamado Infra definida*\n` +
+    `*Chamado:* #${shortId}\n` +
+    `*Inbox:* ${params.departmentName} · ${params.roleName}\n` +
+    `*Por:* ${params.adminName}`;
+  await app.client.chat.postMessage({ channel: channelId, text });
+}
+
 /**
  * Notifica SLACK_ID_LUAN quando a automação CHANGE_ROLE não encontra cargo ou departamento no banco.
  * Chamar em try/catch para não bloquear o fluxo.

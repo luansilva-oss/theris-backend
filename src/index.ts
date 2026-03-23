@@ -16,7 +16,8 @@ import {
   createComment,
   createAttachment,
   exportRequestsCsv,
-  patchRequestAssignee
+  patchRequestAssignee,
+  patchRequestInbox
 } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
@@ -172,6 +173,8 @@ app.delete('/api/admin/sessions', revokeAllSessions);
 // ============================================================
 
 // 1. Estrutura (rotas de units antes de departments para não capturar :id em "units")
+app.get('/api/departments', structureController.listDepartments);
+app.get('/api/roles', structureController.listRolesByDepartment);
 app.get('/api/structure', structureController.getStructure);
 app.post('/api/structure/units', structureController.createUnit);
 app.put('/api/structure/units/:id', structureController.updateUnit);
@@ -242,6 +245,7 @@ app.get('/api/solicitacoes/:id', getSolicitacaoById);
 app.post('/api/solicitacoes', createSolicitacao);
 app.patch('/api/solicitacoes/:id/metadata', updateSolicitacaoMetadata);
 app.patch('/api/solicitacoes/:id/assignee', patchRequestAssignee);
+app.patch('/api/solicitacoes/:id/inbox', patchRequestInbox);
 app.post('/api/solicitacoes/:id/comments', createComment);
 app.post('/api/solicitacoes/:id/attachments', createAttachment);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);

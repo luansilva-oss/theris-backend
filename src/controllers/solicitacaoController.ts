@@ -4,7 +4,8 @@ import { PrismaClient } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
 import { sendSlackNotification } from '../services/slackService';
 import { syncUserToJumpCloud } from '../services/jumpcloudSyncService';
-import { isInfraTicketType } from '../lib/infraTicket';
+import { hasProfile } from '../middleware/auth';
+import { isInfraTicketType, isInboxMember } from '../lib/infraTicket';
 
 const prisma = new PrismaClient();
 
@@ -1129,6 +1130,19 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
+    const userIdHeader = (req.headers['x-user-id'] as string)?.trim();
+    if (isInfraTicketType(request.type)) {
+      const actorId = (approverId && String(approverId).trim()) || userIdHeader;
+      if (!actorId) return res.status(401).json({ error: 'Usuário não identificado.' });
+      const actor = await prisma.user.findUnique({
+        where: { id: actorId },
+        select: { departmentId: true, roleId: true, systemProfile: true },
+      });
+      if (!actor || !isInboxMember(actor, request)) {
+        return res.status(403).json({ error: 'Apenas a equipe da inbox responsável pode alterar este chamado.' });
+      }
+    }
+
     const safeStatus = String(status || '').toUpperCase();
 
     // Ação "Pendente": apenas atualiza status para PENDENTE_GESTOR (não aprova nem reprova)
@@ -1793,6 +1807,8 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
         requester: { select: { id: true, name: true, email: true, departmentRef: { select: { id: true, name: true } } } },
         approver: { select: { id: true, name: true, email: true } },
         assignee: { select: { id: true, name: true, email: true, jobTitle: true } },
+        inboxDepartment: { select: { id: true, name: true } },
+        inboxRole: { select: { id: true, name: true, departmentId: true } },
         comments: { orderBy: { createdAt: 'asc' }, include: { author: { select: { id: true, name: true, email: true } } } },
         attachments: { orderBy: { createdAt: 'asc' }, include: { uploadedBy: { select: { id: true, name: true } } } }
       }
@@ -1874,16 +1890,39 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     const existing = await prisma.request.findUnique({ where: { id }, include: { requester: true, assignee: true } });
     if (!existing) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
-    // Cancelamento: apenas SUPER_ADMIN; chamado não pode já estar encerrado
-    if (status !== undefined && String(status) === 'CANCELADO') {
+    const changingStatus = status !== undefined;
+    const changingSchedule = scheduledAt !== undefined;
+    const cancelRequested = changingStatus && String(status) === 'CANCELADO';
+
+    // Cancelamento: SUPER_ADMIN (qualquer tipo) ou solicitante em chamado Infra
+    if (cancelRequested) {
       if (!userId) return res.status(401).json({ error: 'Usuário não identificado.' });
       const caller = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true, name: true } });
-      if (caller?.systemProfile !== 'SUPER_ADMIN') {
-        return res.status(403).json({ error: 'Apenas Super Admins podem cancelar chamados.' });
+      const isRequester = existing.requesterId === userId;
+      const canCancel =
+        caller?.systemProfile === 'SUPER_ADMIN' ||
+        (isInfraTicketType(existing.type) && isRequester);
+      if (!canCancel) {
+        return res.status(403).json({ error: 'Você não tem permissão para cancelar este chamado.' });
       }
       const currentStatus = (existing.status || '').toUpperCase();
       if (['CANCELADO', 'RESOLVIDO', 'CONCLUIDO', 'RESOLVED', 'APROVADO', 'REPROVADO', 'FECHADO'].includes(currentStatus)) {
         return res.status(400).json({ error: 'Chamado já encerrado e não pode ser cancelado.' });
+      }
+    }
+
+    // Infra: alteração de status (exceto cancelamento) ou agendamento — só inbox (ou fallback admin)
+    if (
+      isInfraTicketType(existing.type) &&
+      ((changingStatus && !cancelRequested) || (changingSchedule && !cancelRequested))
+    ) {
+      if (!userId) return res.status(401).json({ error: 'Usuário não identificado.' });
+      const actor = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { departmentId: true, roleId: true, systemProfile: true },
+      });
+      if (!actor || !isInboxMember(actor, existing)) {
+        return res.status(403).json({ error: 'Apenas a equipe da inbox responsável pode alterar este chamado.' });
       }
     }
 
@@ -1969,7 +2008,9 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       data,
       include: {
         requester: { select: { id: true, name: true, email: true } },
-        assignee: { select: { id: true, name: true, email: true, jobTitle: true } }
+        assignee: { select: { id: true, name: true, email: true, jobTitle: true } },
+        inboxDepartment: { select: { id: true, name: true } },
+        inboxRole: { select: { id: true, name: true, departmentId: true } },
       }
     });
 
@@ -2199,7 +2240,87 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
 };
 
 // ============================================================
-// 5b. ATRIBUIR EXECUTOR (Infra) — apenas solicitante; assigneeId = executor
+// 5b. INBOX (Infra) — apenas ADMIN/SUPER_ADMIN
+// ============================================================
+export const patchRequestInbox = async (req: Request, res: Response) => {
+  if (!hasProfile(req, ['ADMIN', 'SUPER_ADMIN'])) {
+    return res.status(403).json({ error: 'Apenas administradores podem definir a inbox do chamado.' });
+  }
+  const { id } = req.params;
+  const userId = (req.headers['x-user-id'] as string)?.trim();
+  const { inboxDepartmentId, inboxRoleId } = req.body as { inboxDepartmentId?: string; inboxRoleId?: string };
+  const deptId = String(inboxDepartmentId || '').trim();
+  const roleId = String(inboxRoleId || '').trim();
+  if (!deptId || !roleId) {
+    return res.status(400).json({ error: 'inboxDepartmentId e inboxRoleId são obrigatórios.' });
+  }
+  try {
+    const request = await prisma.request.findUnique({ where: { id } });
+    if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
+    if (!isInfraTicketType(request.type)) {
+      return res.status(400).json({ error: 'Inbox só se aplica a chamados de infraestrutura.' });
+    }
+    const role = await prisma.role.findUnique({
+      where: { id: roleId },
+      include: { department: { select: { id: true, name: true } } },
+    });
+    if (!role) return res.status(400).json({ error: 'Cargo não encontrado.' });
+    if (role.departmentId !== deptId) {
+      return res.status(400).json({ error: 'O cargo não pertence ao departamento informado.' });
+    }
+    const dept = await prisma.department.findUnique({ where: { id: deptId }, select: { id: true, name: true } });
+    if (!dept) return res.status(400).json({ error: 'Departamento não encontrado.' });
+
+    const updated = await prisma.request.update({
+      where: { id },
+      data: {
+        inboxDepartmentId: deptId,
+        inboxRoleId: roleId,
+        updatedAt: new Date(),
+      },
+      include: {
+        requester: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, name: true, email: true, jobTitle: true } },
+        inboxDepartment: { select: { id: true, name: true } },
+        inboxRole: { select: { id: true, name: true, departmentId: true } },
+      },
+    });
+
+    const adminUser = userId ? await prisma.user.findUnique({ where: { id: userId }, select: { name: true } }) : null;
+    const adminName = adminUser?.name || 'Administrador';
+    const { registrarMudanca } = await import('../lib/auditLog');
+    await registrarMudanca({
+      tipo: 'INFRA_INBOX_SET',
+      entidadeTipo: 'Request',
+      entidadeId: id,
+      descricao: `Inbox definida: ${dept.name} · ${role.name} por ${adminName}`,
+      dadosDepois: {
+        inboxDepartmentId: deptId,
+        inboxRoleId: roleId,
+        departmentName: dept.name,
+        roleName: role.name,
+      },
+      autorId: userId || undefined,
+    }).catch(() => {});
+
+    const { notifyInfraInboxConfigured } = await import('../services/slackService');
+    notifyInfraInboxConfigured({
+      requestId: id,
+      departmentName: dept.name,
+      roleName: role.name,
+      adminName,
+    }).catch((err: unknown) => console.error('[INFRA] Slack inbox:', err));
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('SOLICITACOES ERROR (patchRequestInbox):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
+    return res.status(500).json({ error: 'Erro ao definir inbox' });
+  }
+};
+
+// ============================================================
+// 5c. ATRIBUIR EXECUTOR (Infra) — membro da inbox; assigneeId = executor
 // ============================================================
 export const patchRequestAssignee = async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -2215,10 +2336,14 @@ export const patchRequestAssignee = async (req: Request, res: Response) => {
     });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
     if (!isInfraTicketType(request.type)) {
-      return res.status(400).json({ error: 'Atribuição por solicitante só é permitida em chamados de infraestrutura.' });
+      return res.status(400).json({ error: 'Atribuição só é permitida em chamados de infraestrutura.' });
     }
-    if (request.requesterId !== userId) {
-      return res.status(403).json({ error: 'Apenas o solicitante pode atribuir ou alterar o executor deste chamado.' });
+    const actor = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { departmentId: true, roleId: true, systemProfile: true },
+    });
+    if (!actor || !isInboxMember(actor, request)) {
+      return res.status(403).json({ error: 'Apenas a equipe da inbox responsável pode definir o executor deste chamado.' });
     }
 
     const prevAssigneeId = request.assigneeId;
@@ -2240,7 +2365,9 @@ export const patchRequestAssignee = async (req: Request, res: Response) => {
       data: { assigneeId: nextAssigneeId, updatedAt: new Date() },
       include: {
         requester: { select: { id: true, name: true, email: true } },
-        assignee: { select: { id: true, name: true, email: true, jobTitle: true } }
+        assignee: { select: { id: true, name: true, email: true, jobTitle: true } },
+        inboxDepartment: { select: { id: true, name: true } },
+        inboxRole: { select: { id: true, name: true, departmentId: true } },
       }
     });
 
@@ -2287,8 +2414,13 @@ export const createComment = async (req: Request, res: Response) => {
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
     if (isInfraTicketType(request.type)) {
-      if (!authorId || String(authorId) !== String(request.requesterId)) {
-        return res.status(403).json({ error: 'Apenas o responsável pelo chamado pode adicionar anotações.' });
+      if (!authorId) return res.status(401).json({ error: 'Usuário não identificado.' });
+      const author = await prisma.user.findUnique({
+        where: { id: authorId },
+        select: { departmentId: true, roleId: true, systemProfile: true },
+      });
+      if (!author || !isInboxMember(author, request)) {
+        return res.status(403).json({ error: 'Apenas a equipe da inbox responsável pode adicionar anotações.' });
       }
     }
 
@@ -2415,13 +2547,27 @@ export const createAttachment = async (req: Request, res: Response) => {
     const request = await prisma.request.findUnique({ where: { id } });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
 
+    let effectiveUploaderId: string | null = uploadedById || null;
+    if (isInfraTicketType(request.type)) {
+      const uploaderId = ((req.headers['x-user-id'] as string)?.trim() || uploadedById || '').trim();
+      if (!uploaderId) return res.status(401).json({ error: 'Usuário não identificado.' });
+      const uploader = await prisma.user.findUnique({
+        where: { id: uploaderId },
+        select: { departmentId: true, roleId: true, systemProfile: true },
+      });
+      if (!uploader || !isInboxMember(uploader, request)) {
+        return res.status(403).json({ error: 'Apenas a equipe da inbox responsável pode anexar arquivos neste chamado.' });
+      }
+      effectiveUploaderId = uploaderId;
+    }
+
     const attachment = await prisma.requestAttachment.create({
       data: {
         requestId: id,
         filename: String(filename),
         fileUrl: finalUrl,
         mimeType: mimeType || null,
-        uploadedById: uploadedById || null
+        uploadedById: effectiveUploaderId
       },
       include: { uploadedBy: { select: { id: true, name: true } } }
     });

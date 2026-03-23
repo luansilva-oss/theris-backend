@@ -646,3 +646,34 @@ export const updateRoleKit = async (req: Request, res: Response) => {
         return res.status(500).json({ error: "Erro ao atualizar kit do cargo." });
     }
 };
+
+/** Lista departamentos (autocomplete / inbox Infra). Qualquer usuário autenticado. */
+export const listDepartments = async (_req: Request, res: Response) => {
+    try {
+        const departments = await prisma.department.findMany({
+            orderBy: [{ name: 'asc' }],
+            select: { id: true, name: true, unitId: true },
+        });
+        return res.json(departments);
+    } catch (error) {
+        console.error('listDepartments:', error);
+        return res.status(500).json({ error: 'Erro ao listar departamentos.' });
+    }
+};
+
+/** Lista cargos de um departamento. Query: departmentId (obrigatório). */
+export const listRolesByDepartment = async (req: Request, res: Response) => {
+    const departmentId = String(req.query.departmentId || '').trim();
+    if (!departmentId) return res.status(400).json({ error: 'departmentId é obrigatório.' });
+    try {
+        const roles = await prisma.role.findMany({
+            where: { departmentId },
+            orderBy: [{ name: 'asc' }],
+            select: { id: true, name: true, code: true, departmentId: true },
+        });
+        return res.json(roles);
+    } catch (error) {
+        console.error('listRolesByDepartment:', error);
+        return res.status(500).json({ error: 'Erro ao listar cargos.' });
+    }
+};

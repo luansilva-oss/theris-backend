@@ -25,6 +25,7 @@ model Department {
   createdAt DateTime @default(now())
   roles     Role[]
   users     User[]   @relation("UserDepartment")
+  inboxRequests Request[] @relation("RequestInbox")
 
   @@unique([unitId, name])
 }
@@ -36,6 +37,7 @@ model Role {
   departmentId String
   department   Department    @relation(fields: [departmentId], references: [id])
   kitItems     RoleKitItem[]
+  inboxRequests Request[] @relation("RequestInboxRole")
 
   @@unique([code, departmentId]) // mesmo KBS em departamentos diferentes permitido; duplicata no mesmo departamento impedida
 }
@@ -204,6 +206,12 @@ model Request {
   // ----------------------------------------
   assigneeId          String?  // Responsável pelo atendimento (Service Desk)
   assignee            User?    @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  // Inbox compartilhada (Infra): departamento + cargo (KBS) que atende o chamado
+  inboxDepartmentId   String?
+  inboxDepartment     Department? @relation("RequestInbox", fields: [inboxDepartmentId], references: [id], onDelete: SetNull)
+  inboxRoleId         String?
+  inboxRole           Role?       @relation("RequestInboxRole", fields: [inboxRoleId], references: [id], onDelete: SetNull)
 
   type                String
   status              String   @default("PENDENTE_GESTOR")

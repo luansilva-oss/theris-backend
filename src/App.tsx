@@ -136,6 +136,11 @@ interface Request {
   comments?: RequestComment[];
   attachments?: RequestAttachment[];
   requestHistory?: RequestHistoryEntry[];
+  inboxDepartmentId?: string | null;
+  inboxRoleId?: string | null;
+  inboxDepartment?: { id: string; name: string } | null;
+  inboxRole?: { id: string; name: string; departmentId: string } | null;
+  isExtraordinary?: boolean;
 }
 
 interface KBUFerramenta {
@@ -159,6 +164,17 @@ const PEOPLE_REQUEST_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNA
 const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT', 'INFRA'];
 
 const CHAMADO_CLOSED_STATUSES = ['CANCELADO', 'APROVADO', 'REPROVADO', 'RESOLVIDO', 'CONCLUIDO', 'FECHADO'];
+
+/** Alinhado ao backend `isInboxMember`: inbox definida = dept+cargo; senão só ADMIN; SUPER_ADMIN sempre. */
+function isInboxMemberUser(u: User | null | undefined, r: Request): boolean {
+  if (!u) return false;
+  if (u.systemProfile === 'SUPER_ADMIN') return true;
+  const deptId = r.inboxDepartmentId ?? r.inboxDepartment?.id ?? null;
+  const roleIdR = r.inboxRoleId ?? r.inboxRole?.id ?? null;
+  const inboxDefined = Boolean(deptId && roleIdR);
+  if (!inboxDefined) return u.systemProfile === 'ADMIN';
+  return u.departmentId === deptId && u.roleId === roleIdR;
+}
 
 function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 'Infra'; categoryColor: string; title: string; lines: { label: string; value: string }[] } {
   let detailsObj: Record<string, unknown> = {};
@@ -582,6 +598,11 @@ export default function App() {
   const [infraAssignDropdownOpen, setInfraAssignDropdownOpen] = useState(false);
   const [infraAssignPatching, setInfraAssignPatching] = useState(false);
   const infraAssignDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [infraDeptList, setInfraDeptList] = useState<{ id: string; name: string }[]>([]);
+  const [infraInboxRoles, setInfraInboxRoles] = useState<{ id: string; name: string; code?: string | null }[]>([]);
+  const [inboxDraftDeptId, setInboxDraftDeptId] = useState('');
+  const [inboxDraftRoleId, setInboxDraftRoleId] = useState('');
+  const [inboxSaving, setInboxSaving] = useState(false);
   const [expandedKbsSection, setExpandedKbsSection] = useState(false);
   const [isExtraordinaryOpen, setIsExtraordinaryOpen] = useState(false);
 
@@ -960,7 +981,50 @@ export default function App() {
   }, [selectedChamadoId]);
 
   useEffect(() => {
-    if (!chamadoDetail || !INFRA_REQUEST_TYPES.includes(chamadoDetail.type) || chamadoDetail.requester?.id !== currentUser?.id) {
+    if (!chamadoDetail || !INFRA_REQUEST_TYPES.includes(chamadoDetail.type)) return;
+    setInboxDraftDeptId(chamadoDetail.inboxDepartmentId || '');
+    setInboxDraftRoleId(chamadoDetail.inboxRoleId || '');
+  }, [chamadoDetail?.id, chamadoDetail?.inboxDepartmentId, chamadoDetail?.inboxRoleId, chamadoDetail?.type]);
+
+  useEffect(() => {
+    if (!chamadoDetail || !INFRA_REQUEST_TYPES.includes(chamadoDetail.type) || !currentUser?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/departments`, {
+          headers: { 'x-user-id': currentUser.id },
+          credentials: 'include',
+        });
+        if (res.ok && !cancelled) setInfraDeptList(await res.json());
+      } catch {
+        if (!cancelled) setInfraDeptList([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [chamadoDetail?.id, chamadoDetail?.type, currentUser?.id]);
+
+  useEffect(() => {
+    if (!inboxDraftDeptId || !currentUser?.id) {
+      setInfraInboxRoles([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/roles?departmentId=${encodeURIComponent(inboxDraftDeptId)}`, {
+          headers: { 'x-user-id': currentUser.id },
+          credentials: 'include',
+        });
+        if (res.ok && !cancelled) setInfraInboxRoles(await res.json());
+      } catch {
+        if (!cancelled) setInfraInboxRoles([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [inboxDraftDeptId, currentUser?.id]);
+
+  useEffect(() => {
+    if (!chamadoDetail || !INFRA_REQUEST_TYPES.includes(chamadoDetail.type) || !isInboxMemberUser(currentUser, chamadoDetail)) {
       return;
     }
     const q = infraAssignSearch.trim();
@@ -988,7 +1052,45 @@ export default function App() {
     return () => {
       if (infraAssignDebounceRef.current) clearTimeout(infraAssignDebounceRef.current);
     };
-  }, [infraAssignSearch, chamadoDetail?.id, chamadoDetail?.type, chamadoDetail?.requester?.id, currentUser?.id]);
+  }, [
+    infraAssignSearch,
+    chamadoDetail?.id,
+    chamadoDetail?.type,
+    chamadoDetail?.inboxDepartmentId,
+    chamadoDetail?.inboxRoleId,
+    currentUser?.id,
+    currentUser?.departmentId,
+    currentUser?.roleId,
+    currentUser?.systemProfile,
+  ]);
+
+  const patchInfraInboxOnTicket = async () => {
+    if (!selectedChamadoId || !currentUser?.id || !inboxDraftDeptId || !inboxDraftRoleId) {
+      showToast('Selecione departamento e cargo da inbox.', 'warning');
+      return;
+    }
+    setInboxSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/inbox`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
+        credentials: 'include',
+        body: JSON.stringify({ inboxDepartmentId: inboxDraftDeptId, inboxRoleId: inboxDraftRoleId }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setChamadoDetail(prev => (prev ? { ...prev, ...updated } : updated));
+        showToast('Inbox atualizada.', 'success');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(typeof err.error === 'string' ? err.error : 'Erro ao salvar inbox.', 'error');
+      }
+    } catch {
+      showToast('Erro de conexão.', 'error');
+    } finally {
+      setInboxSaving(false);
+    }
+  };
 
   const patchInfraAssigneeOnTicket = async (assigneeId: string | null) => {
     if (!selectedChamadoId || !currentUser?.id) return;
@@ -3169,13 +3271,13 @@ export default function App() {
                               <Lock size={24} color="#71717a" />
                               <span style={{ color: '#a1a1aa', fontSize: 14 }}>{chamadoDetail.status === 'CANCELADO' ? '🔒 Este chamado foi cancelado e não aceita novas ações.' : '🔒 Este chamado foi encerrado e não aceita novas mensagens.'}</span>
                             </div>
-                          ) : INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && currentUser?.id !== chamadoDetail.requester?.id ? (
+                          ) : INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && !isInboxMemberUser(currentUser, chamadoDetail) ? (
                             <div style={{ background: 'rgba(39, 39, 42, 0.6)', borderRadius: 12, padding: 16, border: '1px solid #3f3f46' }}>
-                              <span style={{ color: '#a1a1aa', fontSize: 14 }}>Apenas o responsável pelo chamado pode adicionar anotações.</span>
+                              <span style={{ color: '#a1a1aa', fontSize: 14 }}>Apenas a equipe responsável pode adicionar anotações neste chamado.</span>
                             </div>
                           ) : (
                             <>
-                              {(activeTab === 'MY_TICKETS') ? null : (
+                              {(activeTab === 'MY_TICKETS' && !INFRA_REQUEST_TYPES.includes(chamadoDetail.type)) ? null : (
                                 <>
                                   <select className="input-base" style={{ marginBottom: 8, background: '#18181b', fontSize: 12 }} value={chamadoCommentKind} onChange={e => { setChamadoCommentKind(e.target.value as any); if (e.target.value !== 'SCHEDULED_TASK') setChamadoScheduledAt(''); }}>
                                     <option value="COMMENT">Comentário</option>
@@ -3259,6 +3361,54 @@ export default function App() {
                           <div style={{ color: '#e4e4e7' }}>{chamadoDetail.requester?.name}</div>
                           <div style={{ fontSize: 12, color: '#a1a1aa' }}>{chamadoDetail.requester?.email}</div>
                         </div>
+                        {INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && (
+                          <div className="card-base" style={{ padding: 20 }}>
+                            <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Inbox responsável</div>
+                            {chamadoDetail.inboxDepartment && chamadoDetail.inboxRole ? (
+                              <div style={{ color: '#e4e4e7', fontSize: 13 }}>
+                                {chamadoDetail.inboxDepartment.name} · {chamadoDetail.inboxRole.name}
+                              </div>
+                            ) : (
+                              <div style={{ color: '#a1a1aa', fontSize: 13 }}>Inbox não definida. Administradores podem configurar abaixo.</div>
+                            )}
+                            {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                                <select
+                                  className="input-base"
+                                  style={{ background: '#18181b', fontSize: 12 }}
+                                  value={inboxDraftDeptId}
+                                  onChange={e => { setInboxDraftDeptId(e.target.value); setInboxDraftRoleId(''); }}
+                                >
+                                  <option value="">Departamento…</option>
+                                  {infraDeptList.map(d => (
+                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                  ))}
+                                </select>
+                                <select
+                                  className="input-base"
+                                  style={{ background: '#18181b', fontSize: 12 }}
+                                  value={inboxDraftRoleId}
+                                  onChange={e => setInboxDraftRoleId(e.target.value)}
+                                  disabled={!inboxDraftDeptId}
+                                >
+                                  <option value="">Cargo (KBS)…</option>
+                                  {infraInboxRoles.map(ro => (
+                                    <option key={ro.id} value={ro.id}>{ro.name}{ro.code ? ` (${ro.code})` : ''}</option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  className="btn-mini"
+                                  style={{ background: '#0EA5E9', color: 'white' }}
+                                  disabled={inboxSaving || !inboxDraftDeptId || !inboxDraftRoleId}
+                                  onClick={() => patchInfraInboxOnTicket()}
+                                >
+                                  {inboxSaving ? 'Salvando…' : 'Salvar inbox'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {(() => {
                           const isAex = ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(chamadoDetail.type) || chamadoDetail.isExtraordinary;
                           const isVpn = chamadoDetail.type === 'VPN_ACCESS';
@@ -3277,14 +3427,12 @@ export default function App() {
                               <div className="card-base" style={{ padding: 20 }}>
                                 <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Status</label>
                                 {(() => {
-                                  const canEditOwnInfraStatus =
-                                    activeTab === 'MY_TICKETS' &&
-                                    INFRA_REQUEST_TYPES.includes(chamadoDetail.type) &&
-                                    currentUser?.id === chamadoDetail.requester?.id &&
-                                    !CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status);
+                                  const isInfraTicket = INFRA_REQUEST_TYPES.includes(chamadoDetail.type);
+                                  const infraInboxActor = isInfraTicket && isInboxMemberUser(currentUser, chamadoDetail);
                                   const statusReadOnly =
-                                    (activeTab === 'MY_TICKETS' && !canEditOwnInfraStatus) ||
-                                    CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status);
+                                    CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status) ||
+                                    (isInfraTicket && !infraInboxActor) ||
+                                    (activeTab === 'MY_TICKETS' && !isInfraTicket);
                                   return statusReadOnly ? (
                                     <div style={{ color: '#e4e4e7', fontSize: 13 }}>{getStatusLabel(chamadoDetail.status)}</div>
                                   ) : (
@@ -3301,7 +3449,10 @@ export default function App() {
                                   );
                                 })()}
                               </div>
-                              {systemProfile === 'SUPER_ADMIN' && selectedChamadoId && !CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status) && (
+                              {selectedChamadoId &&
+                                !CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status) &&
+                                (systemProfile === 'SUPER_ADMIN' ||
+                                  (INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && currentUser?.id === chamadoDetail.requester?.id)) && (
                                 <div className="card-base" style={{ padding: 20 }}>
                                   <button
                                     type="button"
@@ -3309,7 +3460,7 @@ export default function App() {
                                     style={{ width: '100%', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.5)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
                                     onClick={() => setShowCancelChamadoModal(true)}
                                   >
-                                    Cancelar Chamado
+                                    Cancelar chamado
                                   </button>
                                 </div>
                               )}
@@ -3319,18 +3470,26 @@ export default function App() {
                         {chamadoDetail.status === 'AGENDADO' && (
                           <div className="card-base" style={{ padding: 20 }}>
                             <label style={{ display: 'block', fontSize: 11, color: '#71717a', marginBottom: 8 }}>Data agendada</label>
-                            {(activeTab === 'MY_TICKETS') ? (
+                            {INFRA_REQUEST_TYPES.includes(chamadoDetail.type) ? (
+                              isInboxMemberUser(currentUser, chamadoDetail) ? (
+                                <input type="datetime-local" className="input-base" style={{ width: '100%', background: '#18181b' }} value={chamadoDetail.scheduledAt ? new Date(chamadoDetail.scheduledAt).toISOString().slice(0, 16) : ''} onChange={e => handleChamadoMetadataChange('scheduledAt', e.target.value || null)} />
+                              ) : (
+                                <div style={{ color: '#e4e4e7', fontSize: 13 }}>{chamadoDetail.scheduledAt ? new Date(chamadoDetail.scheduledAt).toLocaleString('pt-BR') : '—'}</div>
+                              )
+                            ) : (activeTab === 'MY_TICKETS') ? (
                               <div style={{ color: '#e4e4e7', fontSize: 13 }}>{chamadoDetail.scheduledAt ? new Date(chamadoDetail.scheduledAt).toLocaleString('pt-BR') : '—'}</div>
                             ) : (
                               <input type="datetime-local" className="input-base" style={{ width: '100%', background: '#18181b' }} value={chamadoDetail.scheduledAt ? new Date(chamadoDetail.scheduledAt).toISOString().slice(0, 16) : ''} onChange={e => handleChamadoMetadataChange('scheduledAt', e.target.value || null)} />
                             )}
                           </div>
                         )}
+                        {!INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && (
                         <div className="card-base" style={{ padding: 20 }}>
                           <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Responsável</label>
                           <div style={{ color: '#e4e4e7', fontSize: 13 }}>{chamadoDetail.assignee?.name || '— Não atribuído'}</div>
                         </div>
-                        {INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && currentUser?.id === chamadoDetail.requester?.id && (
+                        )}
+                        {INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && isInboxMemberUser(currentUser, chamadoDetail) && (
                           <div className="card-base" style={{ padding: 20, position: 'relative' }}>
                             <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Atribuir para</label>
                             <input
