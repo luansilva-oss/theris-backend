@@ -403,11 +403,6 @@ export const updateRole = async (req: Request, res: Response) => {
         });
         if (!oldRole) return res.status(404).json({ error: "Cargo não encontrado." });
 
-        const effectiveDeptIdForLeader =
-            departmentId !== undefined && departmentId !== null && String(departmentId).trim()
-                ? String(departmentId).trim()
-                : oldRole.departmentId;
-
         let newLeaderIdFromBody: string | null | undefined = undefined;
         if (hasProfile(req, ['SUPER_ADMIN']) && Object.prototype.hasOwnProperty.call(req.body, 'leaderId')) {
             const raw = (req.body as { leaderId?: string | null }).leaderId;
@@ -417,13 +412,10 @@ export const updateRole = async (req: Request, res: Response) => {
                 const lid = raw.trim();
                 const candidate = await prisma.user.findUnique({
                     where: { id: lid },
-                    select: { isActive: true, departmentId: true, name: true },
+                    select: { isActive: true },
                 });
                 if (!candidate?.isActive) {
                     return res.status(400).json({ error: 'Líder inválido ou usuário inativo.' });
-                }
-                if (candidate.departmentId !== effectiveDeptIdForLeader) {
-                    return res.status(400).json({ error: 'O líder deve pertencer ao mesmo departamento do cargo.' });
                 }
                 newLeaderIdFromBody = lid;
             }
