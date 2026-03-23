@@ -253,8 +253,8 @@ export const getUserDetails = async (req: Request, res: Response) => {
       }
     }
 
-    const { getToolsAndLevelsMap } = await import('../services/slackService');
-    const toolsAndLevels = getToolsAndLevelsMap();
+    const { buildToolsAndLevelsMap } = await import('../lib/buildToolsAndLevelsMap');
+    const toolsAndLevels = await buildToolsAndLevelsMap(prisma);
 
     const kitItemsWithCriticality = role?.kitItems ?? [];
     let kbsFerramentas: { ferramenta: string; sigla: string; nivel: string; critico: boolean; criticidade: string }[] = [];
@@ -317,8 +317,8 @@ export const getMyTools = async (req: Request, res: Response) => {
   if (!userId) return res.status(401).json({ error: 'Usuário não identificado. Envie o header x-user-id.' });
 
   try {
-    const { getToolsAndLevelsMap } = await import('../services/slackService');
-    const toolsAndLevels = getToolsAndLevelsMap();
+    const { buildToolsAndLevelsMap } = await import('../lib/buildToolsAndLevelsMap');
+    const toolsAndLevels = await buildToolsAndLevelsMap(prisma);
 
     const user = await prisma.user.findUnique({
       where: { id: userId },

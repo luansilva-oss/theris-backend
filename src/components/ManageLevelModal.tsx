@@ -14,12 +14,14 @@ interface Props {
     onClose: () => void;
     tool: any;
     levelName: string;
+    /** Nível persistido em ToolAccessLevel (edição de nome/descrição pelo modal do catálogo / lápis). */
+    catalogLevelId?: string | null;
     onUpdate: () => void;
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
     customConfirm: (config: { title: string; message: string; onConfirm: () => void; isDestructive?: boolean; confirmLabel?: string }) => void;
 }
 
-export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, showToast, customConfirm }: Props) => {
+export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, catalogLevelId, onUpdate, showToast, customConfirm }: Props) => {
     if (!isOpen) return null;
 
     const [name, setName] = useState(levelName);
@@ -161,8 +163,12 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
     const confirmDelete = async () => {
         setIsDeleteConfirmOpen(false);
         try {
-            const res = await fetch(`${API_URL}/api/tools/${tool.id}/level/${encodeURIComponent(levelName)}`, {
-                method: 'DELETE'
+            const url = catalogLevelId
+                ? `${API_URL}/api/tools/${tool.id}/levels/${catalogLevelId}`
+                : `${API_URL}/api/tools/${tool.id}/level/${encodeURIComponent(levelName)}`;
+            const res = await fetch(url, {
+                method: 'DELETE',
+                credentials: 'include',
             });
 
             if (res.ok) {
@@ -170,7 +176,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                 onUpdate();
                 onClose();
             } else {
-                const data = await res.json();
+                const data = await res.json().catch(() => ({}));
                 showToast(data.error || "Erro ao excluir nível.", "error");
             }
         } catch (e) {
@@ -266,7 +272,14 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
 
                 <div className="modal-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: 24, padding: '20px 24px' }}>
 
-                    {/* INFO SECTION — altura preservada para não colapsar com a seção KBS */}
+                    {catalogLevelId ? (
+                        <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', padding: 16, flexShrink: 0 }}>
+                            <p style={{ color: '#a1a1aa', fontSize: 13, margin: 0, lineHeight: 1.5 }}>
+                                Nome e descrição deste nível são editados pelo ícone de lápis na lista. Aqui você gerencia apenas os membros com acesso direto no catálogo.
+                            </p>
+                        </div>
+                    ) : (
+                    /* INFO SECTION — altura preservada para não colapsar com a seção KBS */
                     <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', padding: 16, flexShrink: 0 }}>
                         <h4 style={{ color: 'white', marginTop: 0, marginBottom: 12 }}>Informações do Nível</h4>
                         <div className="form-group">
@@ -318,6 +331,7 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                             />
                         </div>
                     </div>
+                    )}
 
                     {/* HERDADOS VIA CARGO (KBS) - somente leitura; lista com scroll interno para não sobrepor Informações do Nível */}
                     {kbsUsersForLevel.length > 0 && (
@@ -453,10 +467,12 @@ export const ManageLevelModal = ({ isOpen, onClose, tool, levelName, onUpdate, s
                         <Trash2 size={14} /> Excluir Nível
                     </button>
 
+                    {!catalogLevelId && (
                     <button onClick={handleSaveInfo} disabled={isSaving} className="btn-verify" style={{ width: 'auto', padding: '10px 24px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <Save size={16} />
                         {isSaving ? 'Salvando...' : 'Salvar Alterações'}
                     </button>
+                    )}
                 </div>
             </div>
         </div>

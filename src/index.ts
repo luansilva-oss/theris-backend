@@ -20,7 +20,23 @@ import {
   patchRequestInbox
 } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
-import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
+import {
+  getTools,
+  createTool,
+  updateTool,
+  deleteTool,
+  getToolGroups,
+  createToolGroup,
+  deleteToolGroup,
+  addToolAccess,
+  removeToolAccess,
+  updateToolAccess,
+  updateToolLevel,
+  deleteToolLevel,
+  createToolAccessLevel,
+  updateToolAccessLevel,
+  deleteToolAccessLevel
+} from './controllers/toolController';
 import { getKbu, putKbu, postKbu, deleteKbu } from './controllers/kbuController';
 import { getAllUsers, getMe, getUserById, getUserDetails, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged, searchUsersForAutocomplete } from './controllers/userController';
 import { resetCatalog, getLoginAttempts, getSessions, revokeSession, revokeAllSessions } from './controllers/adminController';
@@ -37,7 +53,8 @@ import { startJumpCloudPasswordExpiryCron } from './crons/jumpcloudPasswordExpir
 import { startJumpCloudDivergenceCron } from './jobs/jumpcloudDivergenceCheck';
 
 // Slack
-import { slackReceiver, getToolsAndLevelsMap } from './services/slackService';
+import { slackReceiver } from './services/slackService';
+import { buildToolsAndLevelsMap } from './lib/buildToolsAndLevelsMap';
 
 dotenv.config();
 
@@ -196,7 +213,14 @@ app.get('/api/audit-log', getAuditLog);
 
 // 2. Ferramentas
 app.get('/api/tools', getTools);
-app.get('/api/tools-and-levels', (_req: Request, res: Response) => res.json(getToolsAndLevelsMap()));
+app.get('/api/tools-and-levels', async (_req: Request, res: Response) => {
+  try {
+    res.json(await buildToolsAndLevelsMap(prisma));
+  } catch (e) {
+    console.error('Erro em /api/tools-and-levels:', e);
+    res.status(500).json({ error: 'Erro ao montar ferramentas e níveis.' });
+  }
+});
 
 app.get('/api/kbu', getKbu);
 app.put('/api/kbu/:id', putKbu);
@@ -212,7 +236,9 @@ app.delete('/api/tool-groups/:id', deleteToolGroup);
 
 app.post('/api/tools/:id/access', addToolAccess);     // Adicionar/Atualizar acesso de usuário
 app.delete('/api/tools/:id/access/:userId', removeToolAccess); // Remover acesso
-import { deleteToolLevel } from './controllers/toolController'; // Helper import if needed, but better to update top import
+app.post('/api/tools/:toolId/levels', createToolAccessLevel);
+app.put('/api/tools/:toolId/levels/:levelId', updateToolAccessLevel);
+app.delete('/api/tools/:toolId/levels/:levelId', deleteToolAccessLevel);
 app.patch('/api/tools/:toolId/level/:oldLevelName', updateToolLevel);
 app.delete('/api/tools/:toolId/level/:levelName', deleteToolLevel);
 app.patch('/api/tools/:toolId/access/:userId', updateToolAccess); // Atualizar detalhes do acesso (ex: extra)

@@ -163,6 +163,22 @@ model Tool {
   nextReviewAt        DateTime?  // calculado: lastReviewAt + 90 dias
 
   createdAt           DateTime @default(now())
+
+  accessLevels        ToolAccessLevel[]
+}
+
+// Níveis de acesso cadastrados no Catálogo (Slack /acessos, KBS, etc.)
+model ToolAccessLevel {
+  id          String   @id @default(uuid())
+  toolId      String
+  tool        Tool     @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  code        String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@unique([toolId, code])
+  @@index([toolId])
 }
 
 model RevisaoNotificacaoEnviada {

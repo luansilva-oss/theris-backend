@@ -16,6 +16,7 @@ import { EditUserModal } from './components/EditUserModal';
 import { EditAccessModal } from './components/EditAccessModal';
 import { ManageStructureModal } from './components/ManageStructureModal';
 import { ManageLevelModal } from './components/ManageLevelModal';
+import { ToolLevelCatalogModal } from './components/ToolLevelCatalogModal';
 import PersonnelListView from './components/PersonnelListView';
 import { EditDepartmentModal } from './components/EditDepartmentModal';
 import { CreateDepartmentModal } from './components/CreateDepartmentModal';
@@ -70,6 +71,7 @@ interface Tool {
   toolGroupId?: string;
   toolGroup?: { id: string; name: string };
   availableAccessLevels?: string[];
+  accessLevels?: { id: string; code: string; name: string; description?: string | null; createdAt?: string }[];
   accessLevelDescriptions?: any;
   criticality?: string;
   isCritical?: boolean;
@@ -623,6 +625,15 @@ export default function App() {
   const [selectedStructureDept, setSelectedStructureDept] = useState<string | null>(null);
   const [isManageLevelModalOpen, setIsManageLevelModalOpen] = useState(false);
   const [selectedLevelName, setSelectedLevelName] = useState<string | null>(null);
+  const [manageLevelCatalogId, setManageLevelCatalogId] = useState<string | null>(null);
+  const [isToolLevelCatalogModalOpen, setIsToolLevelCatalogModalOpen] = useState(false);
+  const [toolLevelCatalogMode, setToolLevelCatalogMode] = useState<'create' | 'edit'>('create');
+  const [toolLevelCatalogEdit, setToolLevelCatalogEdit] = useState<{
+    id: string;
+    code: string;
+    name: string;
+    description?: string | null;
+  } | null>(null);
   const [isEditDeptModalOpen, setIsEditDeptModalOpen] = useState(false);
   const [isDeleteDeptModalOpen, setIsDeleteDeptModalOpen] = useState(false);
   const [selectedDeptForAction, setSelectedDeptForAction] = useState<any>(null);
@@ -1552,6 +1563,9 @@ export default function App() {
     if (fromKbs) {
       for (const { level, users } of tool.kbsMembersByLevel!) {
         permanent[level] = users.map(u => ({ user: { id: u.id, name: u.name, email: u.email } as User }));
+      }
+      for (const lvl of tool.availableAccessLevels || []) {
+        if (!permanent[lvl]) permanent[lvl] = [];
       }
     } else {
       const levels = tool.availableAccessLevels || [];
@@ -2512,7 +2526,23 @@ export default function App() {
               </div>
 
               {/* LISTA DE USUÁRIOS AGRUPADOS POR NÍVEL (PERMANENTE) */}
-              <h3 style={{ color: '#d4d4d8', marginBottom: 15, fontSize: 18, marginTop: 32 }}>Níveis de Acesso da Ferramenta</h3>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginTop: 32, marginBottom: 15 }}>
+                <h3 style={{ color: '#d4d4d8', margin: 0, fontSize: 18 }}>Níveis de Acesso da Ferramenta</h3>
+                {(systemProfile === 'ADMIN' || systemProfile === 'SUPER_ADMIN') && selectedTool && (
+                  <button
+                    type="button"
+                    className="btn-mini"
+                    style={{ padding: '8px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, background: '#27272a', border: '1px solid #3f3f46' }}
+                    onClick={() => {
+                      setToolLevelCatalogMode('create');
+                      setToolLevelCatalogEdit(null);
+                      setIsToolLevelCatalogModalOpen(true);
+                    }}
+                  >
+                    <Plus size={14} /> Novo Nível
+                  </button>
+                )}
+              </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {Object.keys(getGroupedAccesses(selectedTool).permanent).length === 0 && (
@@ -2529,6 +2559,10 @@ export default function App() {
                       <div
                         onClick={() => {
                           setSelectedLevelName(level);
+                          const row = selectedTool.accessLevels?.find(
+                            (a) => a.code.trim().toLowerCase() === level.trim().toLowerCase()
+                          );
+                          setManageLevelCatalogId(row?.id ?? null);
                           setIsManageLevelModalOpen(true);
                         }}
                         style={{
@@ -2572,6 +2606,10 @@ export default function App() {
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedLevelName(level);
+                              const row = selectedTool.accessLevels?.find(
+                                (a) => a.code.trim().toLowerCase() === level.trim().toLowerCase()
+                              );
+                              setManageLevelCatalogId(row?.id ?? null);
                               setIsManageLevelModalOpen(true);
                             }}
                             className="btn-mini"
@@ -2579,7 +2617,29 @@ export default function App() {
                           >
                             <Plus size={12} /> Add
                           </button>
-                          <Edit2 size={16} color="#52525b" />
+                          <button
+                            type="button"
+                            title="Editar nome e descrição do nível"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const row = selectedTool.accessLevels?.find(
+                                (a) => a.code.trim().toLowerCase() === level.trim().toLowerCase()
+                              );
+                              if (row) {
+                                setToolLevelCatalogMode('edit');
+                                setToolLevelCatalogEdit(row);
+                                setIsToolLevelCatalogModalOpen(true);
+                              } else {
+                                setSelectedLevelName(level);
+                                setManageLevelCatalogId(null);
+                                setIsManageLevelModalOpen(true);
+                              }
+                            }}
+                            className="btn-icon"
+                            style={{ padding: 4, background: 'transparent', border: 'none', cursor: 'pointer' }}
+                          >
+                            <Edit2 size={16} color="#52525b" />
+                          </button>
                         </div>
                       </div>
 
@@ -3831,15 +3891,33 @@ export default function App() {
             onClose={() => {
               setIsManageLevelModalOpen(false);
               setSelectedLevelName(null);
+              setManageLevelCatalogId(null);
             }}
             tool={selectedTool as any}
             levelName={selectedLevelName}
+            catalogLevelId={manageLevelCatalogId}
             onUpdate={loadData}
             showToast={showToast}
             customConfirm={customConfirm}
           />
         )
       }
+
+      {selectedTool && isToolLevelCatalogModalOpen && (
+        <ToolLevelCatalogModal
+          isOpen={isToolLevelCatalogModalOpen}
+          onClose={() => {
+            setIsToolLevelCatalogModalOpen(false);
+            setToolLevelCatalogEdit(null);
+          }}
+          tool={selectedTool as any}
+          mode={toolLevelCatalogMode}
+          editLevel={toolLevelCatalogEdit}
+          userId={currentUser?.id}
+          onSaved={loadData}
+          showToast={showToast}
+        />
+      )}
 
       {/* UNIT & DEPARTMENT MODALS */}
       <EditUnitModal
