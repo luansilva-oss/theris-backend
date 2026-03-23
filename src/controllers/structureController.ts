@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { registrarMudanca } from '../lib/auditLog';
+import { hasProfile } from '../middleware/auth';
+import { propagateLeaderToRole } from '../services/leadershipPropagationService';
 
 const prisma = new PrismaClient();
 
@@ -205,7 +207,10 @@ export const getStructure = async (req: Request, res: Response) => {
                     include: {
                         roles: {
                             orderBy: { name: 'asc' },
-                            include: { kitItems: true }
+                            include: {
+                                kitItems: true,
+                                leader: { select: { id: true, name: true, email: true } },
+                            },
                         }
                     }
                 }
@@ -359,7 +364,11 @@ export const createRole = async (req: Request, res: Response) => {
         }
         const created = await prisma.role.findUnique({
             where: { id: role.id },
-            include: { kitItems: true, department: { include: { unit: true } } }
+            include: {
+                kitItems: true,
+                department: { include: { unit: true } },
+                leader: { select: { id: true, name: true, email: true } },
+            },
         });
         if (created) {
             await registrarMudanca({
@@ -394,6 +403,32 @@ export const updateRole = async (req: Request, res: Response) => {
         });
         if (!oldRole) return res.status(404).json({ error: "Cargo não encontrado." });
 
+        const effectiveDeptIdForLeader =
+            departmentId !== undefined && departmentId !== null && String(departmentId).trim()
+                ? String(departmentId).trim()
+                : oldRole.departmentId;
+
+        let newLeaderIdFromBody: string | null | undefined = undefined;
+        if (hasProfile(req, ['SUPER_ADMIN']) && Object.prototype.hasOwnProperty.call(req.body, 'leaderId')) {
+            const raw = (req.body as { leaderId?: string | null }).leaderId;
+            if (raw === null || raw === '') {
+                newLeaderIdFromBody = null;
+            } else if (typeof raw === 'string' && raw.trim()) {
+                const lid = raw.trim();
+                const candidate = await prisma.user.findUnique({
+                    where: { id: lid },
+                    select: { isActive: true, departmentId: true, name: true },
+                });
+                if (!candidate?.isActive) {
+                    return res.status(400).json({ error: 'Líder inválido ou usuário inativo.' });
+                }
+                if (candidate.departmentId !== effectiveDeptIdForLeader) {
+                    return res.status(400).json({ error: 'O líder deve pertencer ao mesmo departamento do cargo.' });
+                }
+                newLeaderIdFromBody = lid;
+            }
+        }
+
         const oldDeptId = oldRole.departmentId;
         const oldDeptName = oldRole.department?.name ?? '';
         const departmentChanged = departmentId && departmentId !== oldRole.departmentId;
@@ -413,10 +448,11 @@ export const updateRole = async (req: Request, res: Response) => {
             newUnitId = newDept.unitId ?? null;
         }
 
-        const data: { name?: string; departmentId?: string; code?: string | null } = {};
+        const data: { name?: string; departmentId?: string; code?: string | null; leaderId?: string | null } = {};
         if (name !== undefined) data.name = name;
         if (departmentId !== undefined) data.departmentId = departmentId;
         if (code !== undefined) data.code = code || null;
+        if (newLeaderIdFromBody !== undefined) data.leaderId = newLeaderIdFromBody;
 
         // Ao mudar departamento: atualizar KBS code conforme prefixo do novo departamento
         if (departmentChanged && newDeptName) {
@@ -442,6 +478,32 @@ export const updateRole = async (req: Request, res: Response) => {
                 dadosDepois: { name: role.name, code: role.code, departmentId: role.departmentId },
                 autorId: getAutorId(req),
             }).catch(() => {});
+        }
+
+        if (newLeaderIdFromBody !== undefined && newLeaderIdFromBody !== oldRole.leaderId) {
+            const newLeaderUser =
+                newLeaderIdFromBody === null
+                    ? null
+                    : await prisma.user.findUnique({
+                          where: { id: newLeaderIdFromBody },
+                          select: { name: true },
+                      });
+            const desc =
+                newLeaderIdFromBody === null
+                    ? `Liderança do cargo ${role.name} removida`
+                    : `Liderança do cargo ${role.name} definida como ${newLeaderUser?.name ?? '—'}`;
+            await registrarMudanca({
+                tipo: 'ROLE_LEADER_CHANGE',
+                entidadeTipo: 'Role',
+                entidadeId: id,
+                descricao: desc,
+                dadosAntes: { leaderId: oldRole.leaderId },
+                dadosDepois: { leaderId: newLeaderIdFromBody },
+                autorId: getAutorId(req),
+            }).catch(() => {});
+            void propagateLeaderToRole(id, newLeaderIdFromBody, getAutorId(req)).catch((err) =>
+                console.error('[updateRole] propagateLeaderToRole:', err)
+            );
         }
 
         // Sync jobTitle for users linked by roleId or by jobTitle+departmentId
@@ -510,7 +572,11 @@ export const updateRole = async (req: Request, res: Response) => {
 
         const updated = await prisma.role.findUnique({
             where: { id },
-            include: { kitItems: true, department: true }
+            include: {
+                kitItems: true,
+                department: true,
+                leader: { select: { id: true, name: true, email: true } },
+            },
         });
         return res.json(updated);
     } catch (error) {
@@ -597,7 +663,11 @@ export const getRoleKit = async (req: Request, res: Response) => {
     try {
         const role = await prisma.role.findUnique({
             where: { id },
-            include: { kitItems: true, department: true }
+            include: {
+                kitItems: true,
+                department: true,
+                leader: { select: { id: true, name: true, email: true } },
+            },
         });
         if (!role) return res.status(404).json({ error: "Cargo não encontrado." });
         return res.json(role);
@@ -669,7 +739,13 @@ export const listRolesByDepartment = async (req: Request, res: Response) => {
         const roles = await prisma.role.findMany({
             where: { departmentId },
             orderBy: [{ name: 'asc' }],
-            select: { id: true, name: true, code: true, departmentId: true },
+            select: {
+                id: true,
+                name: true,
+                code: true,
+                departmentId: true,
+                leader: { select: { id: true, name: true, email: true } },
+            },
         });
         return res.json(roles);
     } catch (error) {

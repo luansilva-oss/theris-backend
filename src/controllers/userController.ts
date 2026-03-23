@@ -34,11 +34,13 @@ const normalizeEmail = (email: string): string => {
 export const searchUsersForAutocomplete = async (req: Request, res: Response) => {
   const q = String(req.query.q ?? '').trim();
   if (q.length < 2) return res.json([]);
+  const departmentId = String(req.query.departmentId ?? '').trim();
   try {
     const users = await prisma.user.findMany({
       where: {
         isActive: true,
         name: { contains: q, mode: 'insensitive' },
+        ...(departmentId ? { departmentId } : {}),
       },
       take: 8,
       orderBy: { name: 'asc' },

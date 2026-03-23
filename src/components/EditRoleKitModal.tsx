@@ -27,6 +27,8 @@ interface Role {
     departmentId: string;
     department?: { name: string; unitId?: string; unit?: { name: string } };
     kitItems?: RoleKitItem[];
+    leaderId?: string | null;
+    leader?: { id: string; name: string; email: string } | null;
 }
 
 interface Department {
@@ -54,9 +56,22 @@ interface Props {
     onUpdate: () => void | Promise<void>;
     showToast: (msg: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
     onOpenAuditHistory?: (entidadeId: string, entidadeTipo: string) => void;
+    /** Apenas SUPER_ADMIN vê a seção de líder do cargo. */
+    currentUser?: { systemProfile: string } | null;
 }
 
-export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, departmentId, units = [], departments = [], onUpdate, showToast, onOpenAuditHistory }) => {
+export const EditRoleKitModal: React.FC<Props> = ({
+    isOpen,
+    onClose,
+    role,
+    departmentId,
+    units = [],
+    departments = [],
+    onUpdate,
+    showToast,
+    onOpenAuditHistory,
+    currentUser = null,
+}) => {
     if (!isOpen) return null;
 
     const isCreateMode = !role;
@@ -69,6 +84,12 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
     const [toolsAndLevelsMap, setToolsAndLevelsMap] = useState<Record<string, { label: string; value: string }[]>>({});
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+
+    const isSuperAdmin = currentUser?.systemProfile === 'SUPER_ADMIN';
+    const [draftLeaderId, setDraftLeaderId] = useState<string | null>(null);
+    const [draftLeaderName, setDraftLeaderName] = useState<string | null>(null);
+    const [leaderSearch, setLeaderSearch] = useState('');
+    const [leaderSuggestions, setLeaderSuggestions] = useState<{ id: string; name: string; email: string }[]>([]);
 
     const selectedDept = departments.find(d => d.id === selectedDepartmentId);
     const unitOfSelectedDept = selectedDept?.unitId ? units.find(u => u.id === selectedDept.unitId) : null;
@@ -120,9 +141,34 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                 })) || []);
                 setTools(toolsList || []);
                 setToolsAndLevelsMap(levelsMap || {});
+                const lid = roleData?.leaderId ?? null;
+                setDraftLeaderId(lid);
+                setDraftLeaderName(roleData?.leader?.name ?? null);
+                setLeaderSearch('');
+                setLeaderSuggestions([]);
             }).catch(e => console.error(e)).finally(() => setLoading(false));
         }
     }, [isOpen, role?.id, departmentId, isCreateMode]);
+
+    useEffect(() => {
+        if (!isOpen || isCreateMode || !isSuperAdmin) return;
+        const q = leaderSearch.trim();
+        const dept = selectedDepartmentId;
+        if (q.length < 2 || !dept) {
+            setLeaderSuggestions([]);
+            return;
+        }
+        const t = window.setTimeout(() => {
+            fetch(
+                `${API_URL}/api/users/search?q=${encodeURIComponent(q)}&departmentId=${encodeURIComponent(dept)}`,
+                { credentials: 'include' }
+            )
+                .then((r) => (r.ok ? r.json() : []))
+                .then((list) => setLeaderSuggestions(Array.isArray(list) ? list : []))
+                .catch(() => setLeaderSuggestions([]));
+        }, 300);
+        return () => window.clearTimeout(t);
+    }, [leaderSearch, selectedDepartmentId, isOpen, isCreateMode, isSuperAdmin]);
 
     // Ao trocar departamento, atualiza Unidade para a unidade do novo departamento
     useEffect(() => {
@@ -239,6 +285,9 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                 if (selectedDepartmentId && selectedDepartmentId !== role.departmentId) {
                     payload.departmentId = selectedDepartmentId;
                 }
+                if (isSuperAdmin) {
+                    (payload as { leaderId?: string | null }).leaderId = draftLeaderId;
+                }
                 const res = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
                     method: 'PUT',
                     credentials: 'include',
@@ -332,6 +381,88 @@ export const EditRoleKitModal: React.FC<Props> = ({ isOpen, onClose, role, depar
                                 </div>
                                 <p style={{ color: '#71717a', fontSize: 12, margin: '12px 0 0 0' }}>Ao alterar o departamento, todos os colaboradores deste cargo serão movidos junto.</p>
                             </div>
+
+                            {!isCreateMode && isSuperAdmin && role && (
+                                <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', marginBottom: 16 }}>
+                                    <h4 style={{ color: '#f4f4f5', margin: '0 0 12px 0', fontSize: 14 }}>Liderança</h4>
+                                    <label style={{ fontSize: 12, color: '#a1a1aa' }}>Líder do cargo</label>
+                                    {draftLeaderId && draftLeaderName ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                                            <span style={{ color: '#e4e4e7', fontSize: 14 }}>{draftLeaderName}</span>
+                                            <button
+                                                type="button"
+                                                className="btn-mini"
+                                                onClick={() => {
+                                                    setDraftLeaderId(null);
+                                                    setDraftLeaderName(null);
+                                                    setLeaderSearch('');
+                                                    setLeaderSuggestions([]);
+                                                }}
+                                            >
+                                                Remover
+                                            </button>
+                                        </div>
+                                    ) : null}
+                                    <div style={{ position: 'relative', marginTop: 8 }}>
+                                        <input
+                                            className="form-input"
+                                            style={{ width: '100%', marginTop: 4 }}
+                                            placeholder="Digite o nome para buscar (mesmo departamento)"
+                                            value={leaderSearch}
+                                            onChange={(e) => setLeaderSearch(e.target.value)}
+                                            disabled={!selectedDepartmentId}
+                                        />
+                                        {leaderSuggestions.length > 0 && (
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    zIndex: 20,
+                                                    left: 0,
+                                                    right: 0,
+                                                    top: '100%',
+                                                    marginTop: 4,
+                                                    background: '#27272a',
+                                                    border: '1px solid #3f3f46',
+                                                    borderRadius: 8,
+                                                    maxHeight: 200,
+                                                    overflowY: 'auto',
+                                                    boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                                                }}
+                                            >
+                                                {leaderSuggestions.map((u) => (
+                                                    <button
+                                                        key={u.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setDraftLeaderId(u.id);
+                                                            setDraftLeaderName(u.name);
+                                                            setLeaderSearch('');
+                                                            setLeaderSuggestions([]);
+                                                        }}
+                                                        style={{
+                                                            display: 'block',
+                                                            width: '100%',
+                                                            textAlign: 'left',
+                                                            padding: '10px 12px',
+                                                            background: 'transparent',
+                                                            border: 'none',
+                                                            color: '#e4e4e7',
+                                                            cursor: 'pointer',
+                                                            fontSize: 13,
+                                                        }}
+                                                    >
+                                                        {u.name}
+                                                        <span style={{ display: 'block', color: '#71717a', fontSize: 11 }}>{u.email}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p style={{ color: '#a16207', fontSize: 12, margin: '12px 0 0 0', lineHeight: 1.45 }}>
+                                        Ao definir ou alterar o líder, todos os colaboradores deste cargo terão o gestor atualizado automaticamente.
+                                    </p>
+                                </div>
+                            )}
 
                             <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', marginBottom: 16 }}>
                                 <h4 style={{ color: '#f4f4f5', margin: '0 0 12px 0', fontSize: 14 }}>Kit básico de ferramentas</h4>

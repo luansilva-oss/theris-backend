@@ -36,6 +36,8 @@ model Role {
   code         String?       // Ex: KBS-BO-1 (Código do cargo no board); mesmo código pode existir em departamentos diferentes
   departmentId String
   department   Department    @relation(fields: [departmentId], references: [id])
+  leaderId     String?
+  leader       User?         @relation("RoleLeader", fields: [leaderId], references: [id], onDelete: SetNull)
   kitItems     RoleKitItem[]
   inboxRequests Request[] @relation("RequestInboxRole")
 
@@ -114,6 +116,9 @@ model User {
 
   // Controle de notificação de senha JumpCloud expirando (evitar spam: 1x por dia)
   senhaExpiracaoNotificacoes SenhaExpiracaoNotificacao[]
+
+  // Cargos nos quais este usuário é líder formal (propagação de gestor)
+  ledRoles Role[] @relation("RoleLeader")
 }
 
 model HistoricoMudanca {

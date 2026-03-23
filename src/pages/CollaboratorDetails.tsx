@@ -15,7 +15,7 @@ interface CollaboratorDetailsData {
     systemProfile?: string;
     departmentRef?: { id: string; name: string } | null;
     unitRef?: { id: string; name: string } | null;
-    role?: { id: string; name: string; code: string | null } | null;
+    role?: { id: string; name: string; code: string | null; leaderId?: string | null } | null;
     manager?: { id: string; name: string } | null;
   };
   kbsFerramentas: { ferramenta: string; sigla: string; nivel: string; critico: boolean; criticidade?: string }[];
@@ -131,6 +131,8 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   }
 
   const { user, kbsFerramentas, acessosExtraordinarios = [], historicoCargos } = data;
+  const managerViaRole =
+    Boolean(user?.manager?.id && user?.role?.leaderId && user.manager.id === user.role.leaderId);
   const canEdit = currentUser && (currentUser.systemProfile === 'SUPER_ADMIN' || currentUser.systemProfile === 'GESTOR' || currentUser.systemProfile === 'ADMIN');
 
   const loadDetails = () => fetchDetails().catch(() => {});
@@ -260,9 +262,14 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
               <a href={`mailto:${user?.email}`} style={{ color: '#38BDF8', textDecoration: 'none' }}>{user?.email || '—'}</a>
             </div>
             {user?.manager && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <UserIcon size={16} color="#71717a" style={{ flexShrink: 0 }} />
-                <span>Gestor: {user.manager?.name}</span>
+                <span>
+                  Gestor: {user.manager?.name}
+                  {managerViaRole && (
+                    <span style={{ color: '#71717a', fontSize: 12, fontWeight: 500, marginLeft: 6 }}>(via cargo)</span>
+                  )}
+                </span>
               </div>
             )}
           </div>

@@ -49,7 +49,8 @@ async function runOffboardingAutomation(
   requestId: string,
   requestType: string,
   detailsJson: string | null,
-  actionDate?: Date | string | null
+  actionDate?: Date | string | null,
+  authorId?: string | null
 ): Promise<void> {
   if (!OFFBOARDING_REQUEST_TYPES.includes(requestType)) return;
   let details: Record<string, unknown> = {};
@@ -119,6 +120,9 @@ async function runOffboardingAutomation(
     }
   }
 
+  const offboardUserId = targetUser.id;
+  const offboardRoleId = targetUser.roleId;
+
   await prisma.user.update({
     where: { id: targetUser.id },
     data: {
@@ -130,6 +134,14 @@ async function runOffboardingAutomation(
       isActive: false
     }
   });
+
+  try {
+    const { handleLeaderRoleChange } = await import('../services/leadershipPropagationService');
+    await handleLeaderRoleChange(offboardUserId, offboardRoleId, null, authorId ?? undefined);
+  } catch (leadErr) {
+    console.error('[Automação] Desligamento: handleLeaderRoleChange:', leadErr);
+  }
+
   console.log(`[Automação] Usuário ${targetUser.name} (${targetUser.id}) desligado com sucesso após aprovação do chamado ${requestId}.`);
 
   if (kitItems.length > 0) {
@@ -160,7 +172,11 @@ type OnboardingResult = {
   /** E-mail do colaborador após create/update (sync JumpCloud). */
   userEmail: string;
 };
-async function runOnboardingAutomation(requestId: string, request: { type: string; details: string | null }): Promise<OnboardingResult | void> {
+async function runOnboardingAutomation(
+  requestId: string,
+  request: { type: string; details: string | null },
+  authorId?: string | null
+): Promise<OnboardingResult | void> {
   if (!ONBOARDING_REQUEST_TYPES.includes(request.type)) return;
   let d: Record<string, unknown> = {};
   try {
@@ -251,6 +267,12 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
         isActive: true
       }
     });
+    try {
+      const { propagateLeaderOnRoleChange } = await import('../services/leadershipPropagationService');
+      await propagateLeaderOnRoleChange(user.id, role.id, authorId ?? undefined);
+    } catch (leadErr) {
+      console.error('[Automação Onboarding] propagateLeaderOnRoleChange:', leadErr);
+    }
     console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${user.name} vinculado com sucesso (Chamado ${requestId}).`);
     return {
       requestId,
@@ -281,6 +303,12 @@ async function runOnboardingAutomation(requestId: string, request: { type: strin
       isActive: true
     }
   });
+  try {
+    const { propagateLeaderOnRoleChange } = await import('../services/leadershipPropagationService');
+    await propagateLeaderOnRoleChange(created.id, role.id, authorId ?? undefined);
+  } catch (leadErr) {
+    console.error('[Automação Onboarding] propagateLeaderOnRoleChange:', leadErr);
+  }
   console.log(`[Automação Onboarding] Unidade/Depto/Cargo validados e colaborador ${collaboratorName || collaboratorEmail} criado e vinculado com sucesso (Chamado ${requestId}).`);
   return {
     requestId,
@@ -634,7 +662,7 @@ async function runChangeRoleAutomation(
     return { success: false };
   }
   console.log('[CHANGE_ROLE] Colaborador identificado userId=', targetUser.id, '; novo roleId=', roleId, 'departmentId=', departmentId);
-  if (!jobTitle && roleName) jobTitle = roleName;
+  if (!jobTitle && futureRole) jobTitle = futureRole;
 
   const oldUser = await prisma.user.findUnique({
     where: { id: targetUser.id },
@@ -711,6 +739,14 @@ async function runChangeRoleAutomation(
     dadosDepois: { roleId, departmentId, unitId, jobTitle },
     autorId: approverId ?? undefined
   });
+
+  try {
+    const { propagateLeaderOnRoleChange, handleLeaderRoleChange } = await import('../services/leadershipPropagationService');
+    await propagateLeaderOnRoleChange(targetUser.id, roleId!, approverId ?? undefined);
+    await handleLeaderRoleChange(targetUser.id, oldUser?.roleId ?? null, roleId, approverId ?? undefined);
+  } catch (leadErr) {
+    console.error('[CHANGE_ROLE] Leadership propagation:', leadErr);
+  }
 
   console.log(`[Automação CHANGE_ROLE] Usuário ${targetUser.name} (${targetUser.id}) atualizado: cargo/departamento aplicados (chamado ${requestId}).`);
 
@@ -1596,7 +1632,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       // CENÁRIO 1b: ONBOARDING (HIRING, ADMISSAO, ONBOARDING) — vincula colaborador a departamento e cargo + JML notifica Owners (Joiner)
       else if (ONBOARDING_REQUEST_TYPES.includes(request.type)) {
         try {
-          const onboardingResult = await runOnboardingAutomation(id, request);
+          const onboardingResult = await runOnboardingAutomation(id, request, approverId);
           if (onboardingResult) {
             syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
               console.error('[JumpCloud Sync] Erro:', err)
@@ -1778,7 +1814,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       // CENÁRIO 4: DESLIGAMENTO (FIRING / DEMISSAO / OFFBOARDING) — desvincula o colaborador alvo e notifica Owners
       else if (OFFBOARDING_REQUEST_TYPES.includes(request.type)) {
         try {
-          await runOffboardingAutomation(id, request.type, request.details, request.actionDate);
+          await runOffboardingAutomation(id, request.type, request.details, request.actionDate, approverId);
         } catch (offboardError) {
           console.error('[Automação] Erro ao desvincular usuário após aprovação de desligamento:', offboardError);
         }
@@ -2093,7 +2129,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       if (existing.type === 'CHANGE_ROLE') {
         console.log('[CHANGE_ROLE] Executando fluxo pós-aprovação (metadata) para requestId:', id);
         try {
-          const result = await runChangeRoleAutomation(id, existing, existing.approverId);
+          const result = await runChangeRoleAutomation(id, existing, existing.approverId || userId);
           if (result.success) {
             if (result.userEmail) {
               syncUserToJumpCloud(result.userEmail).catch((err) =>
@@ -2152,14 +2188,14 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       }
       if (OFFBOARDING_REQUEST_TYPES.includes(existing.type)) {
         try {
-          await runOffboardingAutomation(id, existing.type, existing.details, existing.actionDate);
+          await runOffboardingAutomation(id, existing.type, existing.details, existing.actionDate, userId);
         } catch (offboardError) {
           console.error('[Automação] Erro ao desvincular usuário após aprovação de desligamento (metadata):', offboardError);
         }
       }
       if (ONBOARDING_REQUEST_TYPES.includes(existing.type)) {
         try {
-          const onboardingResult = await runOnboardingAutomation(id, existing);
+          const onboardingResult = await runOnboardingAutomation(id, existing, userId);
           if (onboardingResult) {
             syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
               console.error('[JumpCloud Sync] Erro:', err)

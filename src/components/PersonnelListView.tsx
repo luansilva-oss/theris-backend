@@ -36,6 +36,7 @@ interface Role {
     departmentId: string;
     department?: { name: string };
     kitItems?: unknown[];
+    leader?: { id: string; name: string; email?: string } | null;
 }
 
 interface Unit {
@@ -184,7 +185,7 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
 
                                             {expandedDepts[deptKey] && (
                                                 <div style={{ padding: '8px 12px 12px 24px', background: '#09090b' }}>
-                                                    {(dept.roles && dept.roles.length > 0 ? dept.roles : jobTitles.map((jt: string) => ({ name: jt, kitItems: [] as unknown[] }))).map((roleOrPlaceholder: { id?: string; name: string; code?: string | null; departmentId?: string; department?: { name: string }; kitItems?: unknown[] }) => {
+                                                    {(dept.roles && dept.roles.length > 0 ? dept.roles : jobTitles.map((jt: string) => ({ name: jt, kitItems: [] as unknown[] }))).map((roleOrPlaceholder: { id?: string; name: string; code?: string | null; departmentId?: string; department?: { name: string }; kitItems?: unknown[]; leader?: { id: string; name: string } | null }) => {
                                                         const jobTitle = roleOrPlaceholder.name;
                                                         const roleUsers = getUsersByUnitDeptJob(unitName, deptName, jobTitle);
                                                         const roleEntity = findRole(deptName, jobTitle) ?? (roleOrPlaceholder.id ? (roleOrPlaceholder as Role) : null);
@@ -209,6 +210,12 @@ export const PersonnelListView: React.FC<PersonnelListViewProps> = ({
                                                                         <span style={{ fontWeight: 500, color: '#e4e4e7', fontSize: '13px' }}>{jobTitle}</span>
                                                                         {roleOrPlaceholder.code && (
                                                                             <span style={{ fontSize: '11px', color: '#71717a', fontWeight: 500 }}>{roleOrPlaceholder.code}</span>
+                                                                        )}
+                                                                        {(roleEntity?.leader?.name || roleOrPlaceholder.leader?.name) && (
+                                                                            <span style={{ fontSize: '12px', color: '#a1a1aa', fontWeight: 500 }}>
+                                                                                {' '}
+                                                                                · 👤 {roleEntity?.leader?.name || roleOrPlaceholder.leader?.name}
+                                                                            </span>
                                                                         )}
                                                                     </div>
                                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>

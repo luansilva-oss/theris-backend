@@ -3980,6 +3980,7 @@ export default function App() {
         departmentId={selectedRoleForKit ? selectedRoleForKit.departmentId : (selectedDepartmentForNewRole?.id ?? null)}
         units={units}
         departments={departments}
+        currentUser={currentUser ? { systemProfile: currentUser.systemProfile } : null}
         onUpdate={loadData}
         showToast={showToast}
         onOpenAuditHistory={(entidadeId, entidadeTipo) => {
