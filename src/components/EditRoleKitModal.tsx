@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, User } from 'lucide-react';
 
 import { API_URL } from '../config';
 import { EntityAuditHistory } from './EntityAuditHistory';
@@ -72,8 +72,6 @@ export const EditRoleKitModal: React.FC<Props> = ({
     onOpenAuditHistory,
     currentUser = null,
 }) => {
-    if (!isOpen) return null;
-
     const isCreateMode = !role;
     const [roleName, setRoleName] = useState('');
     const [roleCode, setRoleCode] = useState('');
@@ -86,10 +84,12 @@ export const EditRoleKitModal: React.FC<Props> = ({
     const [saving, setSaving] = useState(false);
 
     const isSuperAdmin = currentUser?.systemProfile === 'SUPER_ADMIN';
-    const [draftLeaderId, setDraftLeaderId] = useState<string | null>(null);
-    const [draftLeaderName, setDraftLeaderName] = useState<string | null>(null);
+    /** Só muda no PUT ao remover ou ao escolher alguém na lista. */
+    const [leaderForPut, setLeaderForPut] = useState<{ id: string; name: string; email: string } | null>(null);
+    const [isSearchingReplacement, setIsSearchingReplacement] = useState(false);
     const [leaderSearch, setLeaderSearch] = useState('');
     const [leaderSuggestions, setLeaderSuggestions] = useState<{ id: string; name: string; email: string }[]>([]);
+    const leaderBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const selectedDept = departments.find(d => d.id === selectedDepartmentId);
     const unitOfSelectedDept = selectedDept?.unitId ? units.find(u => u.id === selectedDept.unitId) : null;
@@ -97,15 +97,34 @@ export const EditRoleKitModal: React.FC<Props> = ({
     const lastInitializedForRef = useRef<string | null>(null);
 
     useEffect(() => {
+        return () => {
+            if (leaderBlurTimeoutRef.current) clearTimeout(leaderBlurTimeoutRef.current);
+        };
+    }, []);
+
+    useEffect(() => {
         if (!isOpen) {
             lastInitializedForRef.current = null;
+            setIsSearchingReplacement(false);
+            setLeaderSearch('');
+            setLeaderSuggestions([]);
+            if (leaderBlurTimeoutRef.current) {
+                clearTimeout(leaderBlurTimeoutRef.current);
+                leaderBlurTimeoutRef.current = null;
+            }
             return;
         }
-        const key = isCreateMode ? `create-${departmentId}` : `edit-${role?.id}`;
+        const key = isCreateMode
+            ? `create-${departmentId}`
+            : `edit-${role?.id}-${role?.leader?.id ?? 'noleader'}`;
         if (lastInitializedForRef.current === key) return;
         lastInitializedForRef.current = key;
 
         if (isCreateMode) {
+            setLeaderForPut(null);
+            setIsSearchingReplacement(false);
+            setLeaderSearch('');
+            setLeaderSuggestions([]);
             setRoleName('');
             setRoleCode('');
             setSelectedDepartmentId(departmentId || '');
@@ -121,6 +140,18 @@ export const EditRoleKitModal: React.FC<Props> = ({
                 setToolsAndLevelsMap(levelsMap || {});
             }).catch(e => console.error(e)).finally(() => setLoading(false));
         } else if (role) {
+            if (role.leader?.id) {
+                setLeaderForPut({
+                    id: role.leader.id,
+                    name: role.leader.name,
+                    email: role.leader.email || '',
+                });
+            } else {
+                setLeaderForPut(null);
+            }
+            setIsSearchingReplacement(false);
+            setLeaderSearch('');
+            setLeaderSuggestions([]);
             setRoleName(role.name);
             setRoleCode(role.code || '');
             setSelectedDepartmentId(role.departmentId || '');
@@ -141,14 +172,26 @@ export const EditRoleKitModal: React.FC<Props> = ({
                 })) || []);
                 setTools(toolsList || []);
                 setToolsAndLevelsMap(levelsMap || {});
-                const lid = roleData?.leaderId ?? null;
-                setDraftLeaderId(lid);
-                setDraftLeaderName(roleData?.leader?.name ?? null);
+                if (roleData?.leader?.id) {
+                    setLeaderForPut({
+                        id: (roleData.leaderId as string) || roleData.leader.id,
+                        name: roleData.leader.name,
+                        email: roleData.leader.email || '',
+                    });
+                } else if (roleData?.leaderId && role.leader?.id === roleData.leaderId) {
+                    setLeaderForPut({
+                        id: role.leader.id,
+                        name: role.leader.name,
+                        email: role.leader.email || '',
+                    });
+                } else if (roleData != null && roleData.leaderId === null) {
+                    setLeaderForPut(null);
+                }
                 setLeaderSearch('');
                 setLeaderSuggestions([]);
             }).catch(e => console.error(e)).finally(() => setLoading(false));
         }
-    }, [isOpen, role?.id, departmentId, isCreateMode]);
+    }, [isOpen, role?.id, role?.leader?.id, departmentId, isCreateMode]);
 
     useEffect(() => {
         if (!isOpen || isCreateMode || !isSuperAdmin) return;
@@ -286,7 +329,7 @@ export const EditRoleKitModal: React.FC<Props> = ({
                     payload.departmentId = selectedDepartmentId;
                 }
                 if (isSuperAdmin) {
-                    (payload as { leaderId?: string | null }).leaderId = draftLeaderId;
+                    (payload as { leaderId?: string | null }).leaderId = leaderForPut?.id ?? null;
                 }
                 const res = await fetch(`${API_URL}/api/structure/roles/${role.id}`, {
                     method: 'PUT',
@@ -308,6 +351,28 @@ export const EditRoleKitModal: React.FC<Props> = ({
         }
         setSaving(false);
     };
+
+    const showLeaderCard = Boolean(leaderForPut) && !isSearchingReplacement;
+    const leaderInputValue = isSearchingReplacement || !leaderForPut ? leaderSearch : '';
+
+    const clearLeaderBlurTimer = () => {
+        if (leaderBlurTimeoutRef.current) {
+            clearTimeout(leaderBlurTimeoutRef.current);
+            leaderBlurTimeoutRef.current = null;
+        }
+    };
+
+    const scheduleEndLeaderSearch = () => {
+        clearLeaderBlurTimer();
+        leaderBlurTimeoutRef.current = setTimeout(() => {
+            leaderBlurTimeoutRef.current = null;
+            setIsSearchingReplacement(false);
+            setLeaderSearch('');
+            setLeaderSuggestions([]);
+        }, 180);
+    };
+
+    if (!isOpen) return null;
 
     return (
         <div className="modal-overlay">
@@ -386,34 +451,83 @@ export const EditRoleKitModal: React.FC<Props> = ({
                                 <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', marginBottom: 16 }}>
                                     <h4 style={{ color: '#f4f4f5', margin: '0 0 12px 0', fontSize: 14 }}>Liderança</h4>
                                     <label style={{ fontSize: 12, color: '#a1a1aa' }}>Líder do cargo</label>
-                                    {draftLeaderId && draftLeaderName ? (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
-                                            <span style={{ color: '#e4e4e7', fontSize: 14 }}>{draftLeaderName}</span>
+
+                                    {showLeaderCard && leaderForPut && (
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 12,
+                                                marginTop: 10,
+                                                padding: '12px 14px',
+                                                background: '#27272a',
+                                                borderRadius: 10,
+                                                border: '1px solid #3f3f46',
+                                            }}
+                                        >
+                                            <User size={22} color="#a1a1aa" style={{ flexShrink: 0 }} />
+                                            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '6px 16px' }}>
+                                                <span style={{ color: '#f4f4f5', fontSize: 15, fontWeight: 600 }}>{leaderForPut.name}</span>
+                                                <span style={{ color: '#71717a', fontSize: 13, opacity: 0.95 }}>{leaderForPut.email || '—'}</span>
+                                            </div>
                                             <button
                                                 type="button"
-                                                className="btn-mini"
+                                                title="Remover líder"
                                                 onClick={() => {
-                                                    setDraftLeaderId(null);
-                                                    setDraftLeaderName(null);
+                                                    clearLeaderBlurTimer();
+                                                    setLeaderForPut(null);
+                                                    setIsSearchingReplacement(true);
                                                     setLeaderSearch('');
                                                     setLeaderSuggestions([]);
                                                 }}
+                                                style={{
+                                                    flexShrink: 0,
+                                                    width: 32,
+                                                    height: 32,
+                                                    borderRadius: 8,
+                                                    border: '1px solid #52525b',
+                                                    background: 'transparent',
+                                                    color: '#a1a1aa',
+                                                    cursor: 'pointer',
+                                                    fontSize: 16,
+                                                    lineHeight: 1,
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                }}
                                             >
-                                                Remover
+                                                ✕
                                             </button>
                                         </div>
-                                    ) : null}
-                                    <div style={{ position: 'relative', marginTop: 8 }}>
+                                    )}
+
+                                    <div style={{ position: 'relative', marginTop: showLeaderCard ? 12 : 8 }}>
                                         <input
                                             className="form-input"
                                             style={{ width: '100%', marginTop: 4 }}
-                                            placeholder="Digite o nome para buscar (mesmo departamento)"
-                                            value={leaderSearch}
+                                            placeholder={
+                                                leaderForPut && !isSearchingReplacement
+                                                    ? 'Clique para buscar outro líder (mesmo departamento)'
+                                                    : 'Digite o nome para buscar (mesmo departamento)'
+                                            }
+                                            value={leaderInputValue}
                                             onChange={(e) => setLeaderSearch(e.target.value)}
                                             disabled={!selectedDepartmentId}
+                                            onFocus={() => {
+                                                clearLeaderBlurTimer();
+                                                if (leaderForPut && !isSearchingReplacement) {
+                                                    setIsSearchingReplacement(true);
+                                                    setLeaderSearch('');
+                                                    setLeaderSuggestions([]);
+                                                }
+                                            }}
+                                            onBlur={() => {
+                                                scheduleEndLeaderSearch();
+                                            }}
                                         />
-                                        {leaderSuggestions.length > 0 && (
+                                        {isSearchingReplacement && leaderSuggestions.length > 0 && (
                                             <div
+                                                onMouseDown={(e) => e.preventDefault()}
                                                 style={{
                                                     position: 'absolute',
                                                     zIndex: 20,
@@ -424,18 +538,23 @@ export const EditRoleKitModal: React.FC<Props> = ({
                                                     background: '#27272a',
                                                     border: '1px solid #3f3f46',
                                                     borderRadius: 8,
-                                                    maxHeight: 200,
+                                                    maxHeight: 220,
                                                     overflowY: 'auto',
                                                     boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
                                                 }}
                                             >
-                                                {leaderSuggestions.map((u) => (
+                                                {leaderSuggestions.map((u, idx) => (
                                                     <button
                                                         key={u.id}
                                                         type="button"
                                                         onClick={() => {
-                                                            setDraftLeaderId(u.id);
-                                                            setDraftLeaderName(u.name);
+                                                            clearLeaderBlurTimer();
+                                                            setLeaderForPut({
+                                                                id: u.id,
+                                                                name: u.name,
+                                                                email: u.email || '',
+                                                            });
+                                                            setIsSearchingReplacement(false);
                                                             setLeaderSearch('');
                                                             setLeaderSuggestions([]);
                                                         }}
@@ -446,13 +565,14 @@ export const EditRoleKitModal: React.FC<Props> = ({
                                                             padding: '10px 12px',
                                                             background: 'transparent',
                                                             border: 'none',
+                                                            borderBottom: idx < leaderSuggestions.length - 1 ? '1px solid #3f3f46' : 'none',
                                                             color: '#e4e4e7',
                                                             cursor: 'pointer',
                                                             fontSize: 13,
                                                         }}
                                                     >
-                                                        {u.name}
-                                                        <span style={{ display: 'block', color: '#71717a', fontSize: 11 }}>{u.email}</span>
+                                                        <span style={{ fontWeight: 600, display: 'block' }}>{u.name}</span>
+                                                        <span style={{ display: 'block', color: '#71717a', fontSize: 12, marginTop: 2 }}>{u.email}</span>
                                                     </button>
                                                 ))}
                                             </div>
