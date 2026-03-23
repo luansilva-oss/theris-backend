@@ -84,8 +84,12 @@ export const EditRoleKitModal: React.FC<Props> = ({
     const [saving, setSaving] = useState(false);
 
     const isSuperAdmin = currentUser?.systemProfile === 'SUPER_ADMIN';
-    /** Só muda no PUT ao remover ou ao escolher alguém na lista. */
-    const [leaderForPut, setLeaderForPut] = useState<{ id: string; name: string; email: string } | null>(null);
+    /** Só muda no PUT ao remover ou ao escolher alguém na lista. Pré-carrega com role.leader na primeira montagem. */
+    const [leaderForPut, setLeaderForPut] = useState<{ id: string; name: string; email: string } | null>(() =>
+        role?.leader?.id
+            ? { id: role.leader.id, name: role.leader.name, email: role.leader.email || '' }
+            : null
+    );
     const [isSearchingReplacement, setIsSearchingReplacement] = useState(false);
     const [leaderSearch, setLeaderSearch] = useState('');
     const [leaderSuggestions, setLeaderSuggestions] = useState<{ id: string; name: string; email: string }[]>([]);
@@ -196,22 +200,25 @@ export const EditRoleKitModal: React.FC<Props> = ({
     useEffect(() => {
         if (!isOpen || isCreateMode || !isSuperAdmin) return;
         const q = leaderSearch.trim();
-        const dept = selectedDepartmentId;
-        if (q.length < 2 || !dept) {
+        if (q.length < 2) {
             setLeaderSuggestions([]);
             return;
         }
         const t = window.setTimeout(() => {
+            const ts = Date.now();
             fetch(
-                `${API_URL}/api/users/search?q=${encodeURIComponent(q)}&departmentId=${encodeURIComponent(dept)}`,
-                { credentials: 'include' }
+                `${API_URL}/api/users/search?q=${encodeURIComponent(q)}&_=${ts}`,
+                {
+                    credentials: 'include',
+                    headers: { 'Cache-Control': 'no-cache' },
+                }
             )
                 .then((r) => (r.ok ? r.json() : []))
                 .then((list) => setLeaderSuggestions(Array.isArray(list) ? list : []))
                 .catch(() => setLeaderSuggestions([]));
         }, 300);
         return () => window.clearTimeout(t);
-    }, [leaderSearch, selectedDepartmentId, isOpen, isCreateMode, isSuperAdmin]);
+    }, [leaderSearch, isOpen, isCreateMode, isSuperAdmin]);
 
     // Ao trocar departamento, atualiza Unidade para a unidade do novo departamento
     useEffect(() => {
@@ -507,12 +514,11 @@ export const EditRoleKitModal: React.FC<Props> = ({
                                             style={{ width: '100%', marginTop: 4 }}
                                             placeholder={
                                                 leaderForPut && !isSearchingReplacement
-                                                    ? 'Clique para buscar outro líder (mesmo departamento)'
-                                                    : 'Digite o nome para buscar (mesmo departamento)'
+                                                    ? 'Clique para buscar outro líder'
+                                                    : 'Digite o nome para buscar colaboradores ativos'
                                             }
                                             value={leaderInputValue}
                                             onChange={(e) => setLeaderSearch(e.target.value)}
-                                            disabled={!selectedDepartmentId}
                                             onFocus={() => {
                                                 clearLeaderBlurTimer();
                                                 if (leaderForPut && !isSearchingReplacement) {
