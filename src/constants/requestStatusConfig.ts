@@ -34,6 +34,7 @@ export const REQUEST_STATUS_CONFIG: Record<string, StatusConfigEntry> = {
   RESOLVIDO: { label: 'Resolvido', variant: 'success' },
   CONCLUIDO: { label: 'Concluído', variant: 'success' },
   COMPLETED: { label: 'Concluído', variant: 'success' },
+  FECHADO: { label: 'Fechado', variant: 'success' },
 
   // ——— Rejeição / cancelamento (vermelho) ———
   CANCELADO: { label: 'Cancelado', variant: 'danger' },
@@ -71,7 +72,8 @@ export const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'CANCELADO', label: 'Cancelado' },
   { value: 'RESOLVED', label: 'Resolvido' },
   { value: 'RESOLVIDO', label: 'Resolvido' },
-  { value: 'CONCLUIDO', label: 'Concluído' }
+  { value: 'CONCLUIDO', label: 'Concluído' },
+  { value: 'FECHADO', label: 'Fechado' }
 ];
 
 /**

@@ -30,6 +30,27 @@ const normalizeEmail = (email: string): string => {
   return `${normalizedLocal}@grupo-3c.com`;
 };
 
+/** Busca por nome (contains, case insensitive), apenas ativos, máx. 8 — autocomplete (ex.: atribuir executor em chamado Infra). */
+export const searchUsersForAutocomplete = async (req: Request, res: Response) => {
+  const q = String(req.query.q ?? '').trim();
+  if (q.length < 2) return res.json([]);
+  try {
+    const users = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        name: { contains: q, mode: 'insensitive' },
+      },
+      take: 8,
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, jobTitle: true, email: true },
+    });
+    return res.json(users);
+  } catch (error) {
+    console.error('searchUsersForAutocomplete:', error);
+    return res.status(500).json({ error: 'Erro ao buscar usuários.' });
+  }
+};
+
 export const getAllUsers = async (req: Request, res: Response) => {
   if (!hasProfile(req, ['ADMIN', 'SUPER_ADMIN'])) {
     return res.status(403).json({ error: 'Apenas ADMIN ou SUPER_ADMIN podem listar usuários.' });

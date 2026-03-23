@@ -1,6 +1,7 @@
 import { App, LogLevel, ExpressReceiver } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 import { PrismaClient } from '@prisma/client';
+import { isInfraTicketType } from '../lib/infraTicket';
 
 const prisma = new PrismaClient();
 
@@ -1280,7 +1281,7 @@ async function saveRequest(
         status,
         currentApproverRole,
         approverId,
-        assigneeId: requesterId,
+        assigneeId: isInfraTicketType(dbType) ? null : requesterId,
         isExtraordinary,
         ...(isExtraordinary && toolName && { toolName }),
         ...(isExtraordinary && accessLevel && { accessLevel }),
@@ -2944,7 +2945,7 @@ Caso precise de acesso permanente, entre em contato com o time de Segurança da 
 
 const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
 const PEOPLE_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
-const INFRA_TYPES = ['INFRA_SUPPORT'];
+const INFRA_TYPES = ['INFRA_SUPPORT', 'INFRA'];
 
 const TYPE_LABELS: Record<string, string> = {
   ACCESS_TOOL: 'Kit Padrão / Nova Ferramenta',
@@ -2958,7 +2959,8 @@ const TYPE_LABELS: Record<string, string> = {
   ADMISSAO: 'Admissão',
   DEMISSAO: 'Desligamento',
   PROMOCAO: 'Promoção',
-  INFRA_SUPPORT: 'Suporte Infra / TI'
+  INFRA_SUPPORT: 'Suporte Infra / TI',
+  INFRA: 'Suporte Infra / TI'
 };
 
 function buildNotificationSummary(requestType: string, detailsJson?: string | null): { category: string; typeLabel: string; detailsText: string } {
@@ -2978,7 +2980,7 @@ function buildNotificationSummary(requestType: string, detailsJson?: string | nu
   const typeLabel = TYPE_LABELS[requestType] || requestType;
 
   const parts: string[] = [];
-  if (requestType === 'INFRA_SUPPORT') {
+  if (requestType === 'INFRA_SUPPORT' || requestType === 'INFRA') {
     if (d.requestTypeLabel || d.requestType) parts.push(`Tipo: ${d.requestTypeLabel || d.requestType}`);
     if (d.urgencyLabel || d.urgency) parts.push(`Urgência: ${d.urgencyLabel || d.urgency}`);
     if (d.description) parts.push(`Descrição: ${(d.description as string).slice(0, 150)}${(d.description as string).length > 150 ? '…' : ''}`);
@@ -3146,6 +3148,32 @@ export async function sendDmToSlackUser(
     text,
     ...(blocks ? { blocks } : {}),
   });
+}
+
+/**
+ * DM ao colaborador atribuído como executor em chamado Infra (aberto pelo solicitante no Theris).
+ */
+export async function sendInfraTicketAssigneeDm(params: {
+  assigneeEmail: string;
+  requestId: string;
+  detailsSummary: string;
+  requesterName: string;
+}): Promise<void> {
+  const app = getSlackApp();
+  if (!app?.client) return;
+  const lookup = await app.client.users.lookupByEmail({ email: params.assigneeEmail });
+  const slackId = lookup.user?.id;
+  if (!slackId) return;
+  const shortId = params.requestId.slice(0, 8);
+  const text =
+    `📋 *Você foi incluído em um chamado de Infra*\n\n` +
+    `*Chamado:* #${shortId} — ${params.detailsSummary}\n` +
+    `*Aberto por:* ${params.requesterName}\n\n` +
+    `Você receberá atualizações deste chamado no Theris.`;
+  await sendDmToSlackUser(app.client, slackId, text, [
+    { type: 'section', text: { type: 'mrkdwn', text } },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${shortId} · Theris` }] }
+  ]);
 }
 
 /**

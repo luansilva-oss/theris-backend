@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
 import { sendSlackNotification } from '../services/slackService';
 import { syncUserToJumpCloud } from '../services/jumpcloudSyncService';
+import { isInfraTicketType } from '../lib/infraTicket';
 
 const prisma = new PrismaClient();
 
@@ -859,7 +860,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
         status,
         currentApproverRole,
         approverId,
-        assigneeId: safeRequesterId,
+        assigneeId: isInfraTicketType(safeType) ? null : safeRequesterId,
         isExtraordinary: Boolean(isExtraordinary),
         extraordinaryDuration: detailsObj.duration ? parseInt(detailsObj.duration) : null,
         extraordinaryUnit: detailsObj.unit || null,
@@ -870,15 +871,17 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
     const requesterForAudit = await prisma.user.findUnique({ where: { id: safeRequesterId }, select: { name: true } });
     const { registrarMudanca } = await import('../lib/auditLog');
-    await registrarMudanca({
-      tipo: 'TICKET_ASSIGNED',
-      entidadeTipo: 'Request',
-      entidadeId: newRequest.id,
-      descricao: `Responsável atribuído: ${requesterForAudit?.name ?? '—'}`,
-      dadosAntes: { responsavel: null },
-      dadosDepois: { responsavel: requesterForAudit?.name ?? '—' },
-      autorId: safeRequesterId,
-    }).catch(() => {});
+    if (!isInfraTicketType(safeType)) {
+      await registrarMudanca({
+        tipo: 'TICKET_ASSIGNED',
+        entidadeTipo: 'Request',
+        entidadeId: newRequest.id,
+        descricao: `Responsável atribuído: ${requesterForAudit?.name ?? '—'}`,
+        dadosAntes: { responsavel: null },
+        dadosDepois: { responsavel: requesterForAudit?.name ?? '—' },
+        autorId: safeRequesterId,
+      }).catch(() => {});
+    }
     await registrarMudanca({
       tipo: 'TICKET_CREATED',
       entidadeTipo: 'Request',
@@ -908,7 +911,9 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     console.log('[Chamado] Tentando enviar notificação Slack para chamado:', newRequest.id, 'tipo: TICKET_CREATED');
     try {
       await notifyTicketEvent(newRequest.id, 'TICKET_CREATED', {});
-      await notifyTicketEvent(newRequest.id, 'ASSIGNEE_CHANGED', { assigneeId: safeRequesterId });
+      if (newRequest.assigneeId) {
+        await notifyTicketEvent(newRequest.id, 'ASSIGNEE_CHANGED', { assigneeId: newRequest.assigneeId });
+      }
       console.log('[Chamado] Slack enviado com sucesso para chamado:', newRequest.id);
     } catch (err) {
       console.error('[Chamado] Erro ao enviar Slack:', err);
@@ -1032,7 +1037,7 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
     }
 
     if (category && category !== 'ALL' && category !== 'Todos') {
-      const infraTypes = ['INFRA_SUPPORT'];
+      const infraTypes = ['INFRA_SUPPORT', 'INFRA'];
       const accessTypes = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
       const peopleTypes = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
       if (category === 'Infra') where.type = { in: infraTypes };
@@ -1085,7 +1090,7 @@ export const getMyTickets = async (req: Request, res: Response) => {
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
     if (category && category !== 'ALL' && category !== 'Todos') {
-      const infraTypes = ['INFRA_SUPPORT'];
+      const infraTypes = ['INFRA_SUPPORT', 'INFRA'];
       const accessTypes = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
       const peopleTypes = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
       if (category === 'Infra') where.type = { in: infraTypes };
@@ -1143,8 +1148,8 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
 
     const action = safeStatus === 'APROVAR' ? 'APROVADO' : 'REPROVADO';
 
-    // REGRA DE NEGÓCIO: solicitante não pode aprovar/reprovar o próprio chamado (genérico para qualquer perfil: APPROVER, ADMIN, SUPER_ADMIN)
-    if (approverId === request.requesterId) {
+    // REGRA DE NEGÓCIO: solicitante não pode aprovar/reprovar o próprio chamado (exceto chamados Infra)
+    if (!isInfraTicketType(request.type) && approverId === request.requesterId) {
       return res.status(403).json({ error: 'O solicitante não pode aprovar ou reprovar o próprio chamado.' });
     }
 
@@ -1787,7 +1792,7 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
       include: {
         requester: { select: { id: true, name: true, email: true, departmentRef: { select: { id: true, name: true } } } },
         approver: { select: { id: true, name: true, email: true } },
-        assignee: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, name: true, email: true, jobTitle: true } },
         comments: { orderBy: { createdAt: 'asc' }, include: { author: { select: { id: true, name: true, email: true } } } },
         attachments: { orderBy: { createdAt: 'asc' }, include: { uploadedBy: { select: { id: true, name: true } } } }
       }
@@ -1877,13 +1882,19 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         return res.status(403).json({ error: 'Apenas Super Admins podem cancelar chamados.' });
       }
       const currentStatus = (existing.status || '').toUpperCase();
-      if (['CANCELADO', 'RESOLVIDO', 'CONCLUIDO', 'RESOLVED', 'APROVADO', 'REPROVADO'].includes(currentStatus)) {
+      if (['CANCELADO', 'RESOLVIDO', 'CONCLUIDO', 'RESOLVED', 'APROVADO', 'REPROVADO', 'FECHADO'].includes(currentStatus)) {
         return res.status(400).json({ error: 'Chamado já encerrado e não pode ser cancelado.' });
       }
     }
 
-    // Solicitante não pode aprovar/reprovar o próprio chamado (genérico para qualquer perfil), antes de qualquer outra checagem
-    if (status !== undefined && (String(status) === 'APROVADO' || String(status) === 'RESOLVED' || String(status) === 'RESOLVIDO') && userId && existing.requesterId === userId) {
+    // Solicitante não pode aprovar/reprovar o próprio chamado (exceto chamados Infra), antes de qualquer outra checagem
+    if (
+      !isInfraTicketType(existing.type) &&
+      status !== undefined &&
+      (String(status) === 'APROVADO' || String(status) === 'RESOLVED' || String(status) === 'RESOLVIDO') &&
+      userId &&
+      existing.requesterId === userId
+    ) {
       return res.status(403).json({ error: 'O solicitante não pode aprovar ou reprovar o próprio chamado.' });
     }
 
@@ -1940,10 +1951,11 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
 
     const data: Record<string, unknown> = {};
     if (status !== undefined) data.status = String(status);
-    // Responsável é preenchido apenas automaticamente por fase; edição manual bloqueada
+    // Responsável é preenchido automaticamente por fase (Service Desk). Em Infra, assigneeId é o executor definido pelo solicitante — não sobrescrever.
     const statusStr = status !== undefined ? String(status) : '';
-    const autoAssigneeStatuses = ['IN_PROGRESS', 'EM_ANDAMENTO', 'RESOLVED', 'RESOLVIDO', 'CONCLUIDO', 'APROVADO', 'CANCELADO'];
-    const autoAssigneeId = (status !== undefined && autoAssigneeStatuses.includes(statusStr) && userId) ? userId : undefined;
+    const autoAssigneeStatuses = ['IN_PROGRESS', 'EM_ANDAMENTO', 'RESOLVED', 'RESOLVIDO', 'CONCLUIDO', 'APROVADO', 'CANCELADO', 'FECHADO'];
+    const autoAssigneeId =
+      !isInfraTicketType(existing.type) && status !== undefined && autoAssigneeStatuses.includes(statusStr) && userId ? userId : undefined;
     if (autoAssigneeId !== undefined) (data as any).assigneeId = autoAssigneeId;
     if (scheduledAt !== undefined) data.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
     // Ao SI adicionar solução em AEX PENDING_SI: preencher siApprovedBy/siApprovedAt (acima já validado)
@@ -1957,7 +1969,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       data,
       include: {
         requester: { select: { id: true, name: true, email: true } },
-        assignee: { select: { id: true, name: true, email: true } }
+        assignee: { select: { id: true, name: true, email: true, jobTitle: true } }
       }
     });
 
@@ -1965,6 +1977,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     if (status !== undefined && status !== existing.status) {
       console.log('[Chamado] Tentando enviar notificação Slack para chamado:', id, 'tipo: STATUS_CHANGED');
       const notifPayload: Record<string, unknown> = { from: existing.status, to: status };
+      if (userId) notifPayload.actorId = userId;
       if (String(status) === 'CANCELADO' && userId) {
         const canceler = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
         if (canceler?.name) notifPayload.cancelledByName = canceler.name;
@@ -2001,7 +2014,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       }).catch(() => {});
     }
     if (status !== undefined && status !== existing.status) {
-      if (['RESOLVIDO', 'CONCLUIDO'].includes(newStatus)) {
+      if (['RESOLVIDO', 'CONCLUIDO', 'FECHADO', 'RESOLVED'].includes(newStatus)) {
         await registrarMudanca({
           tipo: 'TICKET_RESOLVED',
           entidadeTipo: 'Request',
@@ -2011,7 +2024,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           dadosDepois: { status: 'RESOLVIDO' },
           autorId: userId ?? undefined,
         }).catch(() => {});
-      } else if (['RESOLVIDO', 'CONCLUIDO'].includes(existing.status)) {
+      } else if (['RESOLVIDO', 'CONCLUIDO', 'FECHADO', 'RESOLVED'].includes(existing.status)) {
         await registrarMudanca({
           tipo: 'TICKET_REOPENED',
           entidadeTipo: 'Request',
@@ -2186,6 +2199,82 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
 };
 
 // ============================================================
+// 5b. ATRIBUIR EXECUTOR (Infra) — apenas solicitante; assigneeId = executor
+// ============================================================
+export const patchRequestAssignee = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const userId = (req.headers['x-user-id'] as string)?.trim();
+  const rawAssignee = (req.body as { assigneeId?: string | null }).assigneeId;
+
+  if (!userId) return res.status(401).json({ error: 'Usuário não identificado.' });
+
+  try {
+    const request = await prisma.request.findUnique({
+      where: { id },
+      include: { requester: { select: { name: true, email: true } } }
+    });
+    if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
+    if (!isInfraTicketType(request.type)) {
+      return res.status(400).json({ error: 'Atribuição por solicitante só é permitida em chamados de infraestrutura.' });
+    }
+    if (request.requesterId !== userId) {
+      return res.status(403).json({ error: 'Apenas o solicitante pode atribuir ou alterar o executor deste chamado.' });
+    }
+
+    const prevAssigneeId = request.assigneeId;
+    let nextAssigneeId: string | null;
+    if (rawAssignee === null || rawAssignee === undefined || rawAssignee === '') {
+      nextAssigneeId = null;
+    } else {
+      const target = await prisma.user.findUnique({
+        where: { id: String(rawAssignee) },
+        select: { id: true, isActive: true, email: true }
+      });
+      if (!target) return res.status(400).json({ error: 'Usuário não encontrado.' });
+      if (!target.isActive) return res.status(400).json({ error: 'Usuário inativo não pode ser atribuído.' });
+      nextAssigneeId = target.id;
+    }
+
+    const updated = await prisma.request.update({
+      where: { id },
+      data: { assigneeId: nextAssigneeId, updatedAt: new Date() },
+      include: {
+        requester: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, name: true, email: true, jobTitle: true } }
+      }
+    });
+
+    if (nextAssigneeId && nextAssigneeId !== prevAssigneeId) {
+      const assigneeRow = await prisma.user.findUnique({
+        where: { id: nextAssigneeId },
+        select: { email: true }
+      });
+      if (assigneeRow?.email) {
+        const { getRequestContext } = await import('../services/ticketEventService');
+        const { sendInfraTicketAssigneeDm } = await import('../services/slackService');
+        const { summary } = getRequestContext({
+          type: request.type,
+          details: request.details,
+          justification: request.justification ?? null
+        });
+        sendInfraTicketAssigneeDm({
+          assigneeEmail: assigneeRow.email,
+          requestId: id,
+          detailsSummary: summary || '—',
+          requesterName: request.requester?.name || 'Solicitante'
+        }).catch((err: unknown) => console.error('[INFRA] Erro ao notificar executor no Slack:', err));
+      }
+    }
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('SOLICITACOES ERROR (patchRequestAssignee):', error);
+    if (error instanceof Error) console.error('Stack:', error.stack);
+    return res.status(500).json({ error: 'Erro ao atualizar executor do chamado' });
+  }
+};
+
+// ============================================================
 // 6. COMENTÁRIO
 // ============================================================
 export const createComment = async (req: Request, res: Response) => {
@@ -2196,6 +2285,12 @@ export const createComment = async (req: Request, res: Response) => {
   try {
     const request = await prisma.request.findUnique({ where: { id } });
     if (!request) return res.status(404).json({ error: 'Solicitação não encontrada' });
+
+    if (isInfraTicketType(request.type)) {
+      if (!authorId || String(authorId) !== String(request.requesterId)) {
+        return res.status(403).json({ error: 'Apenas o responsável pelo chamado pode adicionar anotações.' });
+      }
+    }
 
     // AEX: bloquear solução enquanto aprovação dupla não estiver completa
     const isAex = request.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && request.isExtraordinary);
@@ -2357,7 +2452,7 @@ export const createAttachment = async (req: Request, res: Response) => {
 const EXPORT_CATEGORY_TYPES: Record<string, string[]> = {
   GESTAO_PESSOAS: ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'],
   GESTAO_ACESSOS: ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'],
-  TI_INFRA: ['INFRA_SUPPORT']
+  TI_INFRA: ['INFRA_SUPPORT', 'INFRA']
 };
 
 const SUBJECT_MAP: Record<string, string> = {
@@ -2372,7 +2467,8 @@ const SUBJECT_MAP: Record<string, string> = {
   'ADMISSAO': 'Admissão / Onboarding',
   'DEMISSAO': 'Desligamento / Offboarding',
   'FIRING': 'Desligamento / Offboarding',
-  'INFRA_SUPPORT': 'Suporte de TI / Hardware'
+  'INFRA_SUPPORT': 'Suporte de TI / Hardware',
+  'INFRA': 'Suporte de TI / Hardware'
 };
 
 function getCategoryForType(type: string): string {

@@ -156,7 +156,9 @@ const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 Horas
 // Tipos por categoria para cards de aprovação (Visão Geral)
 const ACCESS_REQUEST_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
 const PEOPLE_REQUEST_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
-const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT'];
+const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT', 'INFRA'];
+
+const CHAMADO_CLOSED_STATUSES = ['CANCELADO', 'APROVADO', 'REPROVADO', 'RESOLVIDO', 'CONCLUIDO', 'FECHADO'];
 
 function getRequestCardContent(r: Request): { category: 'Acessos' | 'Pessoas' | 'Infra'; categoryColor: string; title: string; lines: { label: string; value: string }[] } {
   let detailsObj: Record<string, unknown> = {};
@@ -575,6 +577,11 @@ export default function App() {
   const [chamadoAttachmentUploading, setChamadoAttachmentUploading] = useState(false);
   const chamadoFileInputRef = useRef<HTMLInputElement>(null);
   const [chamadoScheduledAt, setChamadoScheduledAt] = useState('');
+  const [infraAssignSearch, setInfraAssignSearch] = useState('');
+  const [infraAssignSuggestions, setInfraAssignSuggestions] = useState<{ id: string; name: string; email: string; jobTitle: string | null }[]>([]);
+  const [infraAssignDropdownOpen, setInfraAssignDropdownOpen] = useState(false);
+  const [infraAssignPatching, setInfraAssignPatching] = useState(false);
+  const infraAssignDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [expandedKbsSection, setExpandedKbsSection] = useState(false);
   const [isExtraordinaryOpen, setIsExtraordinaryOpen] = useState(false);
 
@@ -930,7 +937,7 @@ export default function App() {
       const headers: HeadersInit = {};
       if (currentUser?.id) headers['x-user-id'] = currentUser.id;
       if (isViewerContext) headers['x-context'] = 'my-tickets';
-      const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}`, { headers });
+      const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}`, { headers, credentials: 'include' });
       if (res.ok) setChamadoDetail(await res.json());
       else setChamadoDetail(null);
     } catch {
@@ -944,6 +951,73 @@ export default function App() {
     else setChamadoDetail(null);
   }, [selectedChamadoId, activeTab]);
 
+  useEffect(() => {
+    if (!selectedChamadoId) {
+      setInfraAssignSearch('');
+      setInfraAssignSuggestions([]);
+      setInfraAssignDropdownOpen(false);
+    }
+  }, [selectedChamadoId]);
+
+  useEffect(() => {
+    if (!chamadoDetail || !INFRA_REQUEST_TYPES.includes(chamadoDetail.type) || chamadoDetail.requester?.id !== currentUser?.id) {
+      return;
+    }
+    const q = infraAssignSearch.trim();
+    if (q.length < 2) {
+      setInfraAssignSuggestions([]);
+      return;
+    }
+    if (infraAssignDebounceRef.current) clearTimeout(infraAssignDebounceRef.current);
+    infraAssignDebounceRef.current = setTimeout(async () => {
+      if (!currentUser?.id) return;
+      try {
+        const res = await fetch(`${API_URL}/api/users/search?q=${encodeURIComponent(q)}`, {
+          headers: { 'x-user-id': currentUser.id },
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const list = await res.json();
+          setInfraAssignSuggestions(Array.isArray(list) ? list : []);
+          setInfraAssignDropdownOpen(true);
+        }
+      } catch {
+        setInfraAssignSuggestions([]);
+      }
+    }, 300);
+    return () => {
+      if (infraAssignDebounceRef.current) clearTimeout(infraAssignDebounceRef.current);
+    };
+  }, [infraAssignSearch, chamadoDetail?.id, chamadoDetail?.type, chamadoDetail?.requester?.id, currentUser?.id]);
+
+  const patchInfraAssigneeOnTicket = async (assigneeId: string | null) => {
+    if (!selectedChamadoId || !currentUser?.id) return;
+    setInfraAssignPatching(true);
+    try {
+      const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/assignee`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
+        credentials: 'include',
+        body: JSON.stringify({ assigneeId }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setChamadoDetail(prev => (prev ? { ...prev, ...updated } : updated));
+        setInfraAssignSearch('');
+        setInfraAssignSuggestions([]);
+        setInfraAssignDropdownOpen(false);
+        showToast(assigneeId ? 'Executor atribuído.' : 'Atribuição removida.', 'success');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(typeof err.error === 'string' ? err.error : 'Erro ao atualizar.', 'error');
+      }
+    } catch {
+      showToast('Erro de conexão.', 'error');
+    } finally {
+      setInfraAssignPatching(false);
+    }
+  };
+
   const handleChamadoMetadataChange = async (field: 'status' | 'scheduledAt', value: string | null) => {
     if (!selectedChamadoId) return;
     try {
@@ -952,7 +1026,11 @@ export default function App() {
       if (field === 'scheduledAt') body.scheduledAt = value ? new Date(value).toISOString() : null;
       const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/metadata`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(currentUser?.id ? { 'x-user-id': currentUser.id } : {}),
+        },
+        credentials: 'include',
         body: JSON.stringify(body)
       });
       if (res.ok) {
@@ -977,7 +1055,8 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
+        credentials: 'include',
         body: JSON.stringify({
           status: action,
           approverId: currentUser.id,
@@ -1015,7 +1094,11 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/comments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(currentUser?.id ? { 'x-user-id': currentUser.id } : {}),
+        },
+        credentials: 'include',
         body: JSON.stringify({ body: chamadoCommentInput.trim(), kind, authorId: currentUser?.id })
       });
       if (res.ok) {
@@ -1026,7 +1109,11 @@ export default function App() {
         if (kind === 'SOLUTION') {
           const patchRes = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/metadata`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(currentUser?.id ? { 'x-user-id': currentUser.id } : {}),
+            },
+            credentials: 'include',
             body: JSON.stringify({ status: 'APROVADO' })
           });
           if (patchRes.ok) {
@@ -1040,7 +1127,11 @@ export default function App() {
         } else if (kind === 'SCHEDULED_TASK' && scheduledAt) {
           const patchRes = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/metadata`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(currentUser?.id ? { 'x-user-id': currentUser.id } : {}),
+            },
+            credentials: 'include',
             body: JSON.stringify({ status: 'AGENDADO', scheduledAt: new Date(scheduledAt).toISOString() })
           });
           if (patchRes.ok) {
@@ -1079,7 +1170,11 @@ export default function App() {
         if (!base64) { setChamadoAttachmentUploading(false); showToast('Falha ao ler arquivo.', 'error'); return; }
         const res = await fetch(`${API_URL}/api/solicitacoes/${selectedChamadoId}/attachments`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(currentUser?.id ? { 'x-user-id': currentUser.id } : {}),
+          },
+          credentials: 'include',
           body: JSON.stringify({ filename: file.name, fileBase64: base64, mimeType: file.type || null, uploadedById: currentUser?.id || null })
         });
         if (res.ok) {
@@ -2695,7 +2790,7 @@ export default function App() {
                         // 3. Filtro de Categoria
                         const GESTAO_PESSOAS_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
                         const GESTAO_ACESSOS_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'VPN_ACCESS'];
-                        const TI_INFRA_TYPES = ['INFRA_SUPPORT'];
+                        const TI_INFRA_TYPES = ['INFRA_SUPPORT', 'INFRA'];
                         if (reportCategoryFilter === 'GESTAO_PESSOAS' && !GESTAO_PESSOAS_TYPES.includes(r.type)) return false;
                         if (reportCategoryFilter === 'GESTAO_ACESSOS' && !GESTAO_ACESSOS_TYPES.includes(r.type)) return false;
                         if (reportCategoryFilter === 'TI_INFRA' && !TI_INFRA_TYPES.includes(r.type)) return false;
@@ -2731,7 +2826,7 @@ export default function App() {
 
                         const TOOL_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA', 'VPN_ACCESS'];
                         const PEOPLE_TYPES = ['DEPUTY_DESIGNATION', 'CHANGE_ROLE', 'HIRING', 'FIRING', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'];
-                        const INFRA_TYPES = ['INFRA_SUPPORT'];
+                        const INFRA_TYPES = ['INFRA_SUPPORT', 'INFRA'];
 
                         if (TOOL_TYPES.includes(r.type)) category = "Gestão de Ferramentas";
                         else if (PEOPLE_TYPES.includes(r.type)) category = "Gestão de Pessoas";
@@ -2751,7 +2846,8 @@ export default function App() {
                           'ADMISSAO': 'Admissão / Onboarding',
                           'DEMISSAO': 'Desligamento / Offboarding',
                           'FIRING': 'Desligamento / Offboarding',
-                          'INFRA_SUPPORT': 'Suporte de TI / Hardware'
+                          'INFRA_SUPPORT': 'Suporte de TI / Hardware',
+                          'INFRA': 'Suporte de TI / Hardware'
                         };
                         subject = subjectMap[r.type] || r.type;
 
@@ -2883,7 +2979,7 @@ export default function App() {
                       }
                       const GESTAO_PESSOAS_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
                       const GESTAO_ACESSOS_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'VPN_ACCESS'];
-                      const TI_INFRA_TYPES = ['INFRA_SUPPORT'];
+                      const TI_INFRA_TYPES = ['INFRA_SUPPORT', 'INFRA'];
                       if (reportCategoryFilter === 'GESTAO_PESSOAS' && !GESTAO_PESSOAS_TYPES.includes(r.type)) return false;
                       if (reportCategoryFilter === 'GESTAO_ACESSOS' && !GESTAO_ACESSOS_TYPES.includes(r.type)) return false;
                       if (reportCategoryFilter === 'TI_INFRA' && !TI_INFRA_TYPES.includes(r.type)) return false;
@@ -3068,10 +3164,14 @@ export default function App() {
                           })}
                         </div>
                         <div style={{ padding: 16, borderTop: '1px solid #27272a' }}>
-                          {(chamadoDetail.status === 'APROVADO' || chamadoDetail.status === 'REPROVADO' || chamadoDetail.status === 'CANCELADO') ? (
+                          {CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status) ? (
                             <div style={{ background: 'rgba(39, 39, 42, 0.6)', borderRadius: 12, padding: 20, display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #3f3f46' }}>
                               <Lock size={24} color="#71717a" />
                               <span style={{ color: '#a1a1aa', fontSize: 14 }}>{chamadoDetail.status === 'CANCELADO' ? '🔒 Este chamado foi cancelado e não aceita novas ações.' : '🔒 Este chamado foi encerrado e não aceita novas mensagens.'}</span>
+                            </div>
+                          ) : INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && currentUser?.id !== chamadoDetail.requester?.id ? (
+                            <div style={{ background: 'rgba(39, 39, 42, 0.6)', borderRadius: 12, padding: 16, border: '1px solid #3f3f46' }}>
+                              <span style={{ color: '#a1a1aa', fontSize: 14 }}>Apenas o responsável pelo chamado pode adicionar anotações.</span>
                             </div>
                           ) : (
                             <>
@@ -3176,22 +3276,32 @@ export default function App() {
                               )}
                               <div className="card-base" style={{ padding: 20 }}>
                                 <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Status</label>
-                                {(activeTab === 'MY_TICKETS' || ['CANCELADO', 'APROVADO', 'REPROVADO', 'RESOLVIDO', 'CONCLUIDO'].includes(chamadoDetail.status)) ? (
-                                  <div style={{ color: '#e4e4e7', fontSize: 13 }}>{getStatusLabel(chamadoDetail.status)}</div>
-                                ) : (
-                                  <select
-                                    className="input-base"
-                                    style={{ width: '100%', background: '#18181b', fontSize: 12 }}
-                                    value={chamadoDetail.status}
-                                    onChange={e => handleChamadoMetadataChange('status', e.target.value)}
-                                  >
-                                    {STATUS_FILTER_OPTIONS.map((opt) => (
-                                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                  </select>
-                                )}
+                                {(() => {
+                                  const canEditOwnInfraStatus =
+                                    activeTab === 'MY_TICKETS' &&
+                                    INFRA_REQUEST_TYPES.includes(chamadoDetail.type) &&
+                                    currentUser?.id === chamadoDetail.requester?.id &&
+                                    !CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status);
+                                  const statusReadOnly =
+                                    (activeTab === 'MY_TICKETS' && !canEditOwnInfraStatus) ||
+                                    CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status);
+                                  return statusReadOnly ? (
+                                    <div style={{ color: '#e4e4e7', fontSize: 13 }}>{getStatusLabel(chamadoDetail.status)}</div>
+                                  ) : (
+                                    <select
+                                      className="input-base"
+                                      style={{ width: '100%', background: '#18181b', fontSize: 12 }}
+                                      value={chamadoDetail.status}
+                                      onChange={e => handleChamadoMetadataChange('status', e.target.value)}
+                                    >
+                                      {STATUS_FILTER_OPTIONS.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                      ))}
+                                    </select>
+                                  );
+                                })()}
                               </div>
-                              {systemProfile === 'SUPER_ADMIN' && selectedChamadoId && !['CANCELADO', 'RESOLVIDO', 'CONCLUIDO', 'APROVADO', 'REPROVADO'].includes(chamadoDetail.status) && (
+                              {systemProfile === 'SUPER_ADMIN' && selectedChamadoId && !CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status) && (
                                 <div className="card-base" style={{ padding: 20 }}>
                                   <button
                                     type="button"
@@ -3220,6 +3330,85 @@ export default function App() {
                           <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Responsável</label>
                           <div style={{ color: '#e4e4e7', fontSize: 13 }}>{chamadoDetail.assignee?.name || '— Não atribuído'}</div>
                         </div>
+                        {INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && currentUser?.id === chamadoDetail.requester?.id && (
+                          <div className="card-base" style={{ padding: 20, position: 'relative' }}>
+                            <label style={{ display: 'block', fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Atribuir para</label>
+                            <input
+                              type="text"
+                              className="input-base"
+                              style={{ width: '100%', background: '#18181b', fontSize: 12 }}
+                              placeholder="@nome ou buscar (2+ letras)"
+                              value={infraAssignSearch}
+                              onChange={e => setInfraAssignSearch(e.target.value)}
+                              onFocus={() => { if (infraAssignSuggestions.length > 0) setInfraAssignDropdownOpen(true); }}
+                              onBlur={() => { setTimeout(() => setInfraAssignDropdownOpen(false), 200); }}
+                              disabled={infraAssignPatching || CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status)}
+                            />
+                            {infraAssignDropdownOpen && infraAssignSuggestions.length > 0 && (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  left: 20,
+                                  right: 20,
+                                  zIndex: 20,
+                                  marginTop: 4,
+                                  background: '#18181b',
+                                  border: '1px solid #27272a',
+                                  borderRadius: 8,
+                                  maxHeight: 220,
+                                  overflowY: 'auto',
+                                  boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                                }}
+                              >
+                                {infraAssignSuggestions.map(s => (
+                                  <button
+                                    key={s.id}
+                                    type="button"
+                                    onMouseDown={e => e.preventDefault()}
+                                    onClick={() => patchInfraAssigneeOnTicket(s.id)}
+                                    style={{
+                                      display: 'block',
+                                      width: '100%',
+                                      textAlign: 'left',
+                                      padding: '10px 12px',
+                                      border: 'none',
+                                      borderBottom: '1px solid #27272a',
+                                      background: 'transparent',
+                                      color: '#e4e4e7',
+                                      cursor: 'pointer',
+                                      fontSize: 13,
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 600 }}>{s.name}</div>
+                                    <div style={{ fontSize: 11, color: '#71717a' }}>{s.jobTitle || '—'}{s.email ? ` · ${s.email}` : ''}</div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {chamadoDetail.assignee && (
+                              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #27272a' }}>
+                                <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Executor atual</div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                  <div style={{ color: '#e4e4e7', fontSize: 13 }}>
+                                    {chamadoDetail.assignee.name}
+                                    {chamadoDetail.assignee.jobTitle ? (
+                                      <span style={{ display: 'block', fontSize: 11, color: '#a1a1aa' }}>{chamadoDetail.assignee.jobTitle}</span>
+                                    ) : null}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn-mini"
+                                    style={{ background: '#27272a', color: '#e4e4e7', flexShrink: 0 }}
+                                    disabled={infraAssignPatching || CHAMADO_CLOSED_STATUSES.includes(chamadoDetail.status)}
+                                    onClick={() => patchInfraAssigneeOnTicket(null)}
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (

@@ -15,12 +15,13 @@ import {
   updateSolicitacaoMetadata,
   createComment,
   createAttachment,
-  exportRequestsCsv
+  exportRequestsCsv,
+  patchRequestAssignee
 } from './controllers/solicitacaoController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import { getTools, createTool, updateTool, deleteTool, getToolGroups, createToolGroup, deleteToolGroup, addToolAccess, removeToolAccess, updateToolAccess, updateToolLevel } from './controllers/toolController';
 import { getKbu, putKbu, postKbu, deleteKbu } from './controllers/kbuController';
-import { getAllUsers, getMe, getUserById, getUserDetails, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged } from './controllers/userController';
+import { getAllUsers, getMe, getUserById, getUserDetails, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged, searchUsersForAutocomplete } from './controllers/userController';
 import { resetCatalog, getLoginAttempts, getSessions, revokeSession, revokeAllSessions } from './controllers/adminController';
 import { checkSessionTimeout } from './middleware/sessionTimeout';
 import { requireAuth } from './middleware/auth';
@@ -214,6 +215,7 @@ app.delete('/api/tools/:toolId/level/:levelName', deleteToolLevel);
 app.patch('/api/tools/:toolId/access/:userId', updateToolAccess); // Atualizar detalhes do acesso (ex: extra)
 
 // 3. Usuários (rotas específicas antes de /:id)
+app.get('/api/users/search', searchUsersForAutocomplete);
 app.get('/api/users', getAllUsers);
 app.get('/api/users/me', getMe);
 app.get('/api/users/me/tools', getMyTools);
@@ -239,6 +241,7 @@ app.get('/api/solicitacoes/my-tickets', getMyTickets);
 app.get('/api/solicitacoes/:id', getSolicitacaoById);
 app.post('/api/solicitacoes', createSolicitacao);
 app.patch('/api/solicitacoes/:id/metadata', updateSolicitacaoMetadata);
+app.patch('/api/solicitacoes/:id/assignee', patchRequestAssignee);
 app.post('/api/solicitacoes/:id/comments', createComment);
 app.post('/api/solicitacoes/:id/attachments', createAttachment);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);

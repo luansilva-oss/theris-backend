@@ -9,7 +9,7 @@ import { getSlackApp, sendDmToSlackUser } from './slackService';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || process.env.VITE_API_URL || 'https://theris.grupo-3c.com';
 
-const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT'];
+const INFRA_REQUEST_TYPES = ['INFRA_SUPPORT', 'INFRA'];
 const ACCESS_REQUEST_TYPES = ['ACCESS_TOOL', 'ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
 const PEOPLE_REQUEST_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
 
@@ -24,7 +24,7 @@ function getApp() {
 }
 
 /** Extrai título e resumo do chamado a partir de type, details e justification (para contexto nas notificações Slack). */
-function getRequestContext(request: { type: string; details: string | null; justification: string | null }): { title: string; summary: string } {
+export function getRequestContext(request: { type: string; details: string | null; justification: string | null }): { title: string; summary: string } {
   let detailsObj: Record<string, unknown> = {};
   try {
     detailsObj = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
@@ -85,7 +85,8 @@ const STATUS_LABELS: Record<string, string> = {
   REJEITADO: 'REJEITADO',
   PENDING_OWNER: 'PENDENTE_OWNER',
   PENDENTE_OWNER: 'PENDENTE_OWNER',
-  CANCELADO: 'CANCELADO'
+  CANCELADO: 'CANCELADO',
+  FECHADO: 'FECHADO'
 };
 
 function statusLabel(s: string): string {
@@ -115,73 +116,106 @@ export async function notifyTicketEvent(
     where: { id: requestId },
     include: {
       requester: { select: { email: true, name: true } },
-      assignee: { select: { name: true } }
+      assignee: { select: { name: true, email: true } }
     }
   });
-  if (!request?.requester?.email) {
-    console.log('[Chamado] Slack não enviado: chamado sem requester/email, requestId:', requestId);
+  if (!request) {
+    console.log('[Chamado] Slack não enviado: chamado não encontrado, requestId:', requestId);
     return;
   }
 
   const { title, summary } = getRequestContext(request);
 
-  try {
-    const userLookup = await slackApp.client.users.lookupByEmail({ email: request.requester.email });
-    const slackUserId = userLookup.user?.id;
-    if (!slackUserId) {
-      console.warn('[Chamado] Slack não enviado: usuário não encontrado para', request.requester.email, 'chamado:', requestId);
-      return;
-    }
+  const skipRequesterDm =
+    (eventType === 'COMMENT_ADDED' && payload?.authorId && String(payload.authorId) === request.requesterId) ||
+    (eventType === 'ATTACHMENT_ADDED' && payload?.uploadedById && String(payload.uploadedById) === request.requesterId);
 
-    // Não enviar DM ao solicitante quando o autor do evento é o próprio solicitante
-    if (eventType === 'COMMENT_ADDED' && payload?.authorId && String(payload.authorId) === request.requesterId) {
-      console.log('[Chamado] DM omitida: comentário do próprio solicitante, requestId:', requestId);
-      return;
+  const aid = request.assigneeId;
+  const assigneeEmail = request.assignee?.email;
+  let notifyAssignee = false;
+  if (aid && assigneeEmail && aid !== request.requesterId) {
+    if (eventType === 'COMMENT_ADDED') {
+      notifyAssignee = String(payload?.authorId || '') !== aid;
+    } else if (eventType === 'ATTACHMENT_ADDED') {
+      notifyAssignee = String(payload?.uploadedById || '') !== aid;
+    } else if (eventType === 'STATUS_CHANGED') {
+      notifyAssignee = String(payload?.actorId || '') !== aid;
     }
-    if (eventType === 'ATTACHMENT_ADDED' && payload?.uploadedById && String(payload.uploadedById) === request.requesterId) {
-      console.log('[Chamado] DM omitida: anexo do próprio solicitante, requestId:', requestId);
-      return;
-    }
+  }
 
-    const link = `${FRONTEND_URL}/tickets?id=${requestId}`;
-    let text: string;
+  if (skipRequesterDm && !notifyAssignee) {
+    console.log('[Chamado] DM omitida ao solicitante e sem executor a notificar, requestId:', requestId);
+    return;
+  }
+  if (!skipRequesterDm && !request.requester?.email && !notifyAssignee) {
+    console.log('[Chamado] Slack não enviado: chamado sem requester/email e sem executor, requestId:', requestId);
+    return;
+  }
 
+  const link = `${FRONTEND_URL}/tickets?id=${requestId}`;
+
+  function buildTexts(forAssignee: boolean): string {
     switch (eventType) {
       case 'TICKET_CREATED':
-        text = `🎫 *Seu chamado foi aberto com sucesso!*\nTipo: ${title}\nStatus: ${statusLabel(request.status)}\nVer chamado: ${link}`;
-        break;
+        return forAssignee
+          ? `🎫 *Novo chamado*\nTipo: ${title}\nStatus: ${statusLabel(request.status)}\nVer chamado: ${link}`
+          : `🎫 *Seu chamado foi aberto com sucesso!*\nTipo: ${title}\nStatus: ${statusLabel(request.status)}\nVer chamado: ${link}`;
       case 'STATUS_CHANGED': {
         const to = payload?.to != null ? String(payload.to) : request.status;
         if (to === 'CANCELADO') {
           const cancelledByName = (payload?.cancelledByName && String(payload.cancelledByName)) || 'Super Admin';
-          text = `❌ *Seu chamado foi cancelado.*\nChamado: ${title}\nCancelado por: ${cancelledByName}\nVer chamado: ${link}`;
-        } else {
-          const from = payload?.from != null ? statusLabel(String(payload.from)) : request.status;
-          const toLabel = statusLabel(to);
-          text = `🔄 *Seu chamado teve o status atualizado*\nDe: ${from} → Para: ${toLabel}\nVer chamado: ${link}`;
+          return forAssignee
+            ? `❌ *Chamado cancelado*\nChamado: ${title}\nCancelado por: ${cancelledByName}\nVer chamado: ${link}`
+            : `❌ *Seu chamado foi cancelado.*\nChamado: ${title}\nCancelado por: ${cancelledByName}\nVer chamado: ${link}`;
         }
-        break;
+        const from = payload?.from != null ? statusLabel(String(payload.from)) : request.status;
+        const toLabel = statusLabel(to);
+        return forAssignee
+          ? `🔄 *Status do chamado atualizado*\nChamado: ${title}\nDe: ${from} → Para: ${toLabel}\nVer chamado: ${link}`
+          : `🔄 *Seu chamado teve o status atualizado*\nDe: ${from} → Para: ${toLabel}\nVer chamado: ${link}`;
       }
       case 'COMMENT_ADDED': {
         const authorName = (payload?.authorName && String(payload.authorName)) || 'Alguém';
         const snippet = (payload?.body && String(payload.body).slice(0, 200)) || '—';
-        text = `💬 *Novo comentário no seu chamado*\nPor: ${authorName}\n"${snippet}${snippet.length >= 200 ? '…' : ''}"\nVer chamado: ${link}`;
-        break;
+        return forAssignee
+          ? `💬 *Novo comentário no chamado*\nChamado: ${title}\nPor: ${authorName}\n"${snippet}${snippet.length >= 200 ? '…' : ''}"\nVer chamado: ${link}`
+          : `💬 *Novo comentário no seu chamado*\nPor: ${authorName}\n"${snippet}${snippet.length >= 200 ? '…' : ''}"\nVer chamado: ${link}`;
       }
       case 'ATTACHMENT_ADDED':
-        text = `📎 *Um anexo foi adicionado ao seu chamado*\nArquivo: ${(payload?.filename && String(payload.filename)) || '—'}\nVer chamado: ${link}`;
-        break;
+        return forAssignee
+          ? `📎 *Novo anexo no chamado*\nChamado: ${title}\nArquivo: ${(payload?.filename && String(payload.filename)) || '—'}\nVer chamado: ${link}`
+          : `📎 *Um anexo foi adicionado ao seu chamado*\nArquivo: ${(payload?.filename && String(payload.filename)) || '—'}\nVer chamado: ${link}`;
       case 'ASSIGNEE_CHANGED':
-        text = `👤 *Responsável pelo chamado alterado*\nNovo responsável: ${request.assignee?.name || '—'}\nVer chamado: ${link}`;
-        break;
+        return forAssignee
+          ? `👤 *Responsável pelo chamado alterado*\nChamado: ${title}\nNovo responsável: ${request.assignee?.name || '—'}\nVer chamado: ${link}`
+          : `👤 *Responsável pelo chamado alterado*\nNovo responsável: ${request.assignee?.name || '—'}\nVer chamado: ${link}`;
       default:
-        text = `Chamado: ${title}\nResumo: ${summary}\nVer chamado: ${link}`;
+        return `Chamado: ${title}\nResumo: ${summary}\nVer chamado: ${link}`;
     }
+  }
 
+  async function dmByEmail(email: string, text: string): Promise<void> {
+    const userLookup = await slackApp.client.users.lookupByEmail({ email });
+    const slackUserId = userLookup.user?.id;
+    if (!slackUserId) {
+      console.warn('[Chamado] Slack: usuário não encontrado para', email, 'chamado:', requestId);
+      return;
+    }
     await sendDmToSlackUser(slackApp.client, slackUserId, text, [
       { type: 'section', text: { type: 'mrkdwn', text } },
       { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${requestId.slice(0, 8)} · Theris Service Desk` }] }
     ]);
+  }
+
+  try {
+    if (!skipRequesterDm && request.requester?.email) {
+      const text = buildTexts(false);
+      await dmByEmail(request.requester.email, text);
+    }
+    if (notifyAssignee && assigneeEmail) {
+      const textA = buildTexts(true);
+      await dmByEmail(assigneeEmail, textA);
+    }
     console.log('[Chamado] Slack enviado com sucesso para chamado:', requestId);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
