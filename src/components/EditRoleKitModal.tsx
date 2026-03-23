@@ -1,8 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Plus, Trash2, User } from 'lucide-react';
 
 import { API_URL } from '../config';
 import { EntityAuditHistory } from './EntityAuditHistory';
+
+/** API pode retornar array direto ou objeto com lista aninhada. */
+function parseLeaderSearchResponse(data: unknown): { id: string; name: string; email: string }[] {
+    let raw: unknown[] = [];
+    if (Array.isArray(data)) {
+        raw = data;
+    } else if (data != null && typeof data === 'object') {
+        const o = data as Record<string, unknown>;
+        const nested = o.users ?? o.results ?? o.data ?? o.items;
+        if (Array.isArray(nested)) raw = nested;
+    }
+    return raw
+        .filter((x): x is Record<string, unknown> => x != null && typeof x === 'object')
+        .map((x) => ({
+            id: String(x.id ?? ''),
+            name: String(x.name ?? ''),
+            email: String(x.email ?? ''),
+        }))
+        .filter((u) => u.id.length > 0 && u.name.length > 0);
+}
 
 interface RoleKitItem {
     id?: string;
@@ -93,6 +114,9 @@ export const EditRoleKitModal: React.FC<Props> = ({
     const [isSearchingReplacement, setIsSearchingReplacement] = useState(false);
     const [leaderSearch, setLeaderSearch] = useState('');
     const [leaderSuggestions, setLeaderSuggestions] = useState<{ id: string; name: string; email: string }[]>([]);
+    const [isLeaderInputFocused, setIsLeaderInputFocused] = useState(false);
+    const [leaderDropdownPos, setLeaderDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
+    const leaderInputRef = useRef<HTMLInputElement | null>(null);
     const leaderBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const selectedDept = departments.find(d => d.id === selectedDepartmentId);
@@ -110,6 +134,8 @@ export const EditRoleKitModal: React.FC<Props> = ({
         if (!isOpen) {
             lastInitializedForRef.current = null;
             setIsSearchingReplacement(false);
+            setIsLeaderInputFocused(false);
+            setLeaderDropdownPos(null);
             setLeaderSearch('');
             setLeaderSuggestions([]);
             if (leaderBlurTimeoutRef.current) {
@@ -204,20 +230,35 @@ export const EditRoleKitModal: React.FC<Props> = ({
             setLeaderSuggestions([]);
             return;
         }
+        const ac = new AbortController();
         const t = window.setTimeout(() => {
             const ts = Date.now();
-            fetch(
-                `${API_URL}/api/users/search?q=${encodeURIComponent(q)}&_=${ts}`,
-                {
-                    credentials: 'include',
-                    headers: { 'Cache-Control': 'no-cache' },
+            (async () => {
+                try {
+                    const res = await fetch(
+                        `${API_URL}/api/users/search?q=${encodeURIComponent(q)}&_=${ts}`,
+                        {
+                            credentials: 'include',
+                            headers: { 'Cache-Control': 'no-cache' },
+                            signal: ac.signal,
+                        }
+                    );
+                    if (!res.ok) {
+                        setLeaderSuggestions([]);
+                        return;
+                    }
+                    const data: unknown = await res.json();
+                    setLeaderSuggestions(parseLeaderSearchResponse(data));
+                } catch (e) {
+                    if ((e as { name?: string }).name === 'AbortError') return;
+                    setLeaderSuggestions([]);
                 }
-            )
-                .then((r) => (r.ok ? r.json() : []))
-                .then((list) => setLeaderSuggestions(Array.isArray(list) ? list : []))
-                .catch(() => setLeaderSuggestions([]));
+            })();
         }, 300);
-        return () => window.clearTimeout(t);
+        return () => {
+            window.clearTimeout(t);
+            ac.abort();
+        };
     }, [leaderSearch, isOpen, isCreateMode, isSuperAdmin]);
 
     // Ao trocar departamento, atualiza Unidade para a unidade do novo departamento
@@ -373,15 +414,107 @@ export const EditRoleKitModal: React.FC<Props> = ({
         clearLeaderBlurTimer();
         leaderBlurTimeoutRef.current = setTimeout(() => {
             leaderBlurTimeoutRef.current = null;
+            setIsLeaderInputFocused(false);
+            setLeaderDropdownPos(null);
             setIsSearchingReplacement(false);
             setLeaderSearch('');
             setLeaderSuggestions([]);
         }, 180);
     };
 
+    const showLeaderDropdown =
+        isLeaderInputFocused &&
+        leaderSuggestions.length > 0 &&
+        (isSearchingReplacement || !leaderForPut);
+
+    const updateLeaderDropdownPosition = () => {
+        const el = leaderInputRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        setLeaderDropdownPos({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+
+    useLayoutEffect(() => {
+        if (!showLeaderDropdown) {
+            setLeaderDropdownPos(null);
+            return;
+        }
+        updateLeaderDropdownPosition();
+        const onScrollOrResize = () => updateLeaderDropdownPosition();
+        window.addEventListener('scroll', onScrollOrResize, true);
+        window.addEventListener('resize', onScrollOrResize);
+        return () => {
+            window.removeEventListener('scroll', onScrollOrResize, true);
+            window.removeEventListener('resize', onScrollOrResize);
+        };
+    }, [showLeaderDropdown, leaderSuggestions]);
+
     if (!isOpen) return null;
 
+    const leaderDropdownPortal =
+        typeof document !== 'undefined' &&
+        showLeaderDropdown &&
+        leaderDropdownPos != null &&
+        createPortal(
+            <div
+                role="listbox"
+                onMouseDown={(e) => e.preventDefault()}
+                style={{
+                    position: 'fixed',
+                    top: leaderDropdownPos.top,
+                    left: leaderDropdownPos.left,
+                    width: leaderDropdownPos.width,
+                    zIndex: 100020,
+                    background: '#27272a',
+                    border: '1px solid #3f3f46',
+                    borderRadius: 8,
+                    maxHeight: 220,
+                    overflowY: 'auto',
+                    boxShadow: '0 12px 40px rgba(0,0,0,0.55)',
+                }}
+            >
+                {leaderSuggestions.map((u, idx) => (
+                    <button
+                        key={u.id}
+                        type="button"
+                        role="option"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                            clearLeaderBlurTimer();
+                            setLeaderForPut({
+                                id: u.id,
+                                name: u.name,
+                                email: u.email || '',
+                            });
+                            setIsSearchingReplacement(false);
+                            setIsLeaderInputFocused(false);
+                            setLeaderSearch('');
+                            setLeaderSuggestions([]);
+                            setLeaderDropdownPos(null);
+                        }}
+                        style={{
+                            display: 'block',
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '10px 12px',
+                            background: 'transparent',
+                            border: 'none',
+                            borderBottom: idx < leaderSuggestions.length - 1 ? '1px solid #3f3f46' : 'none',
+                            color: '#e4e4e7',
+                            cursor: 'pointer',
+                            fontSize: 13,
+                        }}
+                    >
+                        <span style={{ fontWeight: 600, display: 'block' }}>{u.name}</span>
+                        <span style={{ display: 'block', color: '#71717a', fontSize: 12, marginTop: 2 }}>{u.email}</span>
+                    </button>
+                ))}
+            </div>,
+            document.body
+        );
+
     return (
+        <>
         <div className="modal-overlay">
             <div className="modal-content" style={{ maxWidth: '720px', width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
                 <div className="modal-header">
@@ -455,7 +588,10 @@ export const EditRoleKitModal: React.FC<Props> = ({
                             </div>
 
                             {!isCreateMode && isSuperAdmin && role && (
-                                <div className="card-base" style={{ background: '#18181b', border: '1px solid #27272a', marginBottom: 16 }}>
+                                <div
+                                    className="card-base"
+                                    style={{ background: '#18181b', border: '1px solid #27272a', marginBottom: 16, overflow: 'visible', position: 'relative', zIndex: 1 }}
+                                >
                                     <h4 style={{ color: '#f4f4f5', margin: '0 0 12px 0', fontSize: 14 }}>Liderança</h4>
                                     <label style={{ fontSize: 12, color: '#a1a1aa' }}>Líder do cargo</label>
 
@@ -508,8 +644,9 @@ export const EditRoleKitModal: React.FC<Props> = ({
                                         </div>
                                     )}
 
-                                    <div style={{ position: 'relative', marginTop: showLeaderCard ? 12 : 8 }}>
+                                    <div style={{ position: 'relative', marginTop: showLeaderCard ? 12 : 8, overflow: 'visible' }}>
                                         <input
+                                            ref={leaderInputRef}
                                             className="form-input"
                                             style={{ width: '100%', marginTop: 4 }}
                                             placeholder={
@@ -521,6 +658,7 @@ export const EditRoleKitModal: React.FC<Props> = ({
                                             onChange={(e) => setLeaderSearch(e.target.value)}
                                             onFocus={() => {
                                                 clearLeaderBlurTimer();
+                                                setIsLeaderInputFocused(true);
                                                 if (leaderForPut && !isSearchingReplacement) {
                                                     setIsSearchingReplacement(true);
                                                     setLeaderSearch('');
@@ -531,58 +669,6 @@ export const EditRoleKitModal: React.FC<Props> = ({
                                                 scheduleEndLeaderSearch();
                                             }}
                                         />
-                                        {isSearchingReplacement && leaderSuggestions.length > 0 && (
-                                            <div
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                style={{
-                                                    position: 'absolute',
-                                                    zIndex: 20,
-                                                    left: 0,
-                                                    right: 0,
-                                                    top: '100%',
-                                                    marginTop: 4,
-                                                    background: '#27272a',
-                                                    border: '1px solid #3f3f46',
-                                                    borderRadius: 8,
-                                                    maxHeight: 220,
-                                                    overflowY: 'auto',
-                                                    boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                                                }}
-                                            >
-                                                {leaderSuggestions.map((u, idx) => (
-                                                    <button
-                                                        key={u.id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            clearLeaderBlurTimer();
-                                                            setLeaderForPut({
-                                                                id: u.id,
-                                                                name: u.name,
-                                                                email: u.email || '',
-                                                            });
-                                                            setIsSearchingReplacement(false);
-                                                            setLeaderSearch('');
-                                                            setLeaderSuggestions([]);
-                                                        }}
-                                                        style={{
-                                                            display: 'block',
-                                                            width: '100%',
-                                                            textAlign: 'left',
-                                                            padding: '10px 12px',
-                                                            background: 'transparent',
-                                                            border: 'none',
-                                                            borderBottom: idx < leaderSuggestions.length - 1 ? '1px solid #3f3f46' : 'none',
-                                                            color: '#e4e4e7',
-                                                            cursor: 'pointer',
-                                                            fontSize: 13,
-                                                        }}
-                                                    >
-                                                        <span style={{ fontWeight: 600, display: 'block' }}>{u.name}</span>
-                                                        <span style={{ display: 'block', color: '#71717a', fontSize: 12, marginTop: 2 }}>{u.email}</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
                                     </div>
                                     <p style={{ color: '#a16207', fontSize: 12, margin: '12px 0 0 0', lineHeight: 1.45 }}>
                                         Ao definir ou alterar o líder, todos os colaboradores deste cargo terão o gestor atualizado automaticamente.
@@ -705,5 +791,7 @@ export const EditRoleKitModal: React.FC<Props> = ({
                 </div>
             </div>
         </div>
+        {leaderDropdownPortal}
+        </>
     );
 };
