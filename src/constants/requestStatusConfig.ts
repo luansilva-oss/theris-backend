@@ -57,8 +57,44 @@ export const REQUEST_STATUS_CONFIG: Record<string, StatusConfigEntry> = {
   EM_ANDAMENTO: { label: 'Em andamento', variant: 'neutral' }
 };
 
-/** Opções para dropdowns de filtro (select de status). Ordem e entradas principais. */
+/**
+ * Valor de query do filtro "Pendentes (todos)" — agrupa os cinco pendentes principais
+ * (inclui ambas as variantes SI usadas no banco).
+ */
+export const STATUS_FILTER_VALUE_PENDING_ALL = 'PENDENTES_TODOS';
+
+/** Status incluídos em "Pendentes (todos)" (Prisma: status: { in: [...] }). */
+export const CHAMADO_PENDING_ALL_STATUSES: string[] = [
+  'PENDENTE_GESTOR',
+  'PENDENTE_SUB_OWNER',
+  'PENDENTE_OWNER',
+  'PENDING_OWNER',
+  'PENDENTE_SI',
+  'PENDING_SI'
+];
+
+/**
+ * Opções do filtro de status em Gestão de Chamados (sem duplicatas de label).
+ * "Resolvido" e "Pendente (SI)" únicos: o backend expande para os valores equivalentes no banco.
+ */
 export const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: 'PENDENTE_GESTOR', label: 'Pendente (gestor)' },
+  { value: 'PENDENTE_SUB_OWNER', label: 'Pendente (sub-responsável)' },
+  { value: 'PENDENTE_SI', label: 'Pendente (SI)' },
+  { value: 'PENDENTE_OWNER', label: 'Pendente (responsável)' },
+  { value: 'PENDING_OWNER', label: 'Pendente (Owner)' },
+  { value: 'EM_ATENDIMENTO', label: 'Em atendimento' },
+  { value: 'AGENDADO', label: 'Agendado' },
+  { value: 'APROVADO', label: 'Aprovado' },
+  { value: 'REPROVADO', label: 'Reprovado' },
+  { value: 'CANCELADO', label: 'Cancelado' },
+  { value: 'RESOLVIDO', label: 'Resolvido' },
+  { value: 'CONCLUIDO', label: 'Concluído' },
+  { value: 'FECHADO', label: 'Fechado' }
+];
+
+/** Opções atômicas para alteração manual de status no painel do chamado (valores distintos no DB). */
+export const CHAMADO_STATUS_EDIT_OPTIONS: { value: string; label: string }[] = [
   { value: 'PENDENTE_GESTOR', label: 'Pendente (gestor)' },
   { value: 'PENDENTE_SUB_OWNER', label: 'Pendente (sub-responsável)' },
   { value: 'PENDENTE_SI', label: 'Pendente (SI)' },

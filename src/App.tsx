@@ -29,7 +29,13 @@ import { EntityAuditHistory } from './components/EntityAuditHistory';
 import { ReportExportModal } from './components/ReportExportModal';
 import { AuditLog } from './pages/AuditLog';
 import { CollaboratorDetails } from './pages/CollaboratorDetails';
-import { getRequestStatusLabel as getStatusLabel, getRequestStatusBadgeStyle, STATUS_FILTER_OPTIONS } from './constants/requestStatusConfig';
+import {
+  getRequestStatusLabel as getStatusLabel,
+  getRequestStatusBadgeStyle,
+  STATUS_FILTER_OPTIONS,
+  CHAMADO_STATUS_EDIT_OPTIONS,
+  STATUS_FILTER_VALUE_PENDING_ALL
+} from './constants/requestStatusConfig';
 import { LoginAttempts } from './pages/LoginAttempts';
 import { ActiveSessions } from './pages/ActiveSessions';
 import LandingPage from './pages/LandingPage';
@@ -1306,6 +1312,8 @@ export default function App() {
 
   // Actions
   const handleLogin = useGoogleLogin({
+    // Camada 1: restringe a conta na tela do Google (parâmetro hd / hosted domain)
+    hosted_domain: 'grupo-3c.com',
     onSuccess: async (tokenResponse) => {
       setIsLoading(true);
       try {
@@ -3502,7 +3510,7 @@ export default function App() {
                                       value={chamadoDetail.status}
                                       onChange={e => handleChamadoMetadataChange('status', e.target.value)}
                                     >
-                                      {STATUS_FILTER_OPTIONS.map((opt) => (
+                                      {CHAMADO_STATUS_EDIT_OPTIONS.map((opt) => (
                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
                                       ))}
                                     </select>
@@ -3680,6 +3688,12 @@ export default function App() {
                         onChange={e => setTicketFilters(f => ({ ...f, status: e.target.value }))}
                       >
                         <option value="ALL">Todos</option>
+                        <option
+                          value={STATUS_FILTER_VALUE_PENDING_ALL}
+                          style={{ fontWeight: 500 }}
+                        >
+                          Pendentes (todos)
+                        </option>
                         {STATUS_FILTER_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}

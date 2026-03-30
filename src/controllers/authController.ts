@@ -7,6 +7,8 @@ import { registrarMudanca } from '../lib/auditLog';
 
 const prisma = new PrismaClient();
 
+const CORPORATE_EMAIL_REGEX = /^[^@\s]+@grupo-3c\.com$/i;
+
 async function logLoginAttempt(params: {
   req: Request;
   email?: string | null;
@@ -76,9 +78,9 @@ export const googleLogin = async (req: Request, res: Response) => {
   const { accessToken } = req.body;
 
   try {
-    // 1. Validar Token no Google
-    const googleRes = await fetch(`https://www.googleapis.com/oauth2/v1/userinfo?access_token=${accessToken}`, {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }
+    // 1. Validar token no Google (OpenID userinfo — inclui `hd` para Google Workspace quando aplicável)
+    const googleRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
     });
 
     if (!googleRes.ok) {
@@ -86,15 +88,43 @@ export const googleLogin = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Token Google inválido' });
     }
 
-    const googleData = await googleRes.json();
-    const rawEmail = googleData.email;
-    const email = normalizeEmail(rawEmail);
+    const googleData = await googleRes.json() as {
+      email?: string;
+      hd?: string;
+      name?: string;
+    };
+    const rawEmail = typeof googleData.email === 'string' ? googleData.email.trim() : '';
 
-    // 2. Verificar Domínio (Segurança)
-    if (!email.endsWith('@grupo-3c.com')) {
-      await logLoginAttempt({ req, email, success: false, failReason: 'DOMAIN_DENIED', userId: undefined });
-      return res.status(403).json({ error: 'Acesso restrito ao domínio corporativo.' });
+    // 2a. Domínio no e-mail retornado pelo Google (antes de qualquer normalização — não confiar em rewrite de domínio)
+    if (!rawEmail || !CORPORATE_EMAIL_REGEX.test(rawEmail)) {
+      await logLoginAttempt({
+        req,
+        email: rawEmail || null,
+        success: false,
+        failReason: 'DOMAIN_DENIED',
+        userId: undefined,
+      });
+      return res.status(403).json({
+        error: 'Acesso não autorizado. Utilize sua conta corporativa @grupo-3c.com',
+      });
     }
+
+    // 2b. Hosted domain (hd) no perfil Google Workspace — reforço quando o campo vem preenchido
+    const hdRaw = typeof googleData.hd === 'string' ? googleData.hd.trim().toLowerCase() : '';
+    if (hdRaw !== '' && hdRaw !== 'grupo-3c.com') {
+      await logLoginAttempt({
+        req,
+        email: rawEmail,
+        success: false,
+        failReason: 'DOMAIN_HD_DENIED',
+        userId: undefined,
+      });
+      return res.status(403).json({
+        error: 'Acesso não autorizado. Utilize sua conta corporativa @grupo-3c.com',
+      });
+    }
+
+    const email = normalizeEmail(rawEmail);
 
     const googleUserSelect = {
       id: true,
@@ -132,6 +162,20 @@ export const googleLogin = async (req: Request, res: Response) => {
         where: { id: created.id },
         select: googleUserSelect
       }))!;
+    }
+
+    // 3b. Conta desativada no Theris (terceira camada)
+    if (!user.isActive) {
+      await logLoginAttempt({
+        req,
+        email,
+        success: false,
+        failReason: 'USER_INACTIVE',
+        userId: user.id,
+      });
+      return res.status(403).json({
+        error: 'Acesso não autorizado. Sua conta está desativada; contate o time de SI.',
+      });
     }
 
     // 4. Definir Perfil de Sistema Persistente

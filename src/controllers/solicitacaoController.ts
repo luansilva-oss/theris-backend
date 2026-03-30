@@ -6,6 +6,7 @@ import { sendSlackNotification } from '../services/slackService';
 import { syncUserToJumpCloud } from '../services/jumpcloudSyncService';
 import { hasProfile } from '../middleware/auth';
 import { isInfraTicketType, isInboxMember } from '../lib/infraTicket';
+import { CHAMADO_PENDING_ALL_STATUSES, STATUS_FILTER_VALUE_PENDING_ALL } from '../constants/requestStatusConfig';
 
 const prisma = new PrismaClient();
 
@@ -1046,6 +1047,12 @@ export const getSolicitacoes = async (req: Request, res: Response) => {
             { status: 'PENDING_SI' }
           ]
         });
+      } else if (status === STATUS_FILTER_VALUE_PENDING_ALL) {
+        andClauses.push({ status: { in: [...CHAMADO_PENDING_ALL_STATUSES] } });
+      } else if (status === 'PENDENTE_SI') {
+        andClauses.push({ status: { in: ['PENDENTE_SI', 'PENDING_SI'] } });
+      } else if (status === 'RESOLVIDO') {
+        andClauses.push({ status: { in: ['RESOLVIDO', 'RESOLVED'] } });
       } else {
         where.status = status;
       }
@@ -1117,6 +1124,12 @@ export const getMyTickets = async (req: Request, res: Response) => {
           { status: 'PENDING_OWNER' },
           { status: 'PENDING_SI' }
         ];
+      } else if (status === STATUS_FILTER_VALUE_PENDING_ALL) {
+        where.status = { in: [...CHAMADO_PENDING_ALL_STATUSES] };
+      } else if (status === 'PENDENTE_SI') {
+        where.status = { in: ['PENDENTE_SI', 'PENDING_SI'] };
+      } else if (status === 'RESOLVIDO') {
+        where.status = { in: ['RESOLVIDO', 'RESOLVED'] };
       } else {
         where.status = status;
       }
