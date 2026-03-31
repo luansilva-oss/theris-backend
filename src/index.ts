@@ -51,6 +51,7 @@ import { startReviewAccessCron } from './crons/reviewAccessCron';
 import { startJumpCloudPasswordCron } from './crons/jumpcloudPasswordCron';
 import { startJumpCloudPasswordExpiryCron } from './crons/jumpcloudPasswordExpiryCron';
 import { startJumpCloudDivergenceCron } from './jobs/jumpcloudDivergenceCheck';
+import webhookRouter from './routes/webhooks';
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -131,6 +132,7 @@ app.use('/api/slack', (req, res, next) => {
   next();
 });
 app.use('/api/slack', slackReceiver.router);
+app.use('/webhooks', webhookRouter);
 
 // --- JSON MIDDLEWARE (limite maior para upload base64 de anexos) ---
 app.use(express.json({ limit: '15mb' }));
