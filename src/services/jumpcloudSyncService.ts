@@ -1,10 +1,15 @@
 /**
  * Sincronização de Employment Information (Theris → JumpCloud) após aprovação de chamados /pessoas.
  * Falhas são apenas logadas; não interrompem o fluxo do Theris.
+ *
+ * CONTRATO (company): o valor enviado em `company` deve bater exatamente com o campo Company dos
+ * grupos dinâmicos KBS no JumpCloud. `Unit.name` no Theris pode divergir (ex.: "3C+" vs "3C Plus");
+ * use sempre `mapTherisUnitNameToJumpCloudCompany` antes do PUT.
  */
 import { PrismaClient } from '@prisma/client';
+import { mapTherisUnitNameToJumpCloudCompany } from '../config/jumpcloud';
 import { getSystemUserIdByEmail } from './jumpcloudService';
-import { addUserToKBSGroups } from './jumpcloudGroupSyncService';
+import { addUserToExtraordinaryToolGroups } from './jumpcloudGroupSyncService';
 
 const prisma = new PrismaClient();
 
@@ -13,7 +18,7 @@ const SYSTEM_USERS_URL = 'https://console.jumpcloud.com/api/systemusers';
 /**
  * Atualiza jobTitle, department, company e opcionalmente manager (JumpCloud _id do gestor) no Employment Information.
  * Se o usuário não existir no Theris ou no JumpCloud, retorna silenciosamente (apenas log informativo).
- * @param roleId — Se informado (ex.: onboarding), após o PUT de Employment chama addUserToKBSGroups.
+ * @param roleId — Se informado (ex.: onboarding), após o PUT chama addUserToExtraordinaryToolGroups (somente toolCode ap_*).
  */
 export async function syncUserToJumpCloud(userEmail: string, roleId?: string | null): Promise<void> {
   const email = (userEmail || '').trim().toLowerCase();
@@ -43,11 +48,21 @@ export async function syncUserToJumpCloud(userEmail: string, roleId?: string | n
       return;
     }
 
+    if (!user.isActive) {
+      console.log(`[JumpCloud Sync] Usuário ${email} inativo (isActive=false); sync de Employment ignorado.`);
+      return;
+    }
+
     const jumpcloudId = await getSystemUserIdByEmail(user.email);
     if (!jumpcloudId) {
       console.log(`[JumpCloud Sync] Nenhum usuário JumpCloud com e-mail ${user.email}; sync não aplicado.`);
       return;
     }
+
+    const roleRow = user.roleId
+      ? await prisma.role.findUnique({ where: { id: user.roleId }, select: { name: true } })
+      : null;
+    const jobTitleOut = (user.jobTitle || roleRow?.name || '').trim();
 
     let managerJcId: string | undefined;
     if (user.manager?.email) {
@@ -67,10 +82,11 @@ export async function syncUserToJumpCloud(userEmail: string, roleId?: string | n
       }
     }
 
+    const jcCompany = mapTherisUnitNameToJumpCloudCompany(user.unitRef?.name ?? '');
     const body = {
-      jobTitle: user.jobTitle ?? '',
+      jobTitle: jobTitleOut,
       department: user.departmentRef?.name ?? '',
-      company: user.unitRef?.name ?? '',
+      company: jcCompany,
       ...(managerJcId ? { manager: managerJcId } : {})
     };
 
@@ -98,12 +114,12 @@ export async function syncUserToJumpCloud(userEmail: string, roleId?: string | n
 
     if (roleId) {
       try {
-        const kbs = await addUserToKBSGroups(user.email, roleId);
+        const kbs = await addUserToExtraordinaryToolGroups(user.email, roleId);
         console.log(
-          `[JumpCloud Sync] KBS grupos: adicionados=${kbs.added.length} [${kbs.added.join(', ')}] falhas=${kbs.failed.length} [${kbs.failed.join(', ')}]`
+          `[JumpCloud Sync] Grupos ap_* (extraordinário): adicionados=${kbs.added.length} [${kbs.added.join(', ')}] falhas=${kbs.failed.length} [${kbs.failed.join(', ')}]`
         );
       } catch (kbsErr) {
-        console.error('[JumpCloud Sync] Erro ao sincronizar grupos KBS:', kbsErr);
+        console.error('[JumpCloud Sync] Erro ao sincronizar grupos ap_*:', kbsErr);
       }
     }
   } catch (err) {

@@ -1647,6 +1647,9 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         try {
           const onboardingResult = await runOnboardingAutomation(id, request, approverId);
           if (onboardingResult) {
+            // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
+            // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
+            // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY (mapTherisUnitNameToJumpCloudCompany) para correspondência exata
             syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
               console.error('[JumpCloud Sync] Erro:', err)
             );
@@ -1727,6 +1730,9 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           const result = await runChangeRoleAutomation(id, request, approverId);
           if (result.success) {
             if (result.userEmail) {
+              // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
+              // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
+              // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY para garantir correspondência exata
               syncUserToJumpCloud(result.userEmail).catch((err) =>
                 console.error('[JumpCloud Sync] Erro:', err)
               );
@@ -2145,6 +2151,9 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           const result = await runChangeRoleAutomation(id, existing, existing.approverId || userId);
           if (result.success) {
             if (result.userEmail) {
+              // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
+              // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
+              // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY para garantir correspondência exata
               syncUserToJumpCloud(result.userEmail).catch((err) =>
                 console.error('[JumpCloud Sync] Erro:', err)
               );
@@ -2210,6 +2219,9 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         try {
           const onboardingResult = await runOnboardingAutomation(id, existing, userId);
           if (onboardingResult) {
+            // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
+            // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
+            // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY (mapTherisUnitNameToJumpCloudCompany) para correspondência exata
             syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
               console.error('[JumpCloud Sync] Erro:', err)
             );

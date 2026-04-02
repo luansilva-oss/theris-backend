@@ -1,5 +1,6 @@
 /**
- * Adiciona o usuário JumpCloud aos user groups cujo nome no JC corresponde ao toolCode do KBS (ex.: ap_CK-1).
+ * Adiciona o usuário JumpCloud apenas a user groups cujo toolCode começa com `ap_` (Acesso Extraordinário).
+ * Grupos KBS dinâmicos (Company + Department + Job Title + Manager) são geridos pelo JumpCloud — não usar POST members para eles.
  */
 import { PrismaClient } from '@prisma/client';
 import { getSystemUserIdByEmail } from './jumpcloudService';
@@ -64,9 +65,9 @@ async function postAddUserToGroup(groupId: string, jumpcloudUserId: string): Pro
 }
 
 /**
- * Para cada item do KBS do cargo, localiza usergroup JumpCloud pelo name = toolCode (ex.: ap_CK-1) e adiciona o usuário.
+ * Para cada item do kit do cargo com toolCode `ap_*`, localiza usergroup JumpCloud pelo name = toolCode e adiciona o usuário.
  */
-export async function addUserToKBSGroups(
+export async function addUserToExtraordinaryToolGroups(
   userEmail: string,
   roleId: string
 ): Promise<{ added: string[]; failed: string[] }> {
@@ -108,6 +109,10 @@ export async function addUserToKBSGroups(
 
     if (!toolCode) {
       console.log(`[JumpCloud KBS] toolCode ausente para ${toolName} — pulando`);
+      continue;
+    }
+
+    if (!/^ap_/i.test(toolCode)) {
       continue;
     }
 

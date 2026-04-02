@@ -19,9 +19,6 @@ webhookRouter.post('/jumpcloud-alerts', (req: Request, res: Response) => {
     const payload = (req.body ?? {}) as JumpCloudAlertPayload;
     const providedSecret = String(req.query.secret ?? '').trim();
     const expectedSecret = String(process.env.JUMPCLOUD_WEBHOOK_SECRET ?? '').trim();
-    console.log('[Webhook Debug] secret recebido:', req.query.secret);
-    console.log('[Webhook Debug] secret esperado:', process.env.JUMPCLOUD_WEBHOOK_SECRET);
-    console.log('[Webhook Debug] match:', req.query.secret === process.env.JUMPCLOUD_WEBHOOK_SECRET);
 
     if (!expectedSecret) {
       console.log('[JumpCloud Webhook] Ignorado: JUMPCLOUD_WEBHOOK_SECRET não configurado.');
