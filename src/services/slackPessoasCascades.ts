@@ -1,6 +1,7 @@
 /**
  * Cascata Unidade → Departamento → Cargo nos modais /pessoas (Slack Block Kit).
- * Atualiza a view via views.update; selects com dispatch_action disparam estes handlers.
+ * Unidade/Departamento: blocos type "actions" (static_select dispara block_actions; não usar dispatch_action no elemento).
+ * Cargo: bloco type "input" com static_select (sem cascata filha).
  */
 import type { App } from '@slack/bolt';
 import { prisma } from '../lib/prisma';
@@ -82,7 +83,50 @@ async function roleOptionsForDepartment(deptId: string | null): Promise<{ text: 
   }
 }
 
-function staticSelectInput(
+function buildStaticSelectElement(
+  actionId: string,
+  placeholder: string,
+  options: { text: { type: 'plain_text'; text: string }; value: string }[],
+  selectedValue: string | undefined
+): Record<string, unknown> {
+  const list = options.length > 0 ? options : phOptions(placeholder);
+  const el: Record<string, unknown> = {
+    type: 'static_select',
+    action_id: actionId,
+    placeholder: { type: 'plain_text', text: placeholder },
+    options: list
+  };
+  if (selectedValue && !isPh(selectedValue)) {
+    const opt = list.find((o) => o.value === selectedValue);
+    if (opt) el.initial_option = opt;
+  }
+  return el;
+}
+
+/** Select de cascata: bloco actions (sem label no bloco). Opcional: section mrkdwn imediata acima como rótulo visual. */
+function cascadeSelectBlocks(
+  sectionLabel: string | null,
+  blockId: string,
+  actionId: string,
+  placeholder: string,
+  options: { text: { type: 'plain_text'; text: string }; value: string }[],
+  selectedValue: string | undefined
+): unknown[] {
+  const el = buildStaticSelectElement(actionId, placeholder, options, selectedValue);
+  const blocks: unknown[] = [];
+  if (sectionLabel) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: sectionLabel } });
+  }
+  blocks.push({
+    type: 'actions',
+    block_id: blockId,
+    elements: [el]
+  });
+  return blocks;
+}
+
+/** Último da cascata (cargo): input com label; static_select sem dispatch_action no elemento. */
+function roleSelectInputBlock(
   blockId: string,
   label: string,
   actionId: string,
@@ -90,17 +134,7 @@ function staticSelectInput(
   options: { text: { type: 'plain_text'; text: string }; value: string }[],
   selectedValue: string | undefined
 ) {
-  const el: Record<string, unknown> = {
-    type: 'static_select',
-    action_id: actionId,
-    dispatch_action: true,
-    placeholder: { type: 'plain_text', text: placeholder },
-    options: options.length > 0 ? options : phOptions(placeholder)
-  };
-  if (selectedValue && !isPh(selectedValue)) {
-    const opt = (el.options as { value: string }[]).find((o) => o.value === selectedValue);
-    if (opt) el.initial_option = opt;
-  }
+  const el = buildStaticSelectElement(actionId, placeholder, options, selectedValue);
   return {
     type: 'input' as const,
     block_id: blockId,
@@ -202,16 +236,16 @@ export async function buildMoveDeptModalBlocks(view: PessoasViewLike, overrides:
     },
     { type: 'divider' },
     { type: 'section', text: { type: 'mrkdwn', text: '*Situação Atual*' } },
-    staticSelectInput('blk_curr_unit', 'Unidade', 'move_dept_curr_unit', 'Selecione a unidade...', unitOpts, currUnitSel),
-    staticSelectInput(
+    ...cascadeSelectBlocks('*Unidade*', 'blk_curr_unit', 'move_dept_curr_unit', 'Selecione a unidade...', unitOpts, currUnitSel),
+    ...cascadeSelectBlocks(
+      '*Departamento*',
       'blk_curr_dept',
-      'Departamento',
       'move_dept_curr_dept',
       'Selecione a unidade primeiro',
       currDeptOpts,
       currDeptOk
     ),
-    staticSelectInput(
+    roleSelectInputBlock(
       'blk_curr_role',
       'Cargo',
       'move_dept_curr_role',
@@ -220,16 +254,16 @@ export async function buildMoveDeptModalBlocks(view: PessoasViewLike, overrides:
       currRoleOk
     ),
     { type: 'section', text: { type: 'mrkdwn', text: '*Situação Nova*' } },
-    staticSelectInput('blk_new_unit', 'Unidade', 'move_dept_new_unit', 'Selecione a unidade...', unitOpts, newUnitSel),
-    staticSelectInput(
+    ...cascadeSelectBlocks('*Unidade*', 'blk_new_unit', 'move_dept_new_unit', 'Selecione a unidade...', unitOpts, newUnitSel),
+    ...cascadeSelectBlocks(
+      '*Departamento*',
       'blk_new_dept',
-      'Departamento',
       'move_dept_new_dept',
       'Selecione a unidade primeiro',
       newDeptOpts,
       newDeptOk
     ),
-    staticSelectInput(
+    roleSelectInputBlock(
       'blk_new_role',
       'Cargo',
       'move_dept_new_role',
@@ -323,16 +357,16 @@ export async function buildMoveCargoModalBlocks(
       ]
     },
     { type: 'divider' },
-    staticSelectInput('blk_mc_unit', 'Unidade', 'mc_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
-    staticSelectInput(
+    ...cascadeSelectBlocks('*Unidade*', 'blk_mc_unit', 'mc_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
+    ...cascadeSelectBlocks(
+      '*Departamento*',
       'blk_mc_dept',
-      'Departamento',
       'mc_dept_select',
       'Selecione a unidade primeiro',
       deptOpts,
       deptOk
     ),
-    staticSelectInput(
+    roleSelectInputBlock(
       'blk_mc_role_curr',
       'Cargo Atual',
       'mc_role_curr_select',
@@ -340,7 +374,7 @@ export async function buildMoveCargoModalBlocks(
       roleOpts,
       roleCurrOk
     ),
-    staticSelectInput(
+    roleSelectInputBlock(
       'blk_mc_role_fut',
       'Novo Cargo',
       'mc_role_fut_select',
@@ -424,16 +458,16 @@ export async function buildHireModalBlocks(view: PessoasViewLike, overrides: Par
         ...(startDate ? { initial_date: startDate } : {})
       }
     },
-    staticSelectInput('blk_hire_unit', 'Unidade', 'hire_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
-    staticSelectInput(
+    ...cascadeSelectBlocks('*Unidade*', 'blk_hire_unit', 'hire_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
+    ...cascadeSelectBlocks(
+      '*Departamento*',
       'blk_hire_dept',
-      'Departamento',
       'hire_dept_select',
       'Selecione a unidade primeiro',
       deptOpts,
       deptOk
     ),
-    staticSelectInput(
+    roleSelectInputBlock(
       'blk_hire_role',
       'Cargo',
       'hire_role_select',
@@ -530,16 +564,16 @@ export async function buildFireModalBlocks(view: PessoasViewLike, overrides: Par
         }
       ]
     },
-    staticSelectInput('blk_fire_unit', 'Unidade', 'fire_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
-    staticSelectInput(
+    ...cascadeSelectBlocks('*Unidade*', 'blk_fire_unit', 'fire_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
+    ...cascadeSelectBlocks(
+      '*Departamento*',
       'blk_fire_dept',
-      'Departamento',
       'fire_dept_select',
       'Selecione a unidade primeiro',
       deptOpts,
       deptOk
     ),
-    staticSelectInput(
+    roleSelectInputBlock(
       'blk_fire_role',
       'Cargo',
       'fire_role_select',
