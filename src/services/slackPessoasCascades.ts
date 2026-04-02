@@ -1,7 +1,7 @@
 /**
  * Cascata Unidade → Departamento → Cargo nos modais /pessoas (Slack Block Kit).
- * Unidade/Departamento: blocos type "actions" (static_select dispara block_actions; não usar dispatch_action no elemento).
- * Cargo: bloco type "input" com static_select (sem cascata filha).
+ * Unidade/Departamento: type "input" com dispatch_action no bloco (não no static_select).
+ * Cargo: type "input" sem dispatch_action (fim da cascata).
  */
 import type { App } from '@slack/bolt';
 import { prisma } from '../lib/prisma';
@@ -31,7 +31,10 @@ function phOptions(msg: string) {
 
 async function unitSelectOptions(): Promise<{ text: { type: 'plain_text'; text: string }; value: string }[]> {
   try {
-    const units = await prisma.unit.findMany({ orderBy: { name: 'asc' } });
+    const units = await prisma.unit.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' }
+    });
     if (units.length > 0) {
       return units.map((u) => ({
         text: { type: 'plain_text' as const, text: u.name },
@@ -50,8 +53,10 @@ async function unitSelectOptions(): Promise<{ text: { type: 'plain_text'; text: 
 async function deptOptionsForUnit(unitId: string | null): Promise<{ text: { type: 'plain_text'; text: string }; value: string }[]> {
   if (!unitId || unitId === '__noid__') return phOptions('Selecione a unidade primeiro');
   try {
+    // Department não tem isActive no schema; lista todos do vínculo unitId. take: 100 = limite do Slack static_select.
     const depts = await prisma.department.findMany({
       where: { unitId },
+      select: { id: true, name: true },
       orderBy: { name: 'asc' },
       take: 100
     });
@@ -68,8 +73,10 @@ async function deptOptionsForUnit(unitId: string | null): Promise<{ text: { type
 async function roleOptionsForDepartment(deptId: string | null): Promise<{ text: { type: 'plain_text'; text: string }; value: string }[]> {
   if (!deptId) return phOptions('Selecione o departamento primeiro');
   try {
+    // Role não tem isActive no schema; todos os cargos do departamento. take: 100 = limite do Slack static_select.
     const roles = await prisma.role.findMany({
       where: { departmentId: deptId },
+      select: { id: true, name: true },
       orderBy: { name: 'asc' },
       take: 100
     });
@@ -103,26 +110,23 @@ function buildStaticSelectElement(
   return el;
 }
 
-/** Select de cascata: bloco actions (sem label no bloco). Opcional: section mrkdwn imediata acima como rótulo visual. */
-function cascadeSelectBlocks(
-  sectionLabel: string | null,
+/** Unidade / Departamento: input com dispatch_action no bloco (mesma largura visual do Cargo). */
+function cascadeSelectInputBlock(
   blockId: string,
+  label: string,
   actionId: string,
   placeholder: string,
   options: { text: { type: 'plain_text'; text: string }; value: string }[],
   selectedValue: string | undefined
-): unknown[] {
+) {
   const el = buildStaticSelectElement(actionId, placeholder, options, selectedValue);
-  const blocks: unknown[] = [];
-  if (sectionLabel) {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: sectionLabel } });
-  }
-  blocks.push({
-    type: 'actions',
+  return {
+    type: 'input' as const,
+    dispatch_action: true,
     block_id: blockId,
-    elements: [el]
-  });
-  return blocks;
+    label: { type: 'plain_text' as const, text: label },
+    element: el
+  };
 }
 
 /** Último da cascata (cargo): input com label; static_select sem dispatch_action no elemento. */
@@ -173,25 +177,16 @@ async function sanitizeRoleValue(deptId: string | null, roleVal: string | undefi
   return roleVal;
 }
 
-type MoveDeptOverrides = Partial<{
-  currUnit: string;
-  currDept: string;
-  currRole: string;
-  newUnit: string;
-  newDept: string;
-  newRole: string;
-}>;
-
-export async function buildMoveDeptModalBlocks(view: PessoasViewLike, overrides: MoveDeptOverrides = {}) {
+export async function buildMoveDeptModalBlocks(view: PessoasViewLike) {
   const v = view.state?.values ?? {};
   const g = (bid: string, aid: string) => v[bid]?.[aid]?.selected_option?.value as string | undefined;
   const nameVal = String(v.blk_name?.inp?.value ?? '');
-  const currUnitSel = overrides.currUnit ?? g('blk_curr_unit', 'move_dept_curr_unit');
-  const currDeptSel = overrides.currDept ?? g('blk_curr_dept', 'move_dept_curr_dept');
-  const currRoleSel = overrides.currRole ?? g('blk_curr_role', 'move_dept_curr_role');
-  const newUnitSel = overrides.newUnit ?? g('blk_new_unit', 'move_dept_new_unit');
-  const newDeptSel = overrides.newDept ?? g('blk_new_dept', 'move_dept_new_dept');
-  const newRoleSel = overrides.newRole ?? g('blk_new_role', 'move_dept_new_role');
+  const currUnitSel = g('blk_curr_unit', 'move_dept_curr_unit');
+  const currDeptSel = g('blk_curr_dept', 'move_dept_curr_dept');
+  const currRoleSel = g('blk_curr_role', 'move_dept_curr_role');
+  const newUnitSel = g('blk_new_unit', 'move_dept_new_unit');
+  const newDeptSel = g('blk_new_dept', 'move_dept_new_dept');
+  const newRoleSel = g('blk_new_role', 'move_dept_new_role');
 
   const currUnitId = await resolveUnitIdFromSelection(currUnitSel);
   let currDeptOk = await sanitizeDeptValue(currUnitId, currDeptSel);
@@ -223,23 +218,12 @@ export async function buildMoveDeptModalBlocks(view: PessoasViewLike, overrides:
       label: { type: 'plain_text', text: 'Nome do Colaborador' },
       element: { type: 'plain_text_input', action_id: 'inp', initial_value: nameVal || undefined }
     },
-    {
-      type: 'actions',
-      block_id: 'blk_prefill_md',
-      elements: [
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: 'Carregar situação atual' },
-          action_id: 'pessoas_prefill_move_dept'
-        }
-      ]
-    },
     { type: 'divider' },
     { type: 'section', text: { type: 'mrkdwn', text: '*Situação Atual*' } },
-    ...cascadeSelectBlocks('*Unidade*', 'blk_curr_unit', 'move_dept_curr_unit', 'Selecione a unidade...', unitOpts, currUnitSel),
-    ...cascadeSelectBlocks(
-      '*Departamento*',
+    cascadeSelectInputBlock('blk_curr_unit', 'Unidade', 'move_dept_curr_unit', 'Selecione a unidade...', unitOpts, currUnitSel),
+    cascadeSelectInputBlock(
       'blk_curr_dept',
+      'Departamento',
       'move_dept_curr_dept',
       'Selecione a unidade primeiro',
       currDeptOpts,
@@ -254,10 +238,10 @@ export async function buildMoveDeptModalBlocks(view: PessoasViewLike, overrides:
       currRoleOk
     ),
     { type: 'section', text: { type: 'mrkdwn', text: '*Situação Nova*' } },
-    ...cascadeSelectBlocks('*Unidade*', 'blk_new_unit', 'move_dept_new_unit', 'Selecione a unidade...', unitOpts, newUnitSel),
-    ...cascadeSelectBlocks(
-      '*Departamento*',
+    cascadeSelectInputBlock('blk_new_unit', 'Unidade', 'move_dept_new_unit', 'Selecione a unidade...', unitOpts, newUnitSel),
+    cascadeSelectInputBlock(
       'blk_new_dept',
+      'Departamento',
       'move_dept_new_dept',
       'Selecione a unidade primeiro',
       newDeptOpts,
@@ -307,17 +291,14 @@ export async function buildMoveDeptModalBlocks(view: PessoasViewLike, overrides:
   return blocks;
 }
 
-export async function buildMoveCargoModalBlocks(
-  view: PessoasViewLike,
-  overrides: Partial<{ unit: string; dept: string; roleCurr: string; roleFut: string }> = {}
-) {
+export async function buildMoveCargoModalBlocks(view: PessoasViewLike) {
   const v = view.state?.values ?? {};
   const g = (bid: string, aid: string) => v[bid]?.[aid]?.selected_option?.value as string | undefined;
   const nameVal = String(v.blk_name?.inp?.value ?? '');
-  const unitSel = overrides.unit ?? g('blk_mc_unit', 'mc_unit_select');
-  const deptSel = overrides.dept ?? g('blk_mc_dept', 'mc_dept_select');
-  const roleCurrSel = overrides.roleCurr ?? g('blk_mc_role_curr', 'mc_role_curr_select');
-  const roleFutSel = overrides.roleFut ?? g('blk_mc_role_fut', 'mc_role_fut_select');
+  const unitSel = g('blk_mc_unit', 'mc_unit_select');
+  const deptSel = g('blk_mc_dept', 'mc_dept_select');
+  const roleCurrSel = g('blk_mc_role_curr', 'mc_role_curr_select');
+  const roleFutSel = g('blk_mc_role_fut', 'mc_role_fut_select');
 
   const unitId = await resolveUnitIdFromSelection(unitSel);
   let deptOk = await sanitizeDeptValue(unitId, deptSel);
@@ -345,22 +326,11 @@ export async function buildMoveCargoModalBlocks(
       label: { type: 'plain_text', text: 'Nome do Colaborador' },
       element: { type: 'plain_text_input', action_id: 'inp', initial_value: nameVal || undefined }
     },
-    {
-      type: 'actions',
-      block_id: 'blk_prefill_mc',
-      elements: [
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: 'Carregar situação atual' },
-          action_id: 'pessoas_prefill_move_cargo'
-        }
-      ]
-    },
     { type: 'divider' },
-    ...cascadeSelectBlocks('*Unidade*', 'blk_mc_unit', 'mc_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
-    ...cascadeSelectBlocks(
-      '*Departamento*',
+    cascadeSelectInputBlock('blk_mc_unit', 'Unidade', 'mc_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
+    cascadeSelectInputBlock(
       'blk_mc_dept',
+      'Departamento',
       'mc_dept_select',
       'Selecione a unidade primeiro',
       deptOpts,
@@ -417,14 +387,14 @@ export async function buildMoveCargoModalBlocks(
   ];
 }
 
-export async function buildHireModalBlocks(view: PessoasViewLike, overrides: Partial<{ unit: string; dept: string; role: string }> = {}) {
+export async function buildHireModalBlocks(view: PessoasViewLike) {
   const v = view.state?.values ?? {};
   const g = (bid: string, aid: string) => v[bid]?.[aid]?.selected_option?.value as string | undefined;
   const nameVal = String(v.blk_name?.inp?.value ?? '');
   const startDate = (v.blk_date?.picker?.selected_date as string | undefined) ?? null;
-  const unitSel = overrides.unit ?? g('blk_hire_unit', 'hire_unit_select');
-  const deptSel = overrides.dept ?? g('blk_hire_dept', 'hire_dept_select');
-  const roleSel = overrides.role ?? g('blk_hire_role', 'hire_role_select');
+  const unitSel = g('blk_hire_unit', 'hire_unit_select');
+  const deptSel = g('blk_hire_dept', 'hire_dept_select');
+  const roleSel = g('blk_hire_role', 'hire_role_select');
 
   const unitId = await resolveUnitIdFromSelection(unitSel);
   let deptOk = await sanitizeDeptValue(unitId, deptSel);
@@ -458,10 +428,10 @@ export async function buildHireModalBlocks(view: PessoasViewLike, overrides: Par
         ...(startDate ? { initial_date: startDate } : {})
       }
     },
-    ...cascadeSelectBlocks('*Unidade*', 'blk_hire_unit', 'hire_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
-    ...cascadeSelectBlocks(
-      '*Departamento*',
+    cascadeSelectInputBlock('blk_hire_unit', 'Unidade', 'hire_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
+    cascadeSelectInputBlock(
       'blk_hire_dept',
+      'Departamento',
       'hire_dept_select',
       'Selecione a unidade primeiro',
       deptOpts,
@@ -521,13 +491,13 @@ export async function buildHireModalBlocks(view: PessoasViewLike, overrides: Par
   ];
 }
 
-export async function buildFireModalBlocks(view: PessoasViewLike, overrides: Partial<{ unit: string; dept: string; role: string }> = {}) {
+export async function buildFireModalBlocks(view: PessoasViewLike) {
   const v = view.state?.values ?? {};
   const g = (bid: string, aid: string) => v[bid]?.[aid]?.selected_option?.value as string | undefined;
   const nameVal = String(v.blk_name?.inp?.value ?? '');
-  const unitSel = overrides.unit ?? g('blk_fire_unit', 'fire_unit_select');
-  const deptSel = overrides.dept ?? g('blk_fire_dept', 'fire_dept_select');
-  const roleSel = overrides.role ?? g('blk_fire_role', 'fire_role_select');
+  const unitSel = g('blk_fire_unit', 'fire_unit_select');
+  const deptSel = g('blk_fire_dept', 'fire_dept_select');
+  const roleSel = g('blk_fire_role', 'fire_role_select');
 
   const unitId = await resolveUnitIdFromSelection(unitSel);
   let deptOk = await sanitizeDeptValue(unitId, deptSel);
@@ -553,21 +523,10 @@ export async function buildFireModalBlocks(view: PessoasViewLike, overrides: Par
       label: { type: 'plain_text', text: 'Colaborador' },
       element: { type: 'plain_text_input', action_id: 'inp', initial_value: nameVal || undefined }
     },
-    {
-      type: 'actions',
-      block_id: 'blk_prefill_fire',
-      elements: [
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: 'Carregar situação atual' },
-          action_id: 'pessoas_prefill_fire'
-        }
-      ]
-    },
-    ...cascadeSelectBlocks('*Unidade*', 'blk_fire_unit', 'fire_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
-    ...cascadeSelectBlocks(
-      '*Departamento*',
+    cascadeSelectInputBlock('blk_fire_unit', 'Unidade', 'fire_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
+    cascadeSelectInputBlock(
       'blk_fire_dept',
+      'Departamento',
       'fire_dept_select',
       'Selecione a unidade primeiro',
       deptOpts,
@@ -770,126 +729,6 @@ export function registerPessoasModalCascadeHandlers(app: App): void {
       await updateFireView(body as { view: PessoasViewLike & { id: string; hash: string } }, client as { views: { update: (a: unknown) => Promise<unknown> } });
     } catch (e) {
       console.error('[pessoas] views.update fire dept:', e);
-    }
-  });
-
-  app.action('pessoas_prefill_move_dept', async ({ ack, body, client }) => {
-    await ack();
-    const view = (body as { view: PessoasViewLike & { id: string; hash: string } }).view;
-    const name = String(view.state?.values?.blk_name?.inp?.value || '').trim();
-    if (!name) return;
-    try {
-      let u = await prisma.user.findFirst({
-        where: { isActive: true, name: { equals: name, mode: 'insensitive' } },
-        include: { unitRef: true, departmentRef: true }
-      });
-      if (!u) {
-        u = await prisma.user.findFirst({
-          where: { isActive: true, name: { contains: name, mode: 'insensitive' } },
-          include: { unitRef: true, departmentRef: true }
-        });
-      }
-      if (!u?.unitRef?.id || !u.departmentRef?.id || !u.roleId) return;
-      const roleRow = await prisma.role.findUnique({ where: { id: u.roleId }, select: { id: true, name: true } });
-      if (!roleRow) return;
-      const overrides: MoveDeptOverrides = {
-        currUnit: `${u.unitRef.id}|${u.unitRef.name}`,
-        currDept: `${u.departmentRef.id}|${u.departmentRef.name}`,
-        currRole: `${roleRow.id}|${roleRow.name}`
-      };
-      const blocks = await buildMoveDeptModalBlocks(view, overrides);
-      await (client as { views: { update: (a: unknown) => Promise<unknown> } }).views.update({
-        view_id: view.id,
-        hash: view.hash,
-        view: {
-          type: 'modal',
-          callback_id: 'submit_move_dept',
-          title: { type: 'plain_text', text: 'Mudança de Departamento' },
-          submit: { type: 'plain_text', text: 'Enviar' },
-          blocks
-        }
-      });
-    } catch (e) {
-      console.error('[pessoas] prefill move_dept:', e);
-    }
-  });
-
-  app.action('pessoas_prefill_move_cargo', async ({ ack, body, client }) => {
-    await ack();
-    const view = (body as { view: PessoasViewLike & { id: string; hash: string } }).view;
-    const name = String(view.state?.values?.blk_name?.inp?.value || '').trim();
-    if (!name) return;
-    try {
-      let u = await prisma.user.findFirst({
-        where: { isActive: true, name: { equals: name, mode: 'insensitive' } },
-        include: { unitRef: true, departmentRef: true }
-      });
-      if (!u) {
-        u = await prisma.user.findFirst({
-          where: { isActive: true, name: { contains: name, mode: 'insensitive' } },
-          include: { unitRef: true, departmentRef: true }
-        });
-      }
-      if (!u?.unitRef?.id || !u.departmentRef?.id || !u.roleId) return;
-      const roleRow = await prisma.role.findUnique({ where: { id: u.roleId }, select: { id: true, name: true } });
-      if (!roleRow) return;
-      const unit = `${u.unitRef.id}|${u.unitRef.name}`;
-      const dept = `${u.departmentRef.id}|${u.departmentRef.name}`;
-      const roleCurr = `${roleRow.id}|${roleRow.name}`;
-      const blocks = await buildMoveCargoModalBlocks(view, { unit, dept, roleCurr });
-      await (client as { views: { update: (a: unknown) => Promise<unknown> } }).views.update({
-        view_id: view.id,
-        hash: view.hash,
-        view: {
-          type: 'modal',
-          callback_id: 'submit_move_cargo',
-          title: { type: 'plain_text', text: 'Mudança de Cargo' },
-          submit: { type: 'plain_text', text: 'Enviar' },
-          blocks
-        }
-      });
-    } catch (e) {
-      console.error('[pessoas] prefill move_cargo:', e);
-    }
-  });
-
-  app.action('pessoas_prefill_fire', async ({ ack, body, client }) => {
-    await ack();
-    const view = (body as { view: PessoasViewLike & { id: string; hash: string } }).view;
-    const name = String(view.state?.values?.blk_name?.inp?.value || '').trim();
-    if (!name) return;
-    try {
-      let u = await prisma.user.findFirst({
-        where: { isActive: true, name: { equals: name, mode: 'insensitive' } },
-        include: { unitRef: true, departmentRef: true }
-      });
-      if (!u) {
-        u = await prisma.user.findFirst({
-          where: { isActive: true, name: { contains: name, mode: 'insensitive' } },
-          include: { unitRef: true, departmentRef: true }
-        });
-      }
-      if (!u?.unitRef?.id || !u.departmentRef?.id || !u.roleId) return;
-      const roleRow = await prisma.role.findUnique({ where: { id: u.roleId }, select: { id: true, name: true } });
-      if (!roleRow) return;
-      const blocks = await buildFireModalBlocks(view, {
-        unit: `${u.unitRef.id}|${u.unitRef.name}`,
-        dept: `${u.departmentRef.id}|${u.departmentRef.name}`,
-        role: `${roleRow.id}|${roleRow.name}`
-      });
-      await (client as { views: { update: (a: unknown) => Promise<unknown> } }).views.update({
-        view_id: view.id,
-        hash: view.hash,
-        view: {
-          type: 'modal',
-          callback_id: 'submit_fire',
-          title: { type: 'plain_text', text: 'Desligamento' },
-          submit: { type: 'plain_text', text: 'Confirmar' },
-          blocks
-        }
-      });
-    } catch (e) {
-      console.error('[pessoas] prefill fire:', e);
     }
   });
 }
