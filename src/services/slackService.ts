@@ -958,6 +958,7 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
 
 const PEOPLE_REQUEST_TYPES_SLACK = ['CHANGE_ROLE', 'HIRING', 'FIRING'];
 const OFFBOARDING_REQUEST_TYPES = ['FIRING', 'DEMISSAO', 'OFFBOARDING'];
+const ONBOARDING_REQUEST_TYPES_SLACK = ['HIRING', 'ADMISSAO', 'ONBOARDING'];
 const RH_BYPASS_REQUESTER_NAME = 'Renata Czapiewski Silva';
 
 function isRhBypassRequester(name: string | null | undefined): boolean {
@@ -1645,10 +1646,13 @@ slackApp.action({ action_id: /^vpn_leader_(approve|reject)$/, block_id: 'vpn_lea
   }
 });
 
-// Desligamento: Owner confirma revogação de acesso (botão "Marcar como Concluído")
-slackApp.action('offboarding_revoke_confirm', async ({ ack, body, client }) => {
-  await ack();
-  const b = body as any;
+// ——— JML: handlers de confirmação (ack < 3s, processar assíncrono) ———
+
+function runAsync(fn: () => Promise<void>) {
+  setImmediate(() => fn().catch((e) => console.error('[JML async]', e)));
+}
+
+async function processOffboardingRevokeButton(b: any, client: WebClient): Promise<void> {
   const value = b.actions?.[0]?.value;
   const clickerSlackId = b.user?.id;
   if (!value || !clickerSlackId) return;
@@ -1738,6 +1742,22 @@ slackApp.action('offboarding_revoke_confirm', async ({ ack, body, client }) => {
       }
     });
     const colaboradorName = (detailsObj.collaboratorName as string) || (detailsObj.info as string)?.toString().replace(/^[^:]+:\s*/, '') || 'Colaborador';
+    const tsBrt = formatTimestampBrt();
+    await slackUpdateInteractiveMessage(
+      client,
+      b,
+      [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `✅ *Revogação confirmada.* Obrigado, *${ownerName}*! (${tsBrt} BRT)`
+          }
+        },
+        { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${requestId.slice(0, 8)} · Theris` }] }
+      ],
+      `Revogação confirmada — ${tool.name}`
+    );
     try {
       await notificarConfirmacaoRevogacaoDesligamento(ownerName, tool.name, colaboradorName, requestId);
     } catch (notifErr) {
@@ -1753,96 +1773,210 @@ slackApp.action('offboarding_revoke_confirm', async ({ ack, body, client }) => {
   } catch (e) {
     console.error('[offboarding_revoke_confirm] Erro:', e);
   }
-});
-
-// ——— JML: handlers de confirmação (ack < 3s, processar assíncrono) ———
-
-function runAsync(fn: () => Promise<void>) {
-  setImmediate(() => fn().catch((e) => console.error('[JML async]', e)));
 }
 
-// Joiner: Owner confirmou "Acesso Concedido"
-slackApp.action('joiner_access_done', async ({ ack, body, client }) => {
-  await ack();
-  const b = body as any;
+async function processHiringAccessConfirmation(b: any, client: WebClient): Promise<void> {
   const value = b.actions?.[0]?.value;
   const clickerSlackId = b.user?.id;
   if (!value || !clickerSlackId) return;
-  let requestId: string;
+  let solicitacaoId: string;
   let toolId: string;
+  let colaboradorUserId: string | undefined;
+  let ownerIdFromPayload: string | undefined;
   try {
     const parsed = JSON.parse(value);
-    requestId = parsed.requestId;
+    solicitacaoId = parsed.solicitacaoId || parsed.requestId;
     toolId = parsed.toolId;
+    colaboradorUserId = typeof parsed.userId === 'string' ? parsed.userId : undefined;
+    ownerIdFromPayload = typeof parsed.ownerId === 'string' ? parsed.ownerId : undefined;
   } catch (_) {
+    console.warn('[hiring_access] value inválido:', value);
     return;
   }
-  runAsync(async () => {
+  if (!solicitacaoId || !toolId) return;
+
+  try {
+    const request = await prisma.request.findUnique({ where: { id: solicitacaoId } });
+    const tool = await prisma.tool.findUnique({
+      where: { id: toolId },
+      include: { owner: { select: { id: true, name: true, email: true } }, subOwner: { select: { id: true } } }
+    });
+    if (!request || !tool) return;
+    if (!ONBOARDING_REQUEST_TYPES_SLACK.includes(request.type)) return;
+
+    let detailsObj: Record<string, unknown> = {};
     try {
-      const request = await prisma.request.findUnique({ where: { id: requestId } });
-      const tool = await prisma.tool.findUnique({
-        where: { id: toolId },
-        include: { owner: { select: { id: true, name: true, email: true } } }
-      });
-      if (!request || !tool) return;
-      let clickerUserId: string | null = null;
-      let clickerName = '';
-      try {
-        const info = await client.users.info({ user: clickerSlackId });
-        const email = info.user?.profile?.email;
-        if (email) {
-          const user = await prisma.user.findUnique({ where: { email }, select: { id: true, name: true } });
-          if (user) {
-            clickerUserId = user.id;
-            clickerName = user.name || '';
-          }
-        }
-      } catch (_) {}
-      const isOwner = clickerUserId && tool.ownerId === clickerUserId;
-      const ownerName = tool.owner?.name || clickerName || 'Owner';
-      const colaboradorName = (() => {
-        try {
-          const d = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
-          return (d.collaboratorName || d.Colaborador || d.name || 'Colaborador') as string;
-        } catch { return 'Colaborador'; }
-      })();
-      const { registrarMudanca } = await import('../lib/auditLog');
-      await registrarMudanca({
-        tipo: 'JOINER_CONCLUIDO',
-        entidadeTipo: 'Request',
-        entidadeId: requestId,
-        descricao: `Owner ${ownerName} confirmou provisionamento de ${colaboradorName} em ${tool.name}`,
-        dadosDepois: { ownerName, toolName: tool.name, colaboradorName, confirmedAt: new Date().toISOString() },
-        autorId: clickerUserId ?? undefined
-      });
-      const now = new Date();
-      const dataHora = now.toLocaleString('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-      const text = `✅ *Joiner Concluído*\n\nO Owner *${ownerName}* confirmou o provisionamento de acesso de *${colaboradorName}* em *${tool.name}*.\n🕒 ${dataHora}`;
-      const targets: string[] = [];
-      if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
-      if (SLACK_ID_RENATA) targets.push(SLACK_ID_RENATA);
-      if (SLACK_SI_CHANNEL_ID) targets.push(SLACK_SI_CHANNEL_ID);
-      for (const ch of targets) {
-        try {
-          await client.chat.postMessage({ channel: ch, text });
-        } catch (e) {
-          console.error('[joiner_access_done] Notify:', e);
+      detailsObj = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
+    } catch (_) {}
+
+    if (!colaboradorUserId) {
+      const email = (detailsObj.collaboratorEmail || detailsObj.email || detailsObj.targetEmail) as string | undefined;
+      if (email?.trim()) {
+        const u = await prisma.user.findUnique({ where: { email: email.trim() }, select: { id: true } });
+        if (u) colaboradorUserId = u.id;
+      }
+    }
+    if (!colaboradorUserId && (detailsObj.collaboratorName || detailsObj.Colaborador)) {
+      const nm = String(detailsObj.collaboratorName || detailsObj.Colaborador).trim();
+      if (nm) {
+        const u = await prisma.user.findFirst({
+          where: { isActive: true, name: { equals: nm, mode: 'insensitive' } },
+          select: { id: true }
+        });
+        if (u) colaboradorUserId = u.id;
+      }
+    }
+
+    let clickerUserId: string | null = null;
+    let clickerName = '';
+    let clickerProfile: string | null = null;
+    try {
+      const info = await client.users.info({ user: clickerSlackId });
+      const email = info.user?.profile?.email;
+      if (email) {
+        const user = await prisma.user.findUnique({
+          where: { email },
+          select: { id: true, name: true, systemProfile: true }
+        });
+        if (user) {
+          clickerUserId = user.id;
+          clickerName = user.name || '';
+          clickerProfile = user.systemProfile;
         }
       }
+    } catch (_) {}
+
+    const isOwner = clickerUserId && (tool.ownerId === clickerUserId || tool.subOwnerId === clickerUserId);
+    const isAdmin = clickerProfile && ['ADMIN', 'SUPER_ADMIN'].includes(clickerProfile);
+    if (!isOwner && !isAdmin) {
       try {
-        await client.chat.postEphemeral({ channel: b.channel?.id || clickerSlackId, user: clickerSlackId, text: '✅ Confirmação registrada. O time de SI foi notificado.' });
+        await client.chat.postEphemeral({
+          channel: b.channel?.id || clickerSlackId,
+          user: clickerSlackId,
+          text: '⚠️ Apenas o Owner/Sub-owner da ferramenta ou um Admin podem confirmar.'
+        });
       } catch (_) {}
-    } catch (e) {
-      console.error('[joiner_access_done] Erro:', e);
+      return;
     }
+
+    if (ownerIdFromPayload && tool.ownerId && ownerIdFromPayload !== tool.ownerId) {
+      try {
+        await client.chat.postEphemeral({
+          channel: b.channel?.id || clickerSlackId,
+          user: clickerSlackId,
+          text: '⚠️ Este botão não corresponde ao Owner atual da ferramenta.'
+        });
+      } catch (_) {}
+      return;
+    }
+
+    const hiringConf = Array.isArray(detailsObj.hiringAccessConfirmations) ? (detailsObj.hiringAccessConfirmations as any[]) : [];
+    if (hiringConf.some((c: any) => c.toolId === toolId)) {
+      try {
+        await client.chat.postEphemeral({
+          channel: b.channel?.id || clickerSlackId,
+          user: clickerSlackId,
+          text: '✅ Este provisionamento já foi confirmado anteriormente.'
+        });
+      } catch (_) {}
+      return;
+    }
+
+    const ownerName = tool.owner?.name || clickerName || 'Owner';
+    const colaboradorName =
+      (detailsObj.collaboratorName as string) ||
+      (detailsObj.Colaborador as string) ||
+      (detailsObj.name as string) ||
+      'Colaborador';
+
+    hiringConf.push({
+      toolId: tool.id,
+      toolName: tool.name,
+      ownerSlackId: clickerSlackId,
+      ownerName,
+      colaboradorUserId: colaboradorUserId ?? null,
+      confirmedAt: new Date().toISOString()
+    });
+    detailsObj.hiringAccessConfirmations = hiringConf;
+
+    await prisma.request.update({
+      where: { id: solicitacaoId },
+      data: { details: JSON.stringify(detailsObj) }
+    });
+
+    const { registrarMudanca } = await import('../lib/auditLog');
+    await registrarMudanca({
+      tipo: 'HIRING_ACCESS_CONFIRMED',
+      entidadeTipo: 'Request',
+      entidadeId: solicitacaoId,
+      descricao: `Owner ${ownerName} confirmou acesso liberado para ${colaboradorName} em ${tool.name}`,
+      dadosDepois: {
+        ownerName,
+        toolName: tool.name,
+        colaboradorName,
+        colaboradorUserId: colaboradorUserId ?? null,
+        confirmedAt: new Date().toISOString()
+      },
+      autorId: clickerUserId ?? undefined
+    });
+
+    const tsBrt = formatTimestampBrt();
+    await slackUpdateInteractiveMessage(
+      client,
+      b,
+      [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `✅ *Acesso liberado confirmado.* Obrigado, *${ownerName}*! (${tsBrt} BRT)`
+          }
+        },
+        { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${solicitacaoId.slice(0, 8)} · Theris` }] }
+      ],
+      `Acesso liberado confirmado — ${tool.name}`
+    );
+
+    try {
+      await client.chat.postEphemeral({
+        channel: b.channel?.id || clickerSlackId,
+        user: clickerSlackId,
+        text: '✅ Confirmação registrada no Theris.'
+      });
+    } catch (_) {}
+  } catch (e) {
+    console.error('[hiring_access] Erro:', e);
+  }
+}
+
+// TODO: remover handler offboarding_revoke_confirm após confirmar que não há
+// mais mensagens pendentes com esse action_id (verificar logs por 30 dias após deploy).
+// Novas DMs de offboarding usam leaver_access_done.
+slackApp.action('offboarding_revoke_confirm', async ({ ack, body, client }) => {
+  await ack();
+  runAsync(async () => {
+    console.warn(
+      '[DEPRECATED] Handler offboarding_revoke_confirm recebido. ' +
+        'Este action_id é legado — novas DMs usam leaver_access_done. ' +
+        'Remover após confirmar ausência de mensagens pendentes (verificar logs por 30 dias).'
+    );
+    await processOffboardingRevokeButton(body as any, client);
+  });
+});
+
+// Contratação: Owner confirmou "✅ Acesso Liberado"
+slackApp.action('hiring_access_confirmed', async ({ ack, body, client }) => {
+  await ack();
+  runAsync(async () => {
+    await processHiringAccessConfirmation(body as any, client);
+  });
+});
+
+// Joiner (mensagens antigas): mesmo processamento que hiring_access_confirmed
+slackApp.action('joiner_access_done', async ({ ack, body, client }) => {
+  await ack();
+  runAsync(async () => {
+    await processHiringAccessConfirmation(body as any, client);
   });
 });
 
@@ -2094,6 +2228,22 @@ slackApp.action('leaver_access_done', async ({ ack, body, client }) => {
         }
       });
       const colaboradorName = (detailsObj.collaboratorName as string) || (detailsObj.info as string)?.toString().replace(/^[^:]+:\s*/, '') || 'Colaborador';
+      const tsBrt = formatTimestampBrt();
+      await slackUpdateInteractiveMessage(
+        client,
+        b,
+        [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `✅ *Revogação confirmada.* Obrigado, *${ownerName}*! (${tsBrt} BRT)`
+            }
+          },
+          { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${requestId.slice(0, 8)} · Theris` }] }
+        ],
+        `Revogação confirmada — ${tool.name}`
+      );
       await notificarConfirmacaoLeaverConcluido(ownerName, tool.name, colaboradorName, requestId);
       const { registrarMudanca } = await import('../lib/auditLog');
       await registrarMudanca({
@@ -2113,6 +2263,155 @@ slackApp.action('leaver_access_done', async ({ ack, body, client }) => {
       } catch (_) {}
     } catch (e) {
       console.error('[leaver_access_done] Erro:', e);
+    }
+  });
+});
+
+// Leaver: Owner confirmou revogação de Acesso Extraordinário (mesmo padrão que leaver_access_done)
+slackApp.action('leaver_aex_done', async ({ ack, body, client }) => {
+  await ack();
+  const b = body as any;
+  const value = b.actions?.[0]?.value;
+  const clickerSlackId = b.user?.id;
+  if (!value || !clickerSlackId) return;
+  let requestId: string;
+  let toolId: string;
+  let userId: string;
+  try {
+    const parsed = JSON.parse(value);
+    requestId = parsed.requestId;
+    toolId = parsed.toolId;
+    userId = parsed.userId;
+  } catch (_) {
+    return;
+  }
+  if (!requestId || !toolId || !userId) return;
+
+  runAsync(async () => {
+    try {
+      const request = await prisma.request.findUnique({ where: { id: requestId } });
+      const tool = await prisma.tool.findUnique({
+        where: { id: toolId },
+        include: { owner: { select: { id: true, name: true, email: true } } }
+      });
+      if (!request || !tool) return;
+      if (!OFFBOARDING_REQUEST_TYPES.includes(request.type)) return;
+
+      let clickerUserId: string | null = null;
+      let clickerName = '';
+      let clickerProfile: string | null = null;
+      try {
+        const info = await client.users.info({ user: clickerSlackId });
+        const email = info.user?.profile?.email;
+        if (email) {
+          const user = await prisma.user.findUnique({ where: { email }, select: { id: true, name: true, systemProfile: true } });
+          if (user) {
+            clickerUserId = user.id;
+            clickerName = user.name || '';
+            clickerProfile = user.systemProfile;
+          }
+        }
+      } catch (_) {}
+
+      const isOwner = clickerUserId && (tool.ownerId === clickerUserId || tool.subOwnerId === clickerUserId);
+      const isAdmin = clickerProfile && ['ADMIN', 'SUPER_ADMIN'].includes(clickerProfile);
+      if (!isOwner && !isAdmin) {
+        try {
+          await client.chat.postEphemeral({
+            channel: b.channel?.id || clickerSlackId,
+            user: clickerSlackId,
+            text: '⚠️ Apenas o Owner/Sub-owner da ferramenta ou um Admin podem confirmar esta revogação.'
+          });
+        } catch (_) {}
+        return;
+      }
+
+      let detailsObj: Record<string, unknown> = {};
+      try {
+        detailsObj = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
+      } catch (_) {}
+
+      const aexConfirmations = Array.isArray(detailsObj.aexRevocationConfirmations)
+        ? (detailsObj.aexRevocationConfirmations as any[])
+        : [];
+      if (aexConfirmations.some((c: any) => c.toolId === toolId && c.userId === userId)) {
+        try {
+          await client.chat.postEphemeral({
+            channel: b.channel?.id || clickerSlackId,
+            user: clickerSlackId,
+            text: '✅ Esta confirmação (AEX) já foi registrada anteriormente.'
+          });
+        } catch (_) {}
+        return;
+      }
+
+      const ownerName = tool.owner?.name || clickerName || 'Owner';
+      aexConfirmations.push({
+        toolId: tool.id,
+        userId,
+        toolName: tool.name,
+        ownerSlackId: clickerSlackId,
+        ownerName,
+        confirmedAt: new Date().toISOString()
+      });
+      detailsObj.aexRevocationConfirmations = aexConfirmations;
+
+      await prisma.request.update({
+        where: { id: requestId },
+        data: {
+          details: JSON.stringify(detailsObj),
+          status: 'ACESSOS_REVOGADOS_OWNER'
+        }
+      });
+
+      const colaboradorName =
+        (detailsObj.collaboratorName as string) ||
+        (detailsObj.info as string)?.toString().replace(/^[^:]+:\s*/, '') ||
+        'Colaborador';
+      const tsBrt = formatTimestampBrt();
+      await slackUpdateInteractiveMessage(
+        client,
+        b,
+        [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `✅ *Revogação (AEX) confirmada.* Obrigado, *${ownerName}*! (${tsBrt} BRT)`
+            }
+          },
+          { type: 'context', elements: [{ type: 'mrkdwn', text: `Chamado #${requestId.slice(0, 8)} · Theris` }] }
+        ],
+        `Revogação AEX confirmada — ${tool.name}`
+      );
+
+      await notificarConfirmacaoLeaverConcluido(ownerName, tool.name, colaboradorName, requestId);
+
+      const { registrarMudanca } = await import('../lib/auditLog');
+      await registrarMudanca({
+        tipo: 'LEAVER_CONCLUIDO',
+        entidadeTipo: 'Request',
+        entidadeId: requestId,
+        descricao: `Owner ${ownerName} confirmou revogação AEX de ${colaboradorName} em ${tool.name}`,
+        dadosDepois: {
+          ownerName,
+          toolName: tool.name,
+          colaboradorName,
+          kind: 'aex_extraordinary',
+          confirmedAt: new Date().toISOString()
+        },
+        autorId: clickerUserId ?? undefined
+      });
+
+      try {
+        await client.chat.postEphemeral({
+          channel: b.channel?.id || clickerSlackId,
+          user: clickerSlackId,
+          text: '✅ Confirmação registrada. O time de SI foi notificado.'
+        });
+      } catch (_) {}
+    } catch (e) {
+      console.error('[leaver_aex_done] Erro:', e);
     }
   });
 });
@@ -2289,6 +2588,10 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   reqSel('blk_hire_unit', v.blk_hire_unit?.hire_unit_select?.selected_option?.value, 'Selecione a unidade.');
   reqSel('blk_hire_dept', v.blk_hire_dept?.hire_dept_select?.selected_option?.value, 'Selecione o departamento.');
   reqSel('blk_hire_role', v.blk_hire_role?.hire_role_select?.selected_option?.value, 'Selecione o cargo.');
+  const emailValue = v.blk_email?.inp?.value?.trim() || '';
+  if (!emailValue) {
+    errs.blk_email = 'Informe o e-mail corporativo.';
+  }
   if (Object.keys(errs).length > 0) {
     await ack({ response_action: 'errors', errors: errs });
     return;
@@ -2313,7 +2616,8 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
     ...(roleP ? { newRoleId: roleP.id } : {}),
     ...(deptP ? { newDepartmentId: deptP.id } : {}),
     managerName: v.blk_manager?.inp?.value?.trim() || undefined,
-    corporateEmail: v.blk_email?.inp?.value?.trim() || undefined,
+    corporateEmail: emailValue,
+    collaboratorEmail: emailValue,
     contractType: contractOpt?.value ?? contractOpt?.text?.text ?? undefined,
     obs: v.blk_obs?.inp?.value?.trim() || undefined
   };
@@ -2985,6 +3289,96 @@ const SLACK_GRUPO_SEGURANCA_CHANNEL_ID = process.env.SLACK_GRUPO_SEGURANCA_CHANN
 /** Membros do SI para DM em novo chamado (todos os tipos). */
 const SI_MEMBERS = [SLACK_ID_LUAN, SLACK_ID_VLADIMIR, SLACK_ID_ALLAN].filter(Boolean) as string[];
 
+/** Timestamp legível em BRT — alinhado a VPN / JumpCloud no projeto. */
+export function formatTimestampBrt(d: Date = new Date()): string {
+  return d.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
+
+/** Atualiza a mensagem do Block Kit após clique em botão (DM ou canal). */
+async function slackUpdateInteractiveMessage(
+  client: WebClient,
+  body: { channel?: { id?: string }; message?: { ts?: string }; container?: { channel_id?: string } },
+  blocks: unknown[],
+  text: string
+): Promise<void> {
+  const channel = body.channel?.id || body.container?.channel_id;
+  const ts = body.message?.ts;
+  if (!channel || !ts) {
+    console.warn('[Slack] chat.update: channel ou ts ausente no payload interativo');
+    return;
+  }
+  await client.chat.update({ channel, ts, blocks: blocks as any, text }).catch((e) => console.error('[Slack] chat.update falhou:', e));
+}
+
+/** Resolve Tool do catálogo a partir do item KBS (toolCode + toolName). */
+async function resolveToolForKitItem(ki: { toolCode: string; toolName: string }) {
+  const code = (ki.toolCode || '').trim();
+  const name = (ki.toolName || '').trim();
+  const include = {
+    owner: { select: { id: true, email: true, name: true } },
+    subOwner: { select: { id: true, email: true, name: true } }
+  };
+  if (code) {
+    const byAcronym = await prisma.tool.findFirst({
+      where: { acronym: { equals: code, mode: 'insensitive' } },
+      include
+    });
+    if (byAcronym) return byAcronym;
+    const byNameCode = await prisma.tool.findFirst({
+      where: { name: { equals: code, mode: 'insensitive' } },
+      include
+    });
+    if (byNameCode) return byNameCode;
+  }
+  if (name) {
+    return prisma.tool.findFirst({
+      where: {
+        OR: [
+          { name: { equals: name, mode: 'insensitive' } },
+          { name: { contains: name, mode: 'insensitive' } }
+        ]
+      },
+      include
+    });
+  }
+  return null;
+}
+
+async function collectSuperAdminSlackUserIds(client: WebClient): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const id of SI_MEMBERS) ids.add(id);
+  const extras = (process.env.SI_BYPASS_APPROVER_EMAILS || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  let superAdminEmails: string[] = [];
+  try {
+    const superAdmins = await prisma.user.findMany({
+      where: { systemProfile: 'SUPER_ADMIN', isActive: true },
+      select: { email: true }
+    });
+    superAdminEmails = superAdmins.map((u) => u.email.toLowerCase());
+  } catch (e) {
+    console.error('[HIRING] Falha ao listar SUPER_ADMIN:', e);
+  }
+  const emails = [...new Set([...superAdminEmails, ...extras])];
+  for (const email of emails) {
+    try {
+      const lu = await client.users.lookupByEmail({ email });
+      if (lu.user?.id) ids.add(lu.user.id);
+    } catch (_) {}
+  }
+  return [...ids];
+}
+
 /**
  * Abre uma DM com o usuário (conversations.open) e envia a mensagem. Evita channel_not_found quando o bot ainda não conversou com o usuário.
  */
@@ -3334,82 +3728,416 @@ export async function notificarOwnersFerramenta(
   }
 }
 
+export type HiringKbsNotificationContext = {
+  requestId: string;
+  requestType: string;
+  collaboratorName: string;
+  collaboratorUserId: string;
+  jobTitle: string;
+  departmentName: string;
+  unitName: string;
+  startDate: string;
+  roleId: string;
+  requesterName: string | null;
+  closedByName: string | null;
+  /** HIRING: aviso JumpCloud no canal SI (criação automática ou verificação manual). */
+  jumpCloudSi?: { outcome: 'created'; email: string; jumpcloudId: string } | { outcome: 'manual_check' };
+};
+
+/** DM ao gestor direto quando o colaborador é criado no JumpCloud (convite por e-mail; sem credenciais no Theris). */
+async function sendJumpCloudHiringManagerDm(client: WebClient, ctx: HiringKbsNotificationContext): Promise<void> {
+  const jc = ctx.jumpCloudSi;
+  if (!jc || jc.outcome !== 'created') return;
+  const hiree = await prisma.user.findUnique({
+    where: { id: ctx.collaboratorUserId },
+    select: { manager: { select: { email: true } } }
+  });
+  const mgrEmail = hiree?.manager?.email?.trim();
+  if (!mgrEmail) return;
+  let slackId: string | null = null;
+  try {
+    const lu = await client.users.lookupByEmail({ email: mgrEmail });
+    slackId = lu.user?.id ?? null;
+  } catch (_) {}
+  if (!slackId) {
+    console.warn('[notificarOwnersJoiner] Gestor sem usuário Slack para DM de cadastro JumpCloud:', mgrEmail);
+    return;
+  }
+  const email = jc.email;
+  const name = ctx.collaboratorName;
+  const blocks: any[] = [
+    { type: 'header', text: { type: 'plain_text', text: '🧑‍💼 Novo colaborador cadastrado no sistema', emoji: true } },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          `*${name}* foi cadastrado no JumpCloud com sucesso.\n` +
+          `Um email de boas-vindas foi enviado para *${email}* com o link\n` +
+          `para definição de senha — válido por 7 dias.`
+      }
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          'Caso o colaborador não receba o email ou tenha dificuldades de acesso,\n' +
+          'orientá-lo a acionar o time de Segurança da Informação.'
+      }
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '🔒 Nenhuma senha temporária foi gerada. O acesso é definido pelo próprio colaborador.'
+        }
+      ]
+    }
+  ];
+  const plain = `🧑‍💼 Novo colaborador cadastrado no JumpCloud: ${name}. Convite por e-mail para definir acesso.`;
+  await sendDmToSlackUser(client, slackId, plain, blocks);
+}
+
+/** HIRING: fallback — ferramenta no catálogo sem owner (DM a Luan). */
+function fireJoinerFallbackDmSemOwnerNoCatalogo(
+  client: WebClient,
+  ctx: HiringKbsNotificationContext,
+  ki: { toolCode: string; toolName: string; accessLevelDesc: string | null },
+  tool: { name: string },
+  hireeEmail: string
+): void {
+  if (!SLACK_ID_LUAN) return;
+  const plain =
+    `⚠️ HIRING · ${tool.name} (${ki.toolCode}) sem owner no Theris — liberar manualmente o acesso de ${ctx.collaboratorName}.`;
+  const blocks: any[] = [
+    { type: 'header', text: { type: 'plain_text', text: '⚠️ HIRING · Ferramenta sem owner definido', emoji: true } },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          `A ferramenta *${tool.name}* (\`${ki.toolCode}\`) do cargo *${ctx.jobTitle}*\n` +
+          `não possui owner cadastrado no Catálogo do Theris.\n` +
+          `O acesso para *${ctx.collaboratorName}* deve ser liberado manualmente.`
+      }
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          `👤 Colaborador: ${ctx.collaboratorName}\n` +
+          `📧 Email: ${hireeEmail}\n` +
+          `🏢 Unidade: ${ctx.unitName} · Departamento: ${ctx.departmentName}`
+      }
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '⚠️ Cadastre o owner desta ferramenta no Catálogo para automatizar futuras notificações.'
+        }
+      ]
+    }
+  ];
+  void sendDmToSlackUser(client, SLACK_ID_LUAN, plain, blocks).catch((e) =>
+    console.error('[notificarOwnersJoiner] Falha DM fallback (sem owner):', e)
+  );
+}
+
+/** HIRING: fallback — owner cadastrado mas sem Slack ID (DM a Luan). */
+function fireJoinerFallbackDmOwnerSemSlack(
+  client: WebClient,
+  ctx: HiringKbsNotificationContext,
+  ki: { toolCode: string; toolName: string; accessLevelDesc: string | null },
+  tool: { name: string },
+  owner: { email: string; name: string },
+  hireeEmail: string
+): void {
+  if (!SLACK_ID_LUAN) return;
+  const plain =
+    `⚠️ HIRING · Owner ${owner.name} sem Slack — liberar manualmente o acesso de ${ctx.collaboratorName} em ${tool.name}.`;
+  const blocks: any[] = [
+    { type: 'header', text: { type: 'plain_text', text: '⚠️ HIRING · Owner sem Slack configurado', emoji: true } },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          `O owner cadastrado para *${tool.name}* é *${owner.name}* (${owner.email}),\n` +
+          `mas não foi possível localizar o Slack ID dele.\n` +
+          `A liberação do acesso para *${ctx.collaboratorName}* deve ser feita manualmente.`
+      }
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          `🔧 *${tool.name}* (\`${ki.toolCode}\`)\n` +
+          `👤 Colaborador: ${ctx.collaboratorName}\n` +
+          `📧 Email: ${hireeEmail}\n` +
+          `🏢 Unidade: ${ctx.unitName} · Departamento: ${ctx.departmentName}`
+      }
+    },
+    {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '⚠️ Solicite ao owner que configure seu Slack para receber notificações futuras.'
+        }
+      ]
+    }
+  ];
+  void sendDmToSlackUser(client, SLACK_ID_LUAN, plain, blocks).catch((e) =>
+    console.error('[notificarOwnersJoiner] Falha DM fallback (owner sem Slack):', e)
+  );
+}
+
+type HiringResolvedKitRow = {
+  ki: { toolCode: string; toolName: string; accessLevelDesc: string | null };
+  tool: {
+    id: string;
+    name: string;
+    ownerId: string | null;
+    owner: { id: string; email: string; name: string } | null;
+  };
+  ownerSlackId: string;
+};
+
 /**
- * JML — Joiner: notifica os Owners das ferramentas do KBS do cargo após aprovação do SI (contratação).
- * Busca Owner via tool.owner → lookupByEmail(owner.email); fallback SLACK_ID_LUAN.
- * Botão: "✅ Acesso Concedido" action_id joiner_access_done.
+ * JML — Contratação: DMs aos Owners (somente com Owner cadastrado), uma mensagem por ferramenta no canal SI,
+ * e DM consolidado para SUPER_ADMINs (+ env SI_BYPASS_APPROVER_EMAILS). Fire-and-forget nos envios individuais.
+ * Botão: `hiring_access_confirmed` (compat: `joiner_access_done` em mensagens antigas).
  */
-export async function notificarOwnersJoiner(
-  requestId: string,
-  collaboratorName: string,
-  jobTitle: string,
-  departmentName: string,
-  unitName: string,
-  startDate: string,
-  roleId: string
-): Promise<void> {
+export async function notificarOwnersJoiner(ctx: HiringKbsNotificationContext): Promise<void> {
   if (!slackApp?.client) return;
+  if (!ONBOARDING_REQUEST_TYPES_SLACK.includes(ctx.requestType)) return;
   const client = slackApp.client;
-  const linkChamado = `${FRONTEND_URL}/tickets?id=${requestId}`;
+  const linkChamado = `${FRONTEND_URL}/tickets?id=${ctx.requestId}`;
+  const shortId = ctx.requestId.slice(0, 8);
+  const notifiedAtBrt = formatTimestampBrt();
+  const footerCtx = `Chamado #${shortId} · Aberto por ${ctx.requesterName || '—'} · Encerrado por ${ctx.closedByName || '—'} · Theris`;
+
+  if (SLACK_SI_CHANNEL_ID && ctx.jumpCloudSi) {
+    const tsBrt = formatTimestampBrt();
+    const jcBlocks: any[] =
+      ctx.jumpCloudSi.outcome === 'created'
+        ? [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text:
+                  `✨ *Usuário criado no JumpCloud* · \`${ctx.jumpCloudSi.email}\` · ID: \`${ctx.jumpCloudSi.jumpcloudId}\`\n` +
+                  `📧 *Email de boas-vindas enviado pelo JumpCloud* para definição de senha.\n` +
+                  `🕒 ${tsBrt} BRT`
+              }
+            },
+            { type: 'context', elements: [{ type: 'mrkdwn', text: `_${footerCtx}_` }] }
+          ]
+        : [
+            {
+              type: 'section',
+              text: {
+                type: 'mrkdwn',
+                text: `⚠️ *Usuário não foi criado no JumpCloud automaticamente* — verificar manualmente.\n🕒 ${tsBrt} BRT`
+              }
+            },
+            { type: 'context', elements: [{ type: 'mrkdwn', text: `_${footerCtx}_` }] }
+          ];
+    const jcText =
+      ctx.jumpCloudSi.outcome === 'created'
+        ? `✨ JumpCloud: usuário criado · ${ctx.jumpCloudSi.email} · ${ctx.jumpCloudSi.jumpcloudId} · convite por e-mail`
+        : '⚠️ JumpCloud: verificar criação manual do usuário';
+    void client.chat
+      .postMessage({ channel: SLACK_SI_CHANNEL_ID, text: jcText, blocks: jcBlocks })
+      .catch((e) => console.error('[notificarOwnersJoiner] Falha aviso JumpCloud no canal SI:', e));
+    if (ctx.jumpCloudSi.outcome === 'created') {
+      void sendJumpCloudHiringManagerDm(client, ctx).catch((e) =>
+        console.error('[notificarOwnersJoiner] Falha DM gestor (JumpCloud):', e)
+      );
+    }
+  }
+
   const role = await prisma.role.findUnique({
-    where: { id: roleId },
+    where: { id: ctx.roleId },
     include: { kitItems: true }
   });
   if (!role?.kitItems?.length) return;
+
+  const hireeRow = await prisma.user.findUnique({
+    where: { id: ctx.collaboratorUserId },
+    select: { email: true }
+  });
+  const hireeEmail = hireeRow?.email?.trim() || '—';
+
+  let hiringFallbackSlackCount = 0;
+  const resolved: HiringResolvedKitRow[] = [];
   for (const ki of role.kitItems) {
     try {
-      const tool = await prisma.tool.findFirst({
-        where: {
-          OR: [
-            { name: { equals: ki.toolName, mode: 'insensitive' } },
-            { name: { contains: ki.toolName, mode: 'insensitive' } }
-          ]
-        },
-        include: { owner: { select: { id: true, email: true, name: true } } }
-      });
-      if (!tool) continue;
-      let ownerSlackId: string | null = null;
-      if (tool.owner?.email) {
-        try {
-          const lookup = await client.users.lookupByEmail({ email: tool.owner.email });
-          ownerSlackId = lookup.user?.id ?? null;
-        } catch (_) {}
-      }
-      if (!ownerSlackId && SLACK_ID_LUAN) ownerSlackId = SLACK_ID_LUAN;
-      if (!ownerSlackId) {
-        console.warn(`[notificarOwnersJoiner] Owner não encontrado no Slack para ferramenta ${tool.name}.`);
+      const tool = await resolveToolForKitItem(ki);
+      if (!tool) {
+        console.warn(`[notificarOwnersJoiner] Ferramenta do KBS não encontrada no catálogo: ${ki.toolName} (${ki.toolCode})`);
         continue;
       }
-      const nivel = ki.accessLevelDesc || '—';
-      const payload = JSON.stringify({ requestId, toolId: tool.id });
-      const blocks: any[] = [
-        { type: 'header', text: { type: 'plain_text', text: '👤 Novo Colaborador — Provisionamento de Acesso', emoji: true } },
+      if (!tool.ownerId || !tool.owner?.email) {
+        console.warn(`[notificarOwnersJoiner] Ferramenta sem Owner cadastrado — DM ignorada: ${tool.name} (\`${ki.toolCode}\`)`);
+        hiringFallbackSlackCount += 1;
+        fireJoinerFallbackDmSemOwnerNoCatalogo(client, ctx, ki, { name: tool.name }, hireeEmail);
+        continue;
+      }
+      let ownerSlackId: string | null = null;
+      try {
+        const lookup = await client.users.lookupByEmail({ email: tool.owner.email });
+        ownerSlackId = lookup.user?.id ?? null;
+      } catch (_) {}
+      if (!ownerSlackId) {
+        console.warn(`[notificarOwnersJoiner] Owner não encontrado no Slack para ${tool.name} (${tool.owner.email})`);
+        hiringFallbackSlackCount += 1;
+        fireJoinerFallbackDmOwnerSemSlack(client, ctx, ki, { name: tool.name }, tool.owner, hireeEmail);
+        continue;
+      }
+      resolved.push({
+        ki: { toolCode: ki.toolCode, toolName: ki.toolName, accessLevelDesc: ki.accessLevelDesc },
+        tool: { id: tool.id, name: tool.name, ownerId: tool.ownerId, owner: tool.owner },
+        ownerSlackId
+      });
+    } catch (e) {
+      console.error(`[notificarOwnersJoiner] Erro ao resolver KBS item ${ki.toolName}:`, e);
+    }
+  }
+
+  for (const row of resolved) {
+    const payload = JSON.stringify({
+      solicitacaoId: ctx.requestId,
+      toolId: row.tool.id,
+      ownerId: row.tool.ownerId,
+      userId: ctx.collaboratorUserId
+    });
+    const nivel = row.ki.accessLevelDesc || '—';
+    const blocks: any[] = [
+      { type: 'header', text: { type: 'plain_text', text: '🆕 Novo colaborador para liberar acesso', emoji: true } },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text:
+            `*${ctx.collaboratorName}* foi contratado(a) como *${ctx.jobTitle}*\n` +
+            `no departamento *${ctx.departmentName}* · Unidade *${ctx.unitName}*\n` +
+            `Data de início: ${ctx.startDate}\n\n` +
+            `_Nível KBS:_ ${nivel}`
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `Ferramenta sob sua responsabilidade:\n*${row.tool.name}* (\`${row.ki.toolCode}\`)`
+        }
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '✅ Acesso Liberado', emoji: true },
+            action_id: 'hiring_access_confirmed',
+            value: payload,
+            style: 'primary'
+          }
+        ]
+      },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: `🔗 <${linkChamado}|Ver chamado no Theris> · _${footerCtx}_` }] }
+    ];
+    const dmText = `🆕 Contratação — ${ctx.collaboratorName} — ${row.tool.name} — provisionar acesso`;
+    void client.chat
+      .postMessage({ channel: row.ownerSlackId, text: dmText, blocks })
+      .then(() => console.log(`[notificarOwnersJoiner] DM enviada (${row.tool.name})`))
+      .catch((e) => console.error(`[notificarOwnersJoiner] Falha DM owner ${row.tool.name}:`, e));
+  }
+
+  if (SLACK_SI_CHANNEL_ID) {
+    for (const row of resolved) {
+      const ownerEmail = row.tool.owner?.email || '—';
+      const blocksSi: any[] = [
+        { type: 'header', text: { type: 'plain_text', text: '🧑‍💼 Contratação · Acesso a provisionar', emoji: true } },
+        {
+          type: 'section',
+          fields: [
+            { type: 'mrkdwn', text: `*Colaborador:*\n${ctx.collaboratorName}` },
+            { type: 'mrkdwn', text: `*Cargo:*\n${ctx.jobTitle}` },
+            { type: 'mrkdwn', text: `*Departamento:*\n${ctx.departmentName}` },
+            { type: 'mrkdwn', text: `*Unidade:*\n${ctx.unitName}` }
+          ]
+        },
+        { type: 'divider' },
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
             text:
-              `Um novo colaborador foi adicionado ao Theris e possui sua ferramenta no KBS.\n\n` +
-              `*Colaborador:* ${collaboratorName}\n` +
-              `*Cargo:* ${jobTitle} — ${departmentName} — ${unitName}\n` +
-              `*Data de início:* ${startDate}\n\n` +
-              `🛠 *Ferramenta sob sua responsabilidade:*\n*${tool.name}* — Nível a conceder: ${nivel}\n\n` +
-              `Por favor, provisione o acesso no sistema.\n` +
-              `👉 Ver chamado: <${linkChamado}|link no Theris>`
+              `🔧 *${row.tool.name}* (\`${row.ki.toolCode}\`)\n` +
+              `👤 Owner: ${row.tool.owner?.name || '—'} (${ownerEmail})\n` +
+              `📅 Notificado em: ${notifiedAtBrt}`
           }
         },
-        { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: '✅ Acesso Concedido', emoji: true }, action_id: 'joiner_access_done', value: payload, style: 'primary' }] }
+        { type: 'context', elements: [{ type: 'mrkdwn', text: `_${footerCtx}_` }] }
       ];
-      await client.chat.postMessage({
-        channel: ownerSlackId,
-        text: `👤 Novo Colaborador — ${collaboratorName} — Ferramenta ${tool.name}. Provisione o acesso.`,
-        blocks
-      });
-      console.log(`[notificarOwnersJoiner] DM enviada para owner de ${tool.name} (Slack ID: ${ownerSlackId}).`);
-    } catch (e) {
-      console.error(`[notificarOwnersJoiner] Erro ao notificar owner de ${ki.toolName}:`, e);
+      void client.chat
+        .postMessage({
+          channel: SLACK_SI_CHANNEL_ID,
+          text: `🧑‍💼 Contratação · ${ctx.collaboratorName} · ${row.tool.name} — provisionar acesso`,
+          blocks: blocksSi
+        })
+        .catch((e) => console.error('[notificarOwnersJoiner] Falha post SI:', e));
     }
   }
+
+  if (SLACK_SI_CHANNEL_ID && hiringFallbackSlackCount > 0) {
+    const fbText = `⚠️ ${hiringFallbackSlackCount} ferramenta(s) sem owner no Slack — notificação de fallback enviada para SI.`;
+    void client.chat
+      .postMessage({
+        channel: SLACK_SI_CHANNEL_ID,
+        text: fbText,
+        mrkdwn: true
+      })
+      .catch((e) => console.error('[notificarOwnersJoiner] Falha post SI (fallback hiring):', e));
+  }
+
+  const siDmLines =
+    resolved.length === 0
+      ? '_Nenhuma ferramenta do KBS com Owner cadastrado para notificar._'
+      : resolved
+          .map(
+            (r) =>
+              `🔧 *${r.tool.name}* (\`${r.ki.toolCode}\`) — Owner: ${r.tool.owner?.name || '—'} (${r.tool.owner?.email || '—'}) · 📅 ${notifiedAtBrt}`
+          )
+          .join('\n');
+  const siDmText =
+    `🧑‍💼 *Contratação · Acesso a provisionar*\n\n` +
+    `👤 *Colaborador:* ${ctx.collaboratorName}\n` +
+    `💼 *Cargo:* ${ctx.jobTitle}\n` +
+    `🏢 *Departamento:* ${ctx.departmentName}\n` +
+    `📍 *Unidade:* ${ctx.unitName}\n` +
+    `📅 *Data de início:* ${ctx.startDate}\n\n` +
+    `*Ferramentas (KBS):*\n${siDmLines}\n\n` +
+    `🕒 *Resumo gerado em:* ${notifiedAtBrt}\n` +
+    `_${footerCtx}_`;
+
+  void collectSuperAdminSlackUserIds(client)
+    .then((slackIds) => {
+      for (const sid of slackIds) {
+        void sendDmToSlackUser(client, sid, siDmText).catch((e) =>
+          console.error('[notificarOwnersJoiner] Falha DM SI team:', e)
+        );
+      }
+    })
+    .catch((e) => console.error('[notificarOwnersJoiner] Falha ao resolver IDs SI:', e));
 }
 
 /**
@@ -3611,6 +4339,210 @@ export async function notificarOwnersMudancaDepto(
 
 /** Item de kit (KBS) do cargo para notificação de desligamento. */
 export type DesligamentoKitItem = { toolName: string; accessLevelDesc: string | null };
+
+/** Linha para resumo SI — AEX revogados no desligamento. */
+export type DesligamentoAexSiLine = { toolName: string; toolCode: string; ownerName: string };
+
+/**
+ * JumpCloud: remove grupo ap_* do colaborador desligado (após Access já revogado no Prisma).
+ * Fire-and-forget.
+ */
+export function scheduleDesligamentoAexJumpCloudRevoke(userEmail: string, toolAcronym: string | null | undefined): void {
+  const code = (toolAcronym || '').trim();
+  if (!code || !/^ap_/i.test(code)) return;
+  void (async () => {
+    try {
+      const { getSystemUserIdByEmail } = await import('./jumpcloudService');
+      const { revokeExtraordinaryAccessOnJumpCloud } = await import('./jumpcloudGroupSyncService');
+      const jcId = await getSystemUserIdByEmail(userEmail);
+      if (jcId) await revokeExtraordinaryAccessOnJumpCloud(jcId, code);
+    } catch (e) {
+      console.error('[Desligamento AEX] JumpCloud revoke:', e);
+    }
+  })();
+}
+
+/**
+ * DM ao Owner: AEX do colaborador desligado (Theris/JC já revogados pelo job de automação).
+ * Fire-and-forget.
+ */
+export function scheduleDesligamentoAexOwnerDm(p: {
+  requestId: string;
+  collaboratorName: string;
+  offboardUserId: string;
+  toolId: string;
+  toolName: string;
+  toolCode: string;
+  owner: { email: string | null; name: string | null } | null;
+}): void {
+  if (!slackApp?.client) return;
+  const client = slackApp.client;
+  void (async () => {
+    try {
+      let ownerSlackId: string | null = null;
+      const ownerEmail = p.owner?.email ?? null;
+      const ownerName = p.owner?.name ?? '—';
+      if (ownerEmail) {
+        try {
+          const lookup = await client.users.lookupByEmail({ email: ownerEmail });
+          ownerSlackId = lookup.user?.id ?? null;
+        } catch (_) {}
+      }
+      const fallbackNote =
+        !ownerSlackId && p.owner
+          ? `\n\n_📋 Owner cadastrado: *${ownerName}* (${ownerEmail || 'sem e-mail'}) — não localizado no Slack; esta mensagem foi encaminhada para acompanhamento do SI._`
+          : '';
+      if (!ownerSlackId && SLACK_ID_LUAN) ownerSlackId = SLACK_ID_LUAN;
+      if (!ownerSlackId) {
+        console.warn('[Desligamento AEX] Sem destino DM para tool', p.toolName);
+        return;
+      }
+      const linkChamado = `${FRONTEND_URL}/tickets?id=${p.requestId}`;
+      const payload = JSON.stringify({
+        requestId: p.requestId,
+        toolId: p.toolId,
+        userId: p.offboardUserId
+      });
+      const blocks: any[] = [
+        {
+          type: 'header',
+          text: { type: 'plain_text', text: '🔴 Colaborador desligado · Acesso Extraordinário a revogar', emoji: true }
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text:
+              `*${p.collaboratorName}* foi desligado(a).\n` +
+              `Ele(a) possuía acesso extraordinário à ferramenta sob sua responsabilidade.${fallbackNote}`
+          }
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text:
+              `🔧 *${p.toolName}* (\`${p.toolCode}\`)\n` +
+              `⚠️ Acesso extraordinário — requer atenção especial`
+          }
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '✅ Acesso Revogado', emoji: true },
+              action_id: 'leaver_aex_done',
+              value: payload,
+              style: 'primary'
+            }
+          ]
+        },
+        { type: 'context', elements: [{ type: 'mrkdwn', text: `🔗 <${linkChamado}|Ver chamado no Theris>` }] }
+      ];
+      await client.chat.postMessage({
+        channel: ownerSlackId,
+        text: `🔴 Desligamento AEX: ${p.collaboratorName} — ${p.toolName}. Confirme após verificar/revogar.`,
+        blocks
+      });
+    } catch (e) {
+      console.error('[Desligamento AEX] DM owner:', e);
+    }
+  })();
+}
+
+/**
+ * Canal SI: resumo KBS (cargo) + AEX revogados automaticamente no desligamento.
+ */
+export async function postDesligamentoSiResumoKbsEAex(params: {
+  requestId: string;
+  collaboratorName: string;
+  jobTitle: string;
+  departmentName: string;
+  unitName: string;
+  actionDate: string | null;
+  kitItems: DesligamentoKitItem[];
+  aexLines: DesligamentoAexSiLine[];
+}): Promise<void> {
+  const channelId = (SLACK_SI_CHANNEL_ID || '').trim();
+  if (!slackApp?.client || !channelId) return;
+  if (params.kitItems.length === 0 && params.aexLines.length === 0) return;
+
+  const client = slackApp.client;
+  const dataDesligamento = params.actionDate || new Date().toISOString().slice(0, 10);
+  const shortId = params.requestId.slice(0, 8);
+  const linkChamado = `${FRONTEND_URL}/tickets?id=${params.requestId}`;
+  const tsBrt = formatTimestampBrt();
+
+  const blocks: any[] = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: '🔴 Desligamento · Ferramentas (KBS + AEX)', emoji: true }
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          `*Colaborador:* ${params.collaboratorName}\n` +
+          `*Cargo:* ${params.jobTitle} — ${params.departmentName} — ${params.unitName}\n` +
+          `*Data de desligamento:* ${dataDesligamento}\n` +
+          `🔗 <${linkChamado}|Ver chamado #${shortId}>`
+      }
+    }
+  ];
+
+  if (params.kitItems.length > 0) {
+    const kbsLines: string[] = [];
+    for (const item of params.kitItems) {
+      try {
+        const tool = await prisma.tool.findFirst({
+          where: {
+            OR: [
+              { name: { equals: item.toolName, mode: 'insensitive' } },
+              { name: { contains: item.toolName, mode: 'insensitive' } }
+            ]
+          },
+          include: { owner: { select: { name: true } } }
+        });
+        const ownerLbl = tool?.owner?.name ? ` — Owner: ${tool.owner.name}` : '';
+        kbsLines.push(`• *${item.toolName}*${ownerLbl}`);
+      } catch (_) {
+        kbsLines.push(`• *${item.toolName}*`);
+      }
+    }
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Ferramentas (KBS do cargo):*\n${kbsLines.join('\n')}`
+      }
+    });
+  }
+
+  if (params.aexLines.length > 0) {
+    const aexText = params.aexLines
+      .map((l) => `• *${l.toolName}* (\`${l.toolCode}\`) — Owner: ${l.ownerName}`)
+      .join('\n');
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `⚠️ *Acessos extraordinários revogados automaticamente:*\n${aexText}`
+      }
+    });
+  }
+
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `Resumo SI · ${tsBrt} BRT · Theris` }]
+  });
+
+  const fallbackText = `🔴 Desligamento ${params.collaboratorName} · KBS: ${params.kitItems.length} · AEX: ${params.aexLines.length}`;
+  await client.chat.postMessage({ channel: channelId, text: fallbackText, blocks, mrkdwn: true });
+}
 
 /**
  * Notifica cada Owner das ferramentas do colaborador desligado (KBS do cargo anterior).

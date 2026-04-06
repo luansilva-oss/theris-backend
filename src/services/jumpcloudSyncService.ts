@@ -15,6 +15,111 @@ const prisma = new PrismaClient();
 
 const SYSTEM_USERS_URL = 'https://console.jumpcloud.com/api/systemusers';
 
+function parseSystemUsersList(data: unknown): { email?: string; _id?: string; id?: string }[] {
+  if (Array.isArray(data)) return data as { email?: string; _id?: string; id?: string }[];
+  const o = data as { results?: unknown; data?: unknown };
+  if (Array.isArray(o?.results)) return o.results as { email?: string; _id?: string; id?: string }[];
+  if (Array.isArray(o?.data)) return o.data as { email?: string; _id?: string; id?: string }[];
+  return [];
+}
+
+/**
+ * Cria usuário no JumpCloud se ainda não existir (GET por e-mail → POST systemusers).
+ * Convite de definição de senha é enviado pelo JumpCloud ao e-mail do colaborador (sem senha pelo Theris).
+ * Não altera syncUserToJumpCloud; chame o sync após esta função para Employment Info.
+ */
+export async function provisionUserOnJumpCloud(user: {
+  email: string;
+  firstName: string;
+  lastName: string;
+  jobTitle: string;
+  department: string;
+  company: string;
+  managerJcId?: string;
+}): Promise<{ created: boolean; jumpcloudId: string } | null> {
+  const apiKey = process.env.JUMPCLOUD_API_KEY?.trim();
+  if (!apiKey) {
+    console.warn('[JumpCloud Provision] JUMPCLOUD_API_KEY ausente; provisionamento ignorado.');
+    return null;
+  }
+
+  const email = (user.email || '').trim();
+  if (!email) return null;
+
+  try {
+    const encoded = encodeURIComponent(email);
+    const getUrl = `${SYSTEM_USERS_URL}?filter=email:eq:${encoded}`;
+    const getRes = await fetch(getUrl, {
+      method: 'GET',
+      headers: { 'x-api-key': apiKey }
+    });
+
+    if (!getRes.ok) {
+      const errText = await getRes.text().catch(() => '');
+      console.error('[JumpCloud Provision] GET systemusers falhou:', {
+        status: getRes.status,
+        body: errText?.slice(0, 500)
+      });
+      return null;
+    }
+
+    const getData = await getRes.json().catch(() => null);
+    const list = parseSystemUsersList(getData);
+    const found = list.find((u) => (u.email || '').toLowerCase() === email.toLowerCase());
+    const existingId = found?._id ?? found?.id;
+    if (existingId) {
+      return { created: false, jumpcloudId: String(existingId) };
+    }
+
+    const username = email.split('@')[0] || email;
+    const body: Record<string, unknown> = {
+      email,
+      username,
+      firstname: user.firstName,
+      lastname: user.lastName,
+      company: user.company,
+      jobTitle: user.jobTitle,
+      department: user.department,
+      send_user_invitation_email: true,
+      password_never_expires: false,
+      externally_managed: false,
+      allow_public_key: true,
+      sudo: false,
+      enable_managed_uid: false
+    };
+    if (user.managerJcId) body.manager = user.managerJcId;
+
+    const postRes = await fetch(SYSTEM_USERS_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (postRes.status === 201 || postRes.status === 200) {
+      const created = (await postRes.json().catch(() => ({}))) as { _id?: string; id?: string };
+      const jumpcloudId = created._id ?? created.id;
+      if (jumpcloudId) {
+        return { created: true, jumpcloudId: String(jumpcloudId) };
+      }
+      console.error('[JumpCloud Provision] POST retornou sucesso mas sem _id no corpo:', created);
+      return null;
+    }
+
+    const errText = await postRes.text().catch(() => '');
+    console.error('[JumpCloud Provision] POST systemusers falhou:', {
+      status: postRes.status,
+      body: errText?.slice(0, 500)
+    });
+    return null;
+  } catch (err) {
+    console.error('[JumpCloud Provision] Erro:', err);
+    return null;
+  }
+}
+
 /**
  * Atualiza jobTitle, department, company e opcionalmente manager (JumpCloud _id do gestor) no Employment Information.
  * Se o usuário não existir no Theris ou no JumpCloud, retorna silenciosamente (apenas log informativo).
@@ -124,5 +229,45 @@ export async function syncUserToJumpCloud(userEmail: string, roleId?: string | n
     }
   } catch (err) {
     console.error('[JumpCloud Sync] Erro:', err);
+  }
+}
+
+// OFFBOARDING: suspender usuário no JumpCloud — NUNCA deletar.
+// Deleção perderia histórico de acesso, grupos e trilha de auditoria (ISO 27001).
+export async function suspendUserOnJumpCloud(email: string): Promise<void> {
+  const em = (email || '').trim();
+  if (!em) return;
+
+  const apiKey = process.env.JUMPCLOUD_API_KEY?.trim();
+  if (!apiKey) {
+    console.warn('[OFFBOARDING] JUMPCLOUD_API_KEY ausente; suspensão ignorada:', em);
+    return;
+  }
+
+  try {
+    const jumpcloudId = await getSystemUserIdByEmail(em);
+    if (!jumpcloudId) {
+      console.warn('[OFFBOARDING] Usuário não encontrado no JumpCloud:', em);
+      return;
+    }
+
+    const res = await fetch(`${SYSTEM_USERS_URL}/${jumpcloudId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
+      body: JSON.stringify({ suspended: true })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error('[OFFBOARDING] Falha ao suspender no JumpCloud:', em, res.status, errText?.slice(0, 300));
+      return;
+    }
+
+    console.info('[OFFBOARDING] Usuário suspenso no JumpCloud:', em);
+  } catch (err) {
+    console.error('[OFFBOARDING] Falha ao suspender no JumpCloud:', em, err);
   }
 }

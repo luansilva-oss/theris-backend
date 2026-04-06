@@ -425,3 +425,20 @@ export const resetCatalog = async (req: Request, res: Response) => {
         return res.status(500).json({ error: "Erro interno ao processar catálogo." });
     }
 };
+
+/** POST /api/admin/jobs/validate-aex-sync — SUPER_ADMIN; executa validação Catálogo × JumpCloud (ap_*). */
+export const postValidateAexSync = async (req: Request, res: Response) => {
+  const userId = (req.headers['x-user-id'] as string)?.trim();
+  if (!userId) return res.status(401).json({ error: 'Usuário não identificado.' });
+  const caller = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true } });
+  if (caller?.systemProfile !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Acesso negado.' });
+
+  try {
+    const { validateAexToolSync } = await import('../jobs/validateAexToolSync');
+    await validateAexToolSync();
+    return res.json({ ok: true, message: 'Validação AEX executada.' });
+  } catch (e) {
+    console.error('[admin] validate-aex-sync:', e);
+    return res.status(500).json({ error: 'Falha ao executar validação AEX.' });
+  }
+};

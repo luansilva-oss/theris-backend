@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Clock, Search, X, FileText } from 'lucide-react';
 import { API_URL } from '../config';
+import { getAuditEventTypeLabel } from '../constants/requestStatusConfig';
 
 interface AuditItem {
   id: string;
@@ -20,16 +21,16 @@ const TIPO_OPTIONS_GROUPS: { label: string; options: string[] }[] = [
   { label: 'Autenticação', options: ['LOGIN_SUCCESS', 'LOGIN_FAILED', 'SESSION_EXPIRED', 'MFA_SENT', 'MFA_FAILED'] },
   { label: 'Gestão de Pessoas', options: ['USER_CREATED', 'USER_UPDATED', 'USER_ACTIVATED', 'USER_ROLE_CHANGED', 'USER_MANAGER_CHANGED', 'USER_OFFBOARDED', 'USER_KBS_CHANGE', 'USER_STATUS_CHANGE'] },
   { label: 'Estrutura', options: ['DEPARTMENT_CREATED', 'DEPARTMENT_UPDATED', 'DEPARTMENT_DELETED', 'UNIT_CREATED', 'UNIT_UPDATED', 'UNIT_DELETED', 'ROLE_CREATED', 'ROLE_UPDATED', 'ROLE_DELETED', 'ROLE_DEPARTMENT_CHANGE', 'KBS_UPDATED'] },
-  { label: 'Acessos (AEX)', options: ['AEX_CREATED', 'AEX_OWNER_APPROVED', 'AEX_OWNER_REJECTED', 'AEX_SI_APPROVED', 'AEX_SI_REJECTED', 'AEX_APPROVED', 'AEX_AUTO_REJECTED'] },
+  { label: 'Acessos (AEX)', options: ['AEX_CREATED', 'AEX_OWNER_APPROVED', 'AEX_OWNER_REJECTED', 'AEX_SI_APPROVED', 'AEX_SI_REJECTED', 'AEX_APPROVED', 'AEX_AUTO_REJECTED', 'AEX_EXPIRED'] },
   { label: 'Chamados', options: ['TICKET_CREATED', 'TICKET_ASSIGNED', 'TICKET_COMMENTED', 'TICKET_RESOLVED', 'TICKET_REOPENED'] },
   { label: 'Sessões', options: ['SESSION_REVOKED', 'BULK_SESSION_REVOKED', 'SESSION_EXPIRED'] },
   { label: 'Sistema', options: ['REPORT_EXPORTED', 'CHANGE_ROLE'] },
 ];
-const ENTIDADE_OPTIONS = ['Role', 'User', 'Department', 'Unit', 'Request', 'System'];
+const ENTIDADE_OPTIONS = ['Role', 'User', 'Department', 'Unit', 'Request', 'Access', 'System'];
 
 function getBadgeColor(tipo: string): string {
   const verde = ['LOGIN_SUCCESS', 'USER_CREATED', 'USER_ACTIVATED', 'AEX_APPROVED', 'TICKET_RESOLVED', 'DEPARTMENT_CREATED', 'UNIT_CREATED', 'ROLE_CREATED', 'KBS_UPDATED'];
-  const vermelho = ['LOGIN_FAILED', 'MFA_FAILED', 'SESSION_EXPIRED', 'USER_OFFBOARDED', 'AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED', 'DEPARTMENT_DELETED', 'UNIT_DELETED', 'ROLE_DELETED', 'SESSION_REVOKED', 'BULK_SESSION_REVOKED', 'TICKET_REOPENED'];
+  const vermelho = ['LOGIN_FAILED', 'MFA_FAILED', 'SESSION_EXPIRED', 'USER_OFFBOARDED', 'AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED', 'AEX_EXPIRED', 'DEPARTMENT_DELETED', 'UNIT_DELETED', 'ROLE_DELETED', 'SESSION_REVOKED', 'BULK_SESSION_REVOKED', 'TICKET_REOPENED'];
   const azul = ['AEX_CREATED', 'TICKET_CREATED', 'MFA_SENT', 'CHANGE_ROLE'];
   const amarelo = ['USER_UPDATED', 'USER_ROLE_CHANGED', 'USER_MANAGER_CHANGED', 'TICKET_ASSIGNED', 'TICKET_COMMENTED', 'DEPARTMENT_UPDATED', 'UNIT_UPDATED', 'ROLE_UPDATED', 'AEX_OWNER_APPROVED', 'AEX_SI_APPROVED', 'REPORT_EXPORTED'];
   if (verde.includes(tipo)) return '#22c55e';
@@ -184,7 +185,9 @@ export const AuditLog: React.FC<AuditLogProps> = ({ initialEntidadeId, initialEn
           {TIPO_OPTIONS_GROUPS.map(gr => (
             <optgroup key={gr.label} label={gr.label}>
               {gr.options.map(o => (
-                <option key={o} value={o}>{o === 'Todos' ? 'Todos os eventos' : o}</option>
+                <option key={o} value={o}>
+                  {o === 'Todos' ? 'Todos os eventos' : getAuditEventTypeLabel(o)}
+                </option>
               ))}
             </optgroup>
           ))}
@@ -288,7 +291,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ initialEntidadeId, initialEn
                       background: `${getBadgeColor(row.tipo)}22`,
                       color: getBadgeColor(row.tipo),
                     }}>
-                      {row.tipo}
+                      {getAuditEventTypeLabel(row.tipo)}
                     </span>
                   </td>
                   <td style={{ padding: '12px 16px', color: '#e4e4e7' }}>{getEntityLabel(row)}</td>
@@ -366,7 +369,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ initialEntidadeId, initialEn
                     fontWeight: 600,
                     background: `${getBadgeColor(selected.tipo)}22`,
                     color: getBadgeColor(selected.tipo),
-                  }}>{selected.tipo}</span>
+                  }}>{getAuditEventTypeLabel(selected.tipo)}</span>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: '#71717a', marginBottom: 4 }}>Entidade</div>

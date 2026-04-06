@@ -30,12 +30,27 @@ export function getVpnGroupIds(): Record<string, string | undefined> {
 }
 
 /**
- * Busca o _id do usuário JumpCloud pelo e-mail (GET /api/systemusers?filter=email:eq:xxx).
+ * Resolve o _id do usuário no JumpCloud: usa `User.jumpcloudId` no Prisma quando preenchido;
+ * senão GET /api/systemusers?filter=email:eq:xxx e persiste o ID no Theris (evita rate limit).
  */
 export async function getSystemUserIdByEmail(email: string): Promise<string | null> {
+  const em = (email || '').trim();
+  if (!em) return null;
+
+  try {
+    const local = await prisma.user.findFirst({
+      where: { email: { equals: em, mode: 'insensitive' } },
+      select: { jumpcloudId: true }
+    });
+    const cached = local?.jumpcloudId?.trim();
+    if (cached) return cached;
+  } catch (e) {
+    console.error('[JumpCloud] getSystemUserIdByEmail (cache Prisma):', e);
+  }
+
   if (!JUMPCLOUD_API_KEY) return null;
   try {
-    const encoded = encodeURIComponent(email);
+    const encoded = encodeURIComponent(em);
     const url = `${SYSTEM_USERS_URL}?filter=email:eq:${encoded}`;
     const res = await fetch(url, {
       method: 'GET',
@@ -44,8 +59,20 @@ export async function getSystemUserIdByEmail(email: string): Promise<string | nu
     if (!res.ok) return null;
     const data = await res.json();
     const list = Array.isArray(data) ? data : (data.results ?? data.data ?? []);
-    const user = list.find((u: { email?: string }) => (u.email || '').toLowerCase() === email.toLowerCase());
-    return user?._id ?? user?.id ?? null;
+    const user = list.find((u: { email?: string }) => (u.email || '').toLowerCase() === em.toLowerCase());
+    const idRaw = user?._id ?? user?.id ?? null;
+    const id = idRaw != null ? String(idRaw) : null;
+    if (id) {
+      try {
+        await prisma.user.updateMany({
+          where: { email: { equals: em, mode: 'insensitive' }, jumpcloudId: null },
+          data: { jumpcloudId: id }
+        });
+      } catch (persistErr) {
+        console.warn('[JumpCloud] Não foi possível persistir jumpcloudId para', em, persistErr);
+      }
+    }
+    return id;
   } catch (e) {
     console.error('[JumpCloud] getSystemUserIdByEmail:', e);
     return null;

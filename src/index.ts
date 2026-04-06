@@ -39,7 +39,14 @@ import {
 } from './controllers/toolController';
 import { getKbu, putKbu, postKbu, deleteKbu } from './controllers/kbuController';
 import { getAllUsers, getMe, getUserById, getUserDetails, getMyTools, manualAddUser, updateUser, deleteUser, markPasswordChanged, searchUsersForAutocomplete } from './controllers/userController';
-import { resetCatalog, getLoginAttempts, getSessions, revokeSession, revokeAllSessions } from './controllers/adminController';
+import {
+  resetCatalog,
+  getLoginAttempts,
+  getSessions,
+  revokeSession,
+  revokeAllSessions,
+  postValidateAexSync
+} from './controllers/adminController';
 import { checkSessionTimeout } from './middleware/sessionTimeout';
 import { requireAuth } from './middleware/auth';
 import * as structureController from './controllers/structureController';
@@ -51,6 +58,8 @@ import { startReviewAccessCron } from './crons/reviewAccessCron';
 import { startJumpCloudPasswordCron } from './crons/jumpcloudPasswordCron';
 import { startJumpCloudPasswordExpiryCron } from './crons/jumpcloudPasswordExpiryCron';
 import { startJumpCloudDivergenceCron } from './jobs/jumpcloudDivergenceCheck';
+import { startValidateAexToolSyncCron } from './jobs/validateAexToolSync';
+import { startExpireExtraordinaryAccessCron } from './jobs/expireExtraordinaryAccess';
 import webhookRouter from './routes/webhooks';
 
 // Slack
@@ -108,6 +117,10 @@ startJumpCloudPasswordCron();
 startJumpCloudPasswordExpiryCron();
 // Cron: divergências Employment Theris × JumpCloud, segundas às 08:00 (Brasília)
 startJumpCloudDivergenceCron();
+// Cron: validação catálogo ap_* × grupos JumpCloud, segundas às 08:30 (Brasília)
+startValidateAexToolSyncCron();
+// Cron: expiração automática de AEX (Theris + JumpCloud), diariamente às 07:00 (Brasília)
+startExpireExtraordinaryAccessCron();
 
 // --- CORS ---
 app.use(cors({
@@ -186,6 +199,7 @@ app.get('/api/admin/login-attempts', getLoginAttempts);
 app.get('/api/admin/sessions', getSessions);
 app.delete('/api/admin/sessions/:userId', revokeSession);
 app.delete('/api/admin/sessions', revokeAllSessions);
+app.post('/api/admin/jobs/validate-aex-sync', postValidateAexSync);
 
 // ============================================================
 // --- ROTAS DE DADOS ---

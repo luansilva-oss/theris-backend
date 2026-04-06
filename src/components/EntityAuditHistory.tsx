@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, ExternalLink } from 'lucide-react';
 import { API_URL } from '../config';
+import { getAuditEventTypeLabel } from '../constants/requestStatusConfig';
 
 interface AuditItem {
   id: string;
@@ -21,7 +22,7 @@ interface EntityAuditHistoryProps {
 
 function getBadgeColor(tipo: string): string {
   const verde = ['LOGIN_SUCCESS', 'USER_CREATED', 'USER_ACTIVATED', 'AEX_APPROVED', 'TICKET_RESOLVED', 'DEPARTMENT_CREATED', 'UNIT_CREATED', 'ROLE_CREATED', 'KBS_UPDATED'];
-  const vermelho = ['LOGIN_FAILED', 'MFA_FAILED', 'SESSION_EXPIRED', 'USER_OFFBOARDED', 'AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED', 'DEPARTMENT_DELETED', 'UNIT_DELETED', 'ROLE_DELETED', 'SESSION_REVOKED', 'BULK_SESSION_REVOKED', 'TICKET_REOPENED'];
+  const vermelho = ['LOGIN_FAILED', 'MFA_FAILED', 'SESSION_EXPIRED', 'USER_OFFBOARDED', 'AEX_OWNER_REJECTED', 'AEX_SI_REJECTED', 'AEX_AUTO_REJECTED', 'AEX_EXPIRED', 'DEPARTMENT_DELETED', 'UNIT_DELETED', 'ROLE_DELETED', 'SESSION_REVOKED', 'BULK_SESSION_REVOKED', 'TICKET_REOPENED'];
   const azul = ['AEX_CREATED', 'TICKET_CREATED', 'MFA_SENT', 'CHANGE_ROLE'];
   const amarelo = ['USER_UPDATED', 'USER_ROLE_CHANGED', 'USER_MANAGER_CHANGED', 'TICKET_ASSIGNED', 'TICKET_COMMENTED', 'DEPARTMENT_UPDATED', 'UNIT_UPDATED', 'ROLE_UPDATED', 'AEX_OWNER_APPROVED', 'AEX_SI_APPROVED', 'REPORT_EXPORTED'];
   if (verde.includes(tipo)) return '#22c55e';
@@ -93,7 +94,7 @@ export const EntityAuditHistory: React.FC<EntityAuditHistoryProps> = ({
               background: `${getBadgeColor(row.tipo)}22`,
               color: getBadgeColor(row.tipo),
               marginRight: 8,
-            }}>{row.tipo}</span>
+            }}>{getAuditEventTypeLabel(row.tipo)}</span>
             <span style={{ color: '#a1a1aa' }}>{formatDate(row.createdAt)}</span>
             <span style={{ marginLeft: 8 }}>— {row.descricao}</span>
           </li>

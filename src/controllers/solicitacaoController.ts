@@ -3,7 +3,8 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
 import { sendSlackNotification } from '../services/slackService';
-import { syncUserToJumpCloud } from '../services/jumpcloudSyncService';
+import { syncUserToJumpCloud, provisionUserOnJumpCloud } from '../services/jumpcloudSyncService';
+import { mapTherisUnitNameToJumpCloudCompany } from '../config/jumpcloud';
 import { hasProfile } from '../middleware/auth';
 import { isInfraTicketType, isInboxMember } from '../lib/infraTicket';
 import { CHAMADO_PENDING_ALL_STATUSES, STATUS_FILTER_VALUE_PENDING_ALL } from '../constants/requestStatusConfig';
@@ -41,6 +42,76 @@ const OFFBOARDING_REQUEST_TYPES = ['FIRING', 'DEMISSAO', 'OFFBOARDING'];
 /** Tipos de solicitação que representam admissão/onboarding (ao aprovar, vincular colaborador a departamento e cargo). */
 const ONBOARDING_REQUEST_TYPES = ['HIRING', 'ADMISSAO', 'ONBOARDING'];
 
+type HiringJumpCloudSiPayload =
+  | { outcome: 'created'; email: string; jumpcloudId: string }
+  | { outcome: 'manual_check' };
+
+function splitNameForJumpCloud(fullName: string): { firstName: string; lastName: string } {
+  const t = (fullName || '').trim();
+  if (!t) return { firstName: 'Colaborador', lastName: '-' };
+  const i = t.indexOf(' ');
+  if (i < 0) return { firstName: t, lastName: '' };
+  return { firstName: t.slice(0, i).trim(), lastName: t.slice(i + 1).trim() || '' };
+}
+
+/**
+ * HIRING: cria usuário no JumpCloud se não existir. Não lança; retorna payload opcional para Slack SI.
+ * Persiste `User.jumpcloudId` quando o JumpCloud retorna o ID (novo ou já existente).
+ */
+async function tryHiringJumpCloudProvisionForEmail(userEmail: string): Promise<HiringJumpCloudSiPayload | undefined> {
+  try {
+    const hiringUser = await prisma.user.findFirst({
+      where: { email: { equals: userEmail.trim(), mode: 'insensitive' } },
+      include: { manager: { select: { email: true } } }
+    });
+    if (!hiringUser?.roleId) {
+      return { outcome: 'manual_check' };
+    }
+    const role = await prisma.role.findUnique({
+      where: { id: hiringUser.roleId },
+      include: { department: { include: { unit: true } } }
+    });
+    if (!role?.department) {
+      return { outcome: 'manual_check' };
+    }
+    const { firstName, lastName } = splitNameForJumpCloud(hiringUser.name);
+    let managerJcId: string | undefined;
+    if (hiringUser.manager?.email) {
+      const { getSystemUserIdByEmail } = await import('../services/jumpcloudService');
+      managerJcId = (await getSystemUserIdByEmail(hiringUser.manager.email)) ?? undefined;
+    }
+    const company = mapTherisUnitNameToJumpCloudCompany(role.department.unit?.name ?? '');
+    const jcResult = await provisionUserOnJumpCloud({
+      email: hiringUser.email,
+      firstName,
+      lastName,
+      jobTitle: role.name,
+      department: role.department.name,
+      company,
+      managerJcId
+    });
+    if (jcResult === null) {
+      return { outcome: 'manual_check' };
+    }
+    try {
+      await prisma.user.update({
+        where: { id: hiringUser.id },
+        data: { jumpcloudId: jcResult.jumpcloudId }
+      });
+    } catch (persistErr) {
+      console.warn('[HIRING] Persistir jumpcloudId falhou:', persistErr);
+    }
+    if (jcResult.created) {
+      console.info(`[HIRING] Usuário criado no JumpCloud: ${hiringUser.email} → ${jcResult.jumpcloudId}`);
+      return { outcome: 'created', email: hiringUser.email, jumpcloudId: jcResult.jumpcloudId };
+    }
+    return undefined;
+  } catch (e) {
+    console.error('[HIRING] Erro ao provisionar JumpCloud:', e);
+    return { outcome: 'manual_check' };
+  }
+}
+
 /**
  * Automação: ao aprovar um chamado de desligamento, desvincula o colaborador alvo da estrutura (soft-delete)
  * e notifica os Owners das ferramentas (KBS do cargo) para revogação imediata, com botão de confirmação.
@@ -61,20 +132,27 @@ async function runOffboardingAutomation(
     return;
   }
   const d = details as Record<string, string | undefined>;
-  let targetUser: { id: string; name: string; roleId: string | null; departmentId: string | null; unitId: string | null } | null = null;
+  let targetUser: {
+    id: string;
+    name: string;
+    email: string;
+    roleId: string | null;
+    departmentId: string | null;
+    unitId: string | null;
+  } | null = null;
 
   const targetUserId = d.targetUserId || d.collaboratorId;
   if (targetUserId) {
     const u = await prisma.user.findUnique({
       where: { id: targetUserId },
-      select: { id: true, name: true, roleId: true, departmentId: true, unitId: true }
+      select: { id: true, name: true, email: true, roleId: true, departmentId: true, unitId: true }
     });
     if (u) targetUser = u;
   }
   if (!targetUser && d.collaboratorEmail) {
     const u = await prisma.user.findUnique({
       where: { email: d.collaboratorEmail.trim() },
-      select: { id: true, name: true, roleId: true, departmentId: true, unitId: true }
+      select: { id: true, name: true, email: true, roleId: true, departmentId: true, unitId: true }
     });
     if (u) targetUser = u;
   }
@@ -83,7 +161,7 @@ async function runOffboardingAutomation(
     if (name) {
       const u = await prisma.user.findFirst({
         where: { isActive: true, name: { equals: name, mode: 'insensitive' } },
-        select: { id: true, name: true, roleId: true, departmentId: true, unitId: true }
+        select: { id: true, name: true, email: true, roleId: true, departmentId: true, unitId: true }
       });
       if (u) targetUser = u;
     }
@@ -124,6 +202,49 @@ async function runOffboardingAutomation(
   const offboardUserId = targetUser.id;
   const offboardRoleId = targetUser.roleId;
 
+  const aexRows = await prisma.access.findMany({
+    where: {
+      userId: targetUser.id,
+      isExtraordinary: true,
+      status: { not: 'REVOKED' }
+    },
+    include: { tool: { include: { owner: { select: { id: true, email: true, name: true } } } } }
+  });
+
+  const slack = await import('../services/slackService');
+  const aexSiLines: { toolName: string; toolCode: string; ownerName: string }[] = [];
+
+  for (const accessRow of aexRows) {
+    try {
+      await prisma.access.update({
+        where: { id: accessRow.id },
+        data: { status: 'REVOKED' }
+      });
+    } catch (aexDbErr) {
+      console.error('[Automação] Desligamento AEX: falha ao atualizar Access', accessRow.id, aexDbErr);
+      continue;
+    }
+    const tool = accessRow.tool;
+    if (!tool) continue;
+    const toolCode = (tool.acronym || '').trim() || '—';
+    aexSiLines.push({ toolName: tool.name, toolCode, ownerName: tool.owner?.name || '—' });
+
+    slack.scheduleDesligamentoAexJumpCloudRevoke(targetUser.email, tool.acronym);
+    slack.scheduleDesligamentoAexOwnerDm({
+      requestId,
+      collaboratorName: targetUser.name,
+      offboardUserId: targetUser.id,
+      toolId: tool.id,
+      toolName: tool.name,
+      toolCode,
+      owner: tool.owner
+    });
+  }
+
+  void import('../services/jumpcloudSyncService')
+    .then((m) => m.suspendUserOnJumpCloud(targetUser.email))
+    .catch((err) => console.error('[OFFBOARDING] Falha fire-and-forget suspensão JC:', err));
+
   await prisma.user.update({
     where: { id: targetUser.id },
     data: {
@@ -145,14 +266,23 @@ async function runOffboardingAutomation(
 
   console.log(`[Automação] Usuário ${targetUser.name} (${targetUser.id}) desligado com sucesso após aprovação do chamado ${requestId}.`);
 
-  if (kitItems.length > 0) {
-    try {
-      const actionDateStr = actionDate instanceof Date ? actionDate.toISOString().slice(0, 10) : (typeof actionDate === 'string' ? actionDate : null);
-      const { notificarOwnersDesligamento } = await import('../services/slackService');
-      await notificarOwnersDesligamento(requestId, targetUser.name, jobTitle, departmentName, unitName, kitItems, actionDateStr);
-    } catch (notifErr) {
-      console.error('[Automação] Desligamento: falha ao notificar owners (não bloqueia):', notifErr);
+  const actionDateStr = actionDate instanceof Date ? actionDate.toISOString().slice(0, 10) : (typeof actionDate === 'string' ? actionDate : null);
+  try {
+    if (kitItems.length > 0) {
+      await slack.notificarOwnersDesligamento(requestId, targetUser.name, jobTitle, departmentName, unitName, kitItems, actionDateStr);
     }
+    void slack.postDesligamentoSiResumoKbsEAex({
+      requestId,
+      collaboratorName: targetUser.name,
+      jobTitle,
+      departmentName,
+      unitName,
+      actionDate: actionDateStr,
+      kitItems,
+      aexLines: aexSiLines
+    }).catch((siErr) => console.error('[Automação] Desligamento: resumo SI (não bloqueia):', siErr));
+  } catch (notifErr) {
+    console.error('[Automação] Desligamento: falha ao notificar owners / SI (não bloqueia):', notifErr);
   }
 }
 
@@ -182,7 +312,12 @@ async function runOnboardingAutomation(
   let d: Record<string, unknown> = {};
   try {
     d = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
-  } catch {
+  } catch (parseErr) {
+    console.warn(
+      '[Automação Onboarding] Falha ao parsear details do chamado:',
+      requestId,
+      parseErr
+    );
     return;
   }
   const details = d as Record<string, string | undefined>;
@@ -190,7 +325,13 @@ async function runOnboardingAutomation(
   const roleName = (details.role || details.Cargo || details.cargo || details.jobTitle || '').trim();
   const departmentName = (details.department || details.Depto || details.dept || '').trim();
   const unitName = (details.unit || details.unitName || details.Unidade || details.unidade || '').trim();
-  const collaboratorEmail = (details.collaboratorEmail || details.email || details.targetEmail || '').trim();
+  const collaboratorEmail = (
+    details.collaboratorEmail ||
+    details.corporateEmail ||
+    details.email ||
+    details.targetEmail ||
+    ''
+  ).trim();
 
   if (!departmentName) {
     console.warn(`[Automação Onboarding] Chamado ${requestId}: departamento não informado nos detalhes. Ignorando.`);
@@ -396,6 +537,60 @@ async function runExtraordinaryAccessAutomation(requestId: string, request: { ty
     });
   }
   console.log(`[Automação] Acesso extraordinário concedido: usuário ${targetUserId} vinculado à ferramenta ${tool.name} (chamado ${requestId}).`);
+}
+
+/** toolCode JumpCloud (ex.: ap_*) para grupo AEX — details, depois acronym da Tool. */
+async function resolveAexJumpCloudToolCode(request: { details: string | null }): Promise<string | null> {
+  let d: Record<string, unknown> = {};
+  try {
+    d = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : {};
+  } catch {
+    return null;
+  }
+  for (const key of ['toolCode', 'accessLevelCode']) {
+    const v = d[key];
+    if (typeof v === 'string' && /^ap_/i.test(v.trim())) return v.trim();
+  }
+  const toolId = typeof d.toolId === 'string' ? d.toolId.trim() : null;
+  const toolName = String(d.tool || d.toolName || '').trim();
+  if (!toolId && !toolName) return null;
+  const tool = toolId
+    ? await prisma.tool.findUnique({ where: { id: toolId }, select: { acronym: true } })
+    : await prisma.tool.findFirst({
+        where: {
+          OR: [
+            { name: { contains: toolName, mode: 'insensitive' } },
+            { acronym: { equals: toolName, mode: 'insensitive' } }
+          ]
+        },
+        select: { acronym: true }
+      });
+  const ac = tool?.acronym?.trim();
+  if (ac && /^ap_/i.test(ac)) return ac;
+  return null;
+}
+
+async function fireAexJumpCloudProvisionAfterPrisma(request: {
+  details: string | null;
+  requesterId: string | null;
+}): Promise<void> {
+  const toolCodeJc = await resolveAexJumpCloudToolCode(request);
+  if (!toolCodeJc || !request.requesterId) return;
+  const reqUser = await prisma.user.findUnique({
+    where: { id: request.requesterId },
+    select: { email: true }
+  });
+  if (!reqUser?.email) return;
+  const { getSystemUserIdByEmail } = await import('../services/jumpcloudService');
+  const jcId = await getSystemUserIdByEmail(reqUser.email);
+  if (!jcId) {
+    console.warn('[AEX] Provisionamento JumpCloud ignorado: usuário sem ID JumpCloud (e-mail:', reqUser.email, ')');
+    return;
+  }
+  const { provisionExtraordinaryAccessOnJumpCloud } = await import('../services/jumpcloudGroupSyncService');
+  void provisionExtraordinaryAccessOnJumpCloud(jcId, toolCodeJc).catch((err) =>
+    console.error('[AEX] Falha fire-and-forget provisioning:', err)
+  );
 }
 
 /** Tipo de item KBS para notificação pós-mudança (compatível com slackService.KBSItem). */
@@ -1647,30 +1842,49 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         try {
           const onboardingResult = await runOnboardingAutomation(id, request, approverId);
           if (onboardingResult) {
+            let jumpCloudSi: HiringJumpCloudSiPayload | undefined;
+            if (request.type === 'HIRING') {
+              try {
+                jumpCloudSi = await tryHiringJumpCloudProvisionForEmail(onboardingResult.userEmail);
+              } catch {
+                jumpCloudSi = { outcome: 'manual_check' };
+              }
+            }
             // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
             // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
             // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY (mapTherisUnitNameToJumpCloudCompany) para correspondência exata
             syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
-              console.error('[JumpCloud Sync] Erro:', err)
+              console.error(
+                request.type === 'HIRING' ? '[HIRING] Falha no sync JumpCloud pós-criação:' : '[JumpCloud Sync] Erro:',
+                err
+              )
             );
             try {
               await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);
             } catch (syncErr) {
               console.error('[Automação] Onboarding: falha ao sincronizar Access/Catálogo (não bloqueia):', syncErr);
             }
-            try {
+            {
               const { notificarOwnersJoiner } = await import('../services/slackService');
-              await notificarOwnersJoiner(
-                onboardingResult.requestId,
-                onboardingResult.collaboratorName,
-                onboardingResult.jobTitle,
-                onboardingResult.departmentName,
-                onboardingResult.unitName,
-                onboardingResult.startDate,
-                onboardingResult.roleId
+              const closer = approverId
+                ? await prisma.user.findUnique({ where: { id: approverId }, select: { name: true } })
+                : null;
+              void notificarOwnersJoiner({
+                requestId: id,
+                requestType: request.type,
+                collaboratorName: onboardingResult.collaboratorName,
+                collaboratorUserId: onboardingResult.userId,
+                jobTitle: onboardingResult.jobTitle,
+                departmentName: onboardingResult.departmentName,
+                unitName: onboardingResult.unitName,
+                startDate: onboardingResult.startDate,
+                roleId: onboardingResult.roleId,
+                requesterName: request.requester?.name ?? null,
+                closedByName: closer?.name ?? null,
+                jumpCloudSi
+              }).catch((notifErr) =>
+                console.error('[Automação] Joiner: falha ao notificar owners (não bloqueia):', notifErr)
               );
-            } catch (notifErr) {
-              console.error('[Automação] Joiner: falha ao notificar owners (não bloqueia):', notifErr);
             }
           }
         } catch (onboardError) {
@@ -1682,6 +1896,10 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       else if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
         try {
           await runExtraordinaryAccessAutomation(id, request);
+          await fireAexJumpCloudProvisionAfterPrisma({
+            details: request.details,
+            requesterId: request.requesterId
+          });
           const { registrarMudanca } = await import('../lib/auditLog');
           const toolNameAex = (request as { toolName?: string }).toolName || (() => { try { const d = JSON.parse(request.details || '{}'); return d.tool || d.toolName || '—'; } catch { return '—'; } })();
           const accessLevelAex = (request as { accessLevel?: string }).accessLevel || (() => { try { const d = JSON.parse(request.details || '{}'); return d.target || d.targetValue || '—'; } catch { return '—'; } })();
@@ -2219,30 +2437,49 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         try {
           const onboardingResult = await runOnboardingAutomation(id, existing, userId);
           if (onboardingResult) {
+            let jumpCloudSi: HiringJumpCloudSiPayload | undefined;
+            if (existing.type === 'HIRING') {
+              try {
+                jumpCloudSi = await tryHiringJumpCloudProvisionForEmail(onboardingResult.userEmail);
+              } catch {
+                jumpCloudSi = { outcome: 'manual_check' };
+              }
+            }
             // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
             // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
             // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY (mapTherisUnitNameToJumpCloudCompany) para correspondência exata
             syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
-              console.error('[JumpCloud Sync] Erro:', err)
+              console.error(
+                existing.type === 'HIRING' ? '[HIRING] Falha no sync JumpCloud pós-criação:' : '[JumpCloud Sync] Erro:',
+                err
+              )
             );
             try {
               await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);
             } catch (syncErr) {
               console.error('[Automação] Onboarding (metadata): falha ao sincronizar Access/Catálogo (não bloqueia):', syncErr);
             }
-            try {
+            {
               const { notificarOwnersJoiner } = await import('../services/slackService');
-              await notificarOwnersJoiner(
-                onboardingResult.requestId,
-                onboardingResult.collaboratorName,
-                onboardingResult.jobTitle,
-                onboardingResult.departmentName,
-                onboardingResult.unitName,
-                onboardingResult.startDate,
-                onboardingResult.roleId
+              const closerMeta = userId
+                ? await prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
+                : null;
+              void notificarOwnersJoiner({
+                requestId: id,
+                requestType: existing.type,
+                collaboratorName: onboardingResult.collaboratorName,
+                collaboratorUserId: onboardingResult.userId,
+                jobTitle: onboardingResult.jobTitle,
+                departmentName: onboardingResult.departmentName,
+                unitName: onboardingResult.unitName,
+                startDate: onboardingResult.startDate,
+                roleId: onboardingResult.roleId,
+                requesterName: existing.requester?.name ?? null,
+                closedByName: closerMeta?.name ?? null,
+                jumpCloudSi
+              }).catch((notifErr) =>
+                console.error('[Automação] Joiner (metadata): falha ao notificar owners (não bloqueia):', notifErr)
               );
-            } catch (notifErr) {
-              console.error('[Automação] Joiner (metadata): falha ao notificar owners (não bloqueia):', notifErr);
             }
           }
         } catch (onboardError) {
@@ -2252,6 +2489,10 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) || existing.isExtraordinary) {
         try {
           await runExtraordinaryAccessAutomation(id, existing);
+          await fireAexJumpCloudProvisionAfterPrisma({
+            details: existing.details,
+            requesterId: existing.requesterId
+          });
           const { registrarMudanca } = await import('../lib/auditLog');
           const toolNameAex = (existing as { toolName?: string }).toolName || (() => { try { const d = JSON.parse(existing.details || '{}'); return d.tool || d.toolName || '—'; } catch { return '—'; } })();
           const accessLevelAex = (existing as { accessLevel?: string }).accessLevel || (() => { try { const d = JSON.parse(existing.details || '{}'); return d.target || d.targetValue || '—'; } catch { return '—'; } })();

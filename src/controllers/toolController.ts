@@ -321,12 +321,34 @@ export const addToolAccess = async (req: Request, res: Response) => {
 export const removeToolAccess = async (req: Request, res: Response) => {
   const { id, userId } = req.params;
   try {
+    const before = await prisma.access.findMany({
+      where: { toolId: id, userId },
+      include: { tool: { select: { acronym: true } } }
+    });
     await prisma.access.deleteMany({
       where: {
         toolId: id,
         userId: userId
       }
     });
+    const extraordinary = before.filter((a) => a.isExtraordinary);
+    if (extraordinary.length > 0) {
+      const u = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+      if (u?.email) {
+        const { getSystemUserIdByEmail } = await import('../services/jumpcloudService');
+        const jcId = await getSystemUserIdByEmail(u.email);
+        if (jcId) {
+          const { revokeExtraordinaryAccessOnJumpCloud } = await import('../services/jumpcloudGroupSyncService');
+          for (const a of extraordinary) {
+            const code = a.tool?.acronym?.trim();
+            if (!code || !/^ap_/i.test(code)) continue;
+            void revokeExtraordinaryAccessOnJumpCloud(jcId, code).catch((err) =>
+              console.error('[AEX] Falha fire-and-forget revogação:', err)
+            );
+          }
+        }
+      }
+    }
     return res.json({ message: 'Acesso removido' });
   } catch (error) {
     return res.status(500).json({ error: 'Erro ao remover acesso' });

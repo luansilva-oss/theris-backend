@@ -142,3 +142,16 @@ export function getRequestStatusBadgeStyle(status: string): {
   const styles = VARIANT_STYLES[variant];
   return { label, ...styles, variant };
 }
+
+/**
+ * Rótulos em português para tipos de evento no Histórico de Mudanças.
+ * Quando ausente, a UI exibe o código técnico (ex.: AEX_CREATED).
+ */
+export const AUDIT_EVENT_TYPE_LABELS: Partial<Record<string, string>> = {
+  AEX_EXPIRED: 'AEX expirado (automático)',
+};
+
+export function getAuditEventTypeLabel(tipo: string): string {
+  const t = (tipo || '').trim();
+  return AUDIT_EVENT_TYPE_LABELS[t] ?? t;
+}

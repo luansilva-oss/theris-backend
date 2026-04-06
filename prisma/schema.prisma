@@ -59,7 +59,9 @@ model User {
   id            String    @id @default(uuid())
   name          String
   email         String    @unique
-  
+  /// ID do usuário no JumpCloud (Directory); evita GET systemusers por e-mail a cada integração.
+  jumpcloudId   String?   @unique
+
   // --- MUDANÇA 1: FKs para Department e Unit ---
   jobTitle      String?   // Cargo (Ex: "SDR")
   departmentId  String?
