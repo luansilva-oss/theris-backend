@@ -149,6 +149,7 @@ export function getRequestStatusBadgeStyle(status: string): {
  */
 export const AUDIT_EVENT_TYPE_LABELS: Partial<Record<string, string>> = {
   AEX_EXPIRED: 'AEX expirado (automático)',
+  AEX_RECERTIFICATION_REVOKED: 'AEX revogado por recertificação (90 dias)',
 };
 
 export function getAuditEventTypeLabel(tipo: string): string {

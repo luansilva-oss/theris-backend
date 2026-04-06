@@ -213,7 +213,9 @@ model Access {
   level           String?   // ex: "NÍVEL 3 (CP-1)"
   duration        Int?      
   unit            String?   // horas, dias, meses
-  expiresAt       DateTime? 
+  expiresAt       DateTime?
+  /// DM de recertificação (90d / menor prazo) enviado ao Owner; após +2d sem ação → revogação JC + REVOKED.
+  recertificationNotifiedAt DateTime?
 }
 
 model Request {

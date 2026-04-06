@@ -1,6 +1,6 @@
 /**
  * Validação semanal: ferramentas Catálogo Theris (sigla ap_*) × usergroups JumpCloud (nome ap_*).
- * Segundas 08:30 BRT — ver startValidateAexToolSyncCron().
+ * Segundas 08:30 BRT (após expiração AEX 08:00) — ver startValidateAexToolSyncCron().
  */
 import cron from 'node-cron';
 import { PrismaClient } from '@prisma/client';

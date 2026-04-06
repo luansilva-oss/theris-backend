@@ -60,6 +60,7 @@ import { startJumpCloudPasswordExpiryCron } from './crons/jumpcloudPasswordExpir
 import { startJumpCloudDivergenceCron } from './jobs/jumpcloudDivergenceCheck';
 import { startValidateAexToolSyncCron } from './jobs/validateAexToolSync';
 import { startExpireExtraordinaryAccessCron } from './jobs/expireExtraordinaryAccess';
+import { startRecertifyExtraordinaryAccessCron } from './jobs/recertifyExtraordinaryAccess';
 import webhookRouter from './routes/webhooks';
 
 // Slack
@@ -119,7 +120,9 @@ startJumpCloudPasswordExpiryCron();
 startJumpCloudDivergenceCron();
 // Cron: validação catálogo ap_* × grupos JumpCloud, segundas às 08:30 (Brasília)
 startValidateAexToolSyncCron();
-// Cron: expiração automática de AEX (Theris + JumpCloud), diariamente às 07:00 (Brasília)
+// Cron: recertificação AEX (90d + 2d), diariamente às 07:30 (Brasília)
+startRecertifyExtraordinaryAccessCron();
+// Cron: expiração automática de AEX (Theris + JumpCloud), diariamente às 08:00 (Brasília)
 startExpireExtraordinaryAccessCron();
 
 // --- CORS ---

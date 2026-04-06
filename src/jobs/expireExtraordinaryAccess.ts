@@ -1,6 +1,6 @@
 /**
  * Expiração automática de Acessos Extraordinários (Theris + JumpCloud ap_*).
- * Diariamente às 07:00 America/Sao_Paulo — ver startExpireExtraordinaryAccessCron().
+ * Diariamente às 08:00 America/Sao_Paulo — ver startExpireExtraordinaryAccessCron().
  */
 import cron from 'node-cron';
 import type { Prisma } from '@prisma/client';
@@ -10,7 +10,7 @@ import { getSlackApp, sendDmToSlackUser, formatTimestampBrt } from '../services/
 import { getSystemUserIdByEmail } from '../services/jumpcloudService';
 import { revokeExtraordinaryAccessOnJumpCloud } from '../services/jumpcloudGroupSyncService';
 
-const CRON_SCHEDULE = '0 7 * * *'; // 07:00 todos os dias (America/Sao_Paulo)
+const CRON_SCHEDULE = '0 8 * * *'; // 08:00 todos os dias (America/Sao_Paulo)
 
 type ExpiredAccessRow = Prisma.AccessGetPayload<{
   include: { user: true; tool: true };
@@ -171,5 +171,5 @@ export function startExpireExtraordinaryAccessCron(): void {
     },
     { timezone: 'America/Sao_Paulo' }
   );
-  console.log('📅 Expiração de Acessos Extraordinários: diariamente às 07:00 (Brasília)');
+  console.log('📅 Expiração de Acessos Extraordinários: diariamente às 08:00 (Brasília)');
 }
