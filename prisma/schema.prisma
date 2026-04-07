@@ -216,6 +216,8 @@ model Access {
   expiresAt       DateTime?
   /// DM de recertificação (90d / menor prazo) enviado ao Owner; após +2d sem ação → revogação JC + REVOKED.
   recertificationNotifiedAt DateTime?
+  /// Data em que o aviso de 7 dias antes da recertificação foi enviado ao colaborador.
+  preRecertificationNotifiedAt DateTime?
 }
 
 model Request {

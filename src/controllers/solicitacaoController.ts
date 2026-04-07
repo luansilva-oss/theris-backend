@@ -468,25 +468,35 @@ async function runOnboardingAutomation(
 /** Tipos de solicitação que ao serem aprovados concedem acesso extraordinário (vinculam usuário à ferramenta na tabela Access). */
 const EXTRAORDINARY_ACCESS_REQUEST_TYPES = ['ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO', 'ACCESS_TOOL_EXTRA'];
 
+type ExtraordinaryAccessAutomationResult = {
+  accessId: string;
+  toolId: string;
+  requesterId: string;
+};
+
 /**
  * Automação: ao aprovar um chamado de acesso extraordinário, vincula o colaborador (requester) à ferramenta na tabela Access com isExtraordinary = true.
+ * Renovação (já existe AEX ativo na mesma ferramenta): cria nova linha de Access; o fluxo seguinte revoga a anterior (substituição).
  * Usado tanto no fluxo de aprovação (updateSolicitacao) quanto quando o status é alterado para APROVADO via updateSolicitacaoMetadata.
  */
-async function runExtraordinaryAccessAutomation(requestId: string, request: { type: string; requesterId: string | null; details: string | null; isExtraordinary?: boolean; extraordinaryDuration?: number | null; extraordinaryUnit?: string | null }): Promise<void> {
-  if (!request.requesterId) return;
-  if (!EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && !request.isExtraordinary) return;
+async function runExtraordinaryAccessAutomation(
+  requestId: string,
+  request: { type: string; requesterId: string | null; details: string | null; isExtraordinary?: boolean; extraordinaryDuration?: number | null; extraordinaryUnit?: string | null }
+): Promise<ExtraordinaryAccessAutomationResult | null> {
+  if (!request.requesterId) return null;
+  if (!EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) && !request.isExtraordinary) return null;
   let d: Record<string, unknown> = {};
   try {
     d = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
   } catch {
-    return;
+    return null;
   }
   const toolId = typeof d.toolId === 'string' ? d.toolId.trim() : null;
   const toolName = (d.tool || d.toolName || (d.info && typeof d.info === 'string' ? (d.info as string).split(': ')[1] : null) || '').trim();
   const targetUserId = request.requesterId;
   const levelRequested = (d.target || d.targetValue) as string | null;
 
-  if (!toolId && !toolName) return;
+  if (!toolId && !toolName) return null;
 
   const tool = toolId
     ? await prisma.tool.findUnique({ where: { id: toolId } })
@@ -500,11 +510,12 @@ async function runExtraordinaryAccessAutomation(requestId: string, request: { ty
       });
   if (!tool) {
     console.warn(`[Automação] Acesso extraordinário: ferramenta "${toolId || toolName}" não encontrada no catálogo (chamado ${requestId}).`);
-    return;
+    return null;
   }
 
   const existing = await prisma.access.findFirst({
-    where: { userId: targetUserId, toolId: tool.id }
+    where: { userId: targetUserId, toolId: tool.id },
+    orderBy: { createdAt: 'desc' }
   });
   const isExtra = request.isExtraordinary ?? EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type);
   const duration = request.extraordinaryDuration ?? (d.duration != null ? parseInt(String(d.duration), 10) : null);
@@ -512,31 +523,118 @@ async function runExtraordinaryAccessAutomation(requestId: string, request: { ty
   const statusValue = (levelRequested && String(levelRequested).trim()) || 'ACTIVE';
 
   const levelValue = levelRequested && String(levelRequested).trim() ? levelRequested.trim() : null;
-  if (existing) {
-    await prisma.access.update({
-      where: { id: existing.id },
-      data: {
-        status: statusValue,
-        isExtraordinary: isExtra,
-        ...(levelValue != null && { level: levelValue }),
-        ...(duration != null && { duration }),
-        ...(unit != null && { unit })
-      }
-    });
-  } else {
-    await prisma.access.create({
+  const accessData = {
+    status: statusValue,
+    isExtraordinary: isExtra,
+    ...(levelValue != null && { level: levelValue }),
+    ...(duration != null && { duration }),
+    ...(unit != null && { unit })
+  };
+
+  const renewalCreatesNewRow = Boolean(
+    existing && isExtra && existing.isExtraordinary === true && existing.status !== 'REVOKED'
+  );
+
+  if (renewalCreatesNewRow) {
+    const created = await prisma.access.create({
       data: {
         toolId: tool.id,
         userId: targetUserId,
-        status: statusValue,
-        isExtraordinary: isExtra,
-        ...(levelValue != null && { level: levelValue }),
-        ...(duration != null && { duration }),
-        ...(unit != null && { unit })
+        ...accessData
       }
     });
+    console.log(`[Automação] Acesso extraordinário concedido (renovação): usuário ${targetUserId} — nova linha ${created.id} — ferramenta ${tool.name} (chamado ${requestId}).`);
+    return { accessId: created.id, toolId: tool.id, requesterId: targetUserId };
   }
+
+  if (existing) {
+    await prisma.access.update({
+      where: { id: existing.id },
+      data: accessData
+    });
+    console.log(`[Automação] Acesso extraordinário concedido: usuário ${targetUserId} vinculado à ferramenta ${tool.name} (chamado ${requestId}).`);
+    return { accessId: existing.id, toolId: tool.id, requesterId: targetUserId };
+  }
+
+  const created = await prisma.access.create({
+    data: {
+      toolId: tool.id,
+      userId: targetUserId,
+      ...accessData
+    }
+  });
   console.log(`[Automação] Acesso extraordinário concedido: usuário ${targetUserId} vinculado à ferramenta ${tool.name} (chamado ${requestId}).`);
+  return { accessId: created.id, toolId: tool.id, requesterId: targetUserId };
+}
+
+/** Revoga Access AEX anteriores (mesmo usuário/ferramenta), após Prisma criar o novo ciclo — antes do provisionamento JumpCloud. */
+async function supersedePriorExtraordinaryAccessAfterRenewal(params: {
+  requesterId: string;
+  toolId: string;
+  keepAccessId: string;
+}): Promise<void> {
+  const others = await prisma.access.findMany({
+    where: {
+      userId: params.requesterId,
+      toolId: params.toolId,
+      isExtraordinary: true,
+      status: { not: 'REVOKED' },
+      id: { not: params.keepAccessId }
+    }
+  });
+  if (others.length === 0) return;
+
+  const { registrarMudanca } = await import('../lib/auditLog');
+  const tool = await prisma.tool.findUnique({
+    where: { id: params.toolId },
+    select: { acronym: true }
+  });
+  const toolCode = (tool?.acronym || '').trim();
+  const u = await prisma.user.findUnique({
+    where: { id: params.requesterId },
+    select: { email: true }
+  });
+  const email = (u?.email || '').trim();
+
+  for (const prev of others) {
+    try {
+      await prisma.access.update({
+        where: { id: prev.id },
+        data: { status: 'REVOKED' }
+      });
+    } catch (e) {
+      console.error('[AEX] Falha ao revogar access anterior (supersede):', prev.id, e);
+      continue;
+    }
+
+    void registrarMudanca({
+      tipo: 'AEX_SUPERSEDED',
+      entidadeTipo: 'Access',
+      entidadeId: prev.id,
+      descricao: 'Acesso extraordinário substituído por renovação',
+      dadosAntes: {
+        userId: prev.userId,
+        toolId: prev.toolId,
+        status: prev.status,
+        isExtraordinary: prev.isExtraordinary
+      },
+      dadosDepois: { status: 'REVOKED' }
+    }).catch((err) => console.warn('[AEX] Auditoria supersede:', prev.id, err));
+
+    if (toolCode && /^ap_/i.test(toolCode) && email) {
+      void (async () => {
+        try {
+          const { getSystemUserIdByEmail } = await import('../services/jumpcloudService');
+          const { revokeExtraordinaryAccessOnJumpCloud } = await import('../services/jumpcloudGroupSyncService');
+          const jcId = await getSystemUserIdByEmail(email);
+          if (jcId) await revokeExtraordinaryAccessOnJumpCloud(jcId, toolCode);
+        } catch (e) {
+          console.error('[AEX] JumpCloud revoke supersede:', e);
+        }
+      })();
+    }
+    console.info('[AEX] Acesso anterior substituído por renovação:', toolCode || params.toolId);
+  }
 }
 
 /** toolCode JumpCloud (ex.: ap_*) para grupo AEX — details, depois acronym da Tool. */
@@ -1895,7 +1993,14 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       // CENÁRIO 2: ACESSO EXTRAORDINÁRIO / FERRAMENTA PONTUAL — vincula o colaborador à ferramenta na tabela Access
       else if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
         try {
-          await runExtraordinaryAccessAutomation(id, request);
+          const aexAuto = await runExtraordinaryAccessAutomation(id, request);
+          if (aexAuto) {
+            await supersedePriorExtraordinaryAccessAfterRenewal({
+              requesterId: aexAuto.requesterId,
+              toolId: aexAuto.toolId,
+              keepAccessId: aexAuto.accessId
+            });
+          }
           await fireAexJumpCloudProvisionAfterPrisma({
             details: request.details,
             requesterId: request.requesterId
@@ -2488,7 +2593,14 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       }
       if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(existing.type) || existing.isExtraordinary) {
         try {
-          await runExtraordinaryAccessAutomation(id, existing);
+          const aexAuto = await runExtraordinaryAccessAutomation(id, existing);
+          if (aexAuto) {
+            await supersedePriorExtraordinaryAccessAfterRenewal({
+              requesterId: aexAuto.requesterId,
+              toolId: aexAuto.toolId,
+              keepAccessId: aexAuto.accessId
+            });
+          }
           await fireAexJumpCloudProvisionAfterPrisma({
             details: existing.details,
             requesterId: existing.requesterId

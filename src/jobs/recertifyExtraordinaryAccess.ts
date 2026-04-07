@@ -95,6 +95,65 @@ function fireRecertOwnerDm(
   })();
 }
 
+function firePreRecertCollaboratorDm(
+  userEmail: string | undefined,
+  toolName: string,
+  nDays: number,
+  createdAtBrt: string,
+  dueBrt: string
+): void {
+  const app = getSlackApp();
+  if (!app?.client || !userEmail?.trim()) return;
+  const client = app.client;
+  void (async () => {
+    try {
+      const lu = await client.users.lookupByEmail({ email: userEmail.trim() });
+      const sid = lu.user?.id;
+      if (!sid) return;
+      const plain = `⏰ Seu AEX em ${toolName} vence em breve (${nDays} dia(s)).`;
+      const blocks: Record<string, unknown>[] = [
+        {
+          type: 'header',
+          text: { type: 'plain_text', text: '⏰ Seu acesso extraordinário vence em breve', emoji: true }
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text:
+              `Seu acesso extraordinário à ferramenta *${toolName}* vence em\n` +
+              `*${dueBrt}* — em *${nDays}* ${nDays === 1 ? 'dia' : 'dias'}.\n\n` +
+              `Caso queira continuar utilizando esta ferramenta, abra um novo\n` +
+              `chamado de AEX pelo Slack antes do prazo:\n` +
+              `👉 Digite */acessos* no Slack e solicite um novo acesso.`
+          }
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text:
+              'Se não for renovado até o prazo, o acesso será encerrado\n' +
+              'automaticamente e o responsável pela ferramenta será notificado.'
+          }
+        },
+        {
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: `📅 Acesso concedido em: ${createdAtBrt}\n⏰ Vencimento: ${dueBrt}`
+            }
+          ]
+        }
+      ];
+      await sendDmToSlackUser(client, sid, plain, blocks as any);
+    } catch (e) {
+      console.error('[recertifyExtraordinaryAccess] DM colaborador pré-recert (7d):', e);
+    }
+  })();
+}
+
 function fireRecertCollaboratorDm(userEmail: string | undefined, toolName: string): void {
   const app = getSlackApp();
   if (!app?.client || !userEmail?.trim()) return;
@@ -234,10 +293,13 @@ export async function recertifyExtraordinaryAccess(): Promise<void> {
   const deadlinePlus2Brt = formatTimestampBrt(new Date(now.getTime() + 2 * MS_PER_DAY));
   const twoDaysAgo = new Date(now.getTime() - 2 * MS_PER_DAY);
 
+  const preNotifyLines: string[] = [];
   const notifiedLines: string[] = [];
   const revokedLines: string[] = [];
+  let nPreNotify = 0;
   let nNotified = 0;
   let nRevoked = 0;
+  const sevenDaysAheadMs = now.getTime() + 7 * MS_PER_DAY;
 
   let pool: RecertAccessRow[] = [];
   try {
@@ -254,6 +316,40 @@ export async function recertifyExtraordinaryAccess(): Promise<void> {
   } catch (e) {
     console.error('[recertifyExtraordinaryAccess] Falha ao listar Access:', e);
     return;
+  }
+
+  // --- PASSO 0: Pré-aviso 7 dias antes do vencimento efetivo ---
+  const step0 = pool.filter((r) => {
+    if (r.preRecertificationNotifiedAt != null) return false;
+    if (r.recertificationNotifiedAt != null) return false;
+    const dueMs = effectiveRecertificationDueAt(r.createdAt, r.expiresAt).getTime();
+    if (dueMs <= now.getTime()) return false;
+    if (dueMs > sevenDaysAheadMs) return false;
+    return true;
+  });
+
+  for (const row of step0) {
+    const toolName = row.tool?.name ?? 'Ferramenta';
+    const collabName = row.user?.name ?? '—';
+    const dueDate = effectiveRecertificationDueAt(row.createdAt, row.expiresAt);
+    const dueBrt = formatTimestampBrt(dueDate);
+    const createdAtBrt = formatTimestampBrt(row.createdAt);
+    const nDays = Math.max(1, Math.ceil((dueDate.getTime() - now.getTime()) / MS_PER_DAY));
+
+    try {
+      await prisma.access.update({
+        where: { id: row.id },
+        data: { preRecertificationNotifiedAt: now }
+      });
+    } catch (e) {
+      console.error('[recertifyExtraordinaryAccess] Falha ao marcar preRecertificationNotifiedAt:', row.id, e);
+      continue;
+    }
+
+    nPreNotify += 1;
+    preNotifyLines.push(`• ${collabName} → *${toolName}* → vence *${dueBrt}*`);
+
+    firePreRecertCollaboratorDm(row.user?.email, toolName, nDays, createdAtBrt, dueBrt);
   }
 
   // --- PASSO A ---
@@ -353,13 +449,13 @@ export async function recertifyExtraordinaryAccess(): Promise<void> {
   if (!channelId || !app?.client) {
     console.warn('[recertifyExtraordinaryAccess] SI channel ou Slack indisponível; resumo apenas em log.');
     console.log(
-      `[recertifyExtraordinaryAccess] ${dateBrt} · Notificados: ${nNotified} · Revogados: ${nRevoked}`
+      `[recertifyExtraordinaryAccess] ${dateBrt} · Pré-avisos (7d): ${nPreNotify} · Notificados: ${nNotified} · Revogados: ${nRevoked}`
     );
     return;
   }
 
   try {
-    if (nNotified === 0 && nRevoked === 0) {
+    if (nPreNotify === 0 && nNotified === 0 && nRevoked === 0) {
       await app.client.chat.postMessage({
         channel: channelId,
         text: `✅ Nenhum acesso extraordinário pendente de recertificação. · ${dateBrt} BRT`
@@ -372,6 +468,16 @@ export async function recertifyExtraordinaryAccess(): Promise<void> {
         type: 'header',
         text: { type: 'plain_text', text: `🔄 Recertificação de Acessos Extraordinários · ${dateBrt}`, emoji: true }
       },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text:
+            `*⏰ Pré-avisos enviados hoje (vencimento em 7 dias):* ${nPreNotify}\n` +
+            (preNotifyLines.length ? preNotifyLines.join('\n') : '_Nenhum._')
+        }
+      },
+      { type: 'divider' },
       {
         type: 'section',
         text: {
@@ -395,7 +501,7 @@ export async function recertifyExtraordinaryAccess(): Promise<void> {
 
     await app.client.chat.postMessage({
       channel: channelId,
-      text: `🔄 Recertificação AEX · Notificados: ${nNotified} · Revogados: ${nRevoked} · ${dateBrt}`,
+      text: `🔄 Recertificação AEX · Pré-avisos: ${nPreNotify} · Notificados: ${nNotified} · Revogados: ${nRevoked} · ${dateBrt}`,
       blocks: blocks as any,
       mrkdwn: true
     });
