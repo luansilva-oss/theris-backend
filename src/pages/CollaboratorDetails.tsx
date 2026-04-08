@@ -93,6 +93,38 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
     }
   }, [activeTab, id]);
 
+  const editUserPayload = useMemo(() => {
+    const u = data?.user;
+    if (!u) return null;
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      jobTitle: u.jobTitle ?? undefined,
+      departmentId: u.departmentRef?.id ?? null,
+      unitId: u.unitRef?.id ?? null,
+      departmentRef: u.departmentRef ?? null,
+      unitRef: u.unitRef ?? null,
+      systemProfile: (u as { systemProfile?: string }).systemProfile || 'VIEWER',
+      managerId: u.manager?.id ?? null,
+      roleId: u.role?.id ?? null,
+      isActive: u.isActive,
+    };
+  }, [
+    data?.user?.id,
+    data?.user?.name,
+    data?.user?.email,
+    data?.user?.jobTitle,
+    data?.user?.departmentRef?.id,
+    data?.user?.departmentRef?.name,
+    data?.user?.unitRef?.id,
+    data?.user?.unitRef?.name,
+    (data?.user as { systemProfile?: string } | undefined)?.systemProfile,
+    data?.user?.manager?.id,
+    data?.user?.role?.id,
+    data?.user?.isActive,
+  ]);
+
   if (loading) {
     return (
       <div style={{ padding: 24 }}>
@@ -134,37 +166,6 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   const managerViaRole =
     Boolean(user?.manager?.id && user?.role?.leaderId && user.manager.id === user.role.leaderId);
   const canEdit = currentUser && (currentUser.systemProfile === 'SUPER_ADMIN' || currentUser.systemProfile === 'GESTOR' || currentUser.systemProfile === 'ADMIN');
-
-  const editUserPayload = useMemo(
-    () => ({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      jobTitle: user.jobTitle ?? undefined,
-      departmentId: user.departmentRef?.id ?? null,
-      unitId: user.unitRef?.id ?? null,
-      departmentRef: user.departmentRef ?? null,
-      unitRef: user.unitRef ?? null,
-      systemProfile: (user as { systemProfile?: string }).systemProfile || 'VIEWER',
-      managerId: user.manager?.id ?? null,
-      roleId: user.role?.id ?? null,
-      isActive: user.isActive,
-    }),
-    [
-      user.id,
-      user.name,
-      user.email,
-      user.jobTitle,
-      user.departmentRef?.id,
-      user.departmentRef?.name,
-      user.unitRef?.id,
-      user.unitRef?.name,
-      (user as { systemProfile?: string }).systemProfile,
-      user.manager?.id,
-      user.role?.id,
-      user.isActive,
-    ]
-  );
 
   const loadDetails = () => fetchDetails().catch(() => {});
 
@@ -305,7 +306,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
             )}
           </div>
 
-          {canEdit && isEditModalOpen && currentUser && showToast && (
+          {canEdit && isEditModalOpen && editUserPayload && currentUser && showToast && (
             <EditUserModal
               isOpen={isEditModalOpen}
               onClose={() => setIsEditModalOpen(false)}
