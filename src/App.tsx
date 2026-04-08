@@ -909,12 +909,12 @@ export default function App() {
     if (isLoggedIn) {
       loadData();
       const interval = setInterval(() => {
-        if (anyStructureModalOpen) return;
+        if (anyStructureModalOpen || isEditUserModalOpen) return;
         loadData();
       }, 10000);
       return () => clearInterval(interval);
     }
-  }, [isLoggedIn, activeTab, anyStructureModalOpen]);
+  }, [isLoggedIn, activeTab, anyStructureModalOpen, isEditUserModalOpen]);
 
   useEffect(() => {
     if (isLoggedIn && (activeTab === 'TICKETS' || activeTab === 'MY_TICKETS')) loadTicketList();
@@ -1770,13 +1770,59 @@ export default function App() {
         <div className="nav-section">
           {(['SUPER_ADMIN', 'GESTOR', 'ADMIN', 'APPROVER'].includes(systemProfile)) ? (
             <>
+              {/* Geral */}
               <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { navigate('/dashboard'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Visão Geral</div>
+              {/* Gestão */}
+              <div
+                style={{
+                  paddingTop: 16,
+                  paddingBottom: 4,
+                  paddingLeft: 14,
+                  paddingRight: 14,
+                  borderTop: '1px solid var(--border)'
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    color: 'var(--text-muted)',
+                    fontWeight: 600
+                  }}
+                >
+                  Gestão
+                </span>
+              </div>
               {systemProfile !== 'APPROVER' && (
                 <>
                   <div className={`nav-item ${activeTab === 'PEOPLE' ? 'active' : ''}`} onClick={() => navigate('/people')}><Users size={18} /> Gestão de Pessoas</div>
                   <div className={`nav-item ${activeTab === 'TOOLS' ? 'active' : ''}`} onClick={() => { navigate('/tools'); setSelectedTool(null); }}><Layers size={18} /> Catálogo</div>
                 </>
               )}
+              <div className={`nav-item ${activeTab === 'TICKETS' ? 'active' : ''}`} onClick={() => navigate('/tickets')}><MessageSquare size={18} /> Gestão de Chamados</div>
+              {/* Monitoramento */}
+              <div
+                style={{
+                  paddingTop: 16,
+                  paddingBottom: 4,
+                  paddingLeft: 14,
+                  paddingRight: 14,
+                  borderTop: '1px solid var(--border)'
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                    color: 'var(--text-muted)',
+                    fontWeight: 600
+                  }}
+                >
+                  Monitoramento
+                </span>
+              </div>
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => navigate('/history')}><FileText size={18} /> Relatório</div>
               <div className={`nav-item ${activeTab === 'AUDIT_LOG' ? 'active' : ''}`} onClick={() => { navigate('/audit-log'); setAuditLogFilters({}); }}><Clock size={18} /> Histórico</div>
               {systemProfile === 'SUPER_ADMIN' && (
@@ -1785,7 +1831,6 @@ export default function App() {
               {systemProfile === 'SUPER_ADMIN' && (
                 <div className={`nav-item ${activeTab === 'ACTIVE_SESSIONS' ? 'active' : ''}`} onClick={() => navigate('/active-sessions')}><Monitor size={18} /> Sessões Ativas</div>
               )}
-              <div className={`nav-item ${activeTab === 'TICKETS' ? 'active' : ''}`} onClick={() => navigate('/tickets')}><MessageSquare size={18} /> Gestão de Chamados</div>
             </>
           ) : (
             <>

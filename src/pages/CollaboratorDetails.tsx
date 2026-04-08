@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, User as UserIcon, Mail, Briefcase, Building2, Hash, Clock, Pencil, Shield } from 'lucide-react';
 import { API_URL } from '../config';
@@ -134,6 +134,37 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
   const managerViaRole =
     Boolean(user?.manager?.id && user?.role?.leaderId && user.manager.id === user.role.leaderId);
   const canEdit = currentUser && (currentUser.systemProfile === 'SUPER_ADMIN' || currentUser.systemProfile === 'GESTOR' || currentUser.systemProfile === 'ADMIN');
+
+  const editUserPayload = useMemo(
+    () => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      jobTitle: user.jobTitle ?? undefined,
+      departmentId: user.departmentRef?.id ?? null,
+      unitId: user.unitRef?.id ?? null,
+      departmentRef: user.departmentRef ?? null,
+      unitRef: user.unitRef ?? null,
+      systemProfile: (user as { systemProfile?: string }).systemProfile || 'VIEWER',
+      managerId: user.manager?.id ?? null,
+      roleId: user.role?.id ?? null,
+      isActive: user.isActive,
+    }),
+    [
+      user.id,
+      user.name,
+      user.email,
+      user.jobTitle,
+      user.departmentRef?.id,
+      user.departmentRef?.name,
+      user.unitRef?.id,
+      user.unitRef?.name,
+      (user as { systemProfile?: string }).systemProfile,
+      user.manager?.id,
+      user.role?.id,
+      user.isActive,
+    ]
+  );
 
   const loadDetails = () => fetchDetails().catch(() => {});
 
@@ -278,20 +309,7 @@ export const CollaboratorDetails: React.FC<Props> = ({ id, onBack, onOpenAuditHi
             <EditUserModal
               isOpen={isEditModalOpen}
               onClose={() => setIsEditModalOpen(false)}
-              user={{
-                id: user!.id,
-                name: user!.name,
-                email: user!.email,
-                jobTitle: user!.jobTitle ?? undefined,
-                departmentId: user!.departmentRef?.id ?? null,
-                unitId: user!.unitRef?.id ?? null,
-                departmentRef: user!.departmentRef ?? null,
-                unitRef: user!.unitRef ?? null,
-                systemProfile: (user as { systemProfile?: string })?.systemProfile || 'VIEWER',
-                managerId: user!.manager?.id ?? null,
-                roleId: user!.role?.id ?? null,
-                isActive: user!.isActive,
-              }}
+              user={editUserPayload}
               onUpdate={handleEditSave}
               currentUser={currentUser!}
               allUsers={allUsers}
