@@ -483,6 +483,14 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
 
   const roleIdSelected = parsePipe(roleOk)?.id ?? null;
   const leaderForRole = roleIdSelected ? leaderByRoleId.get(roleIdSelected) ?? null : null;
+  console.log('[HIRE DEBUG]', {
+    deptId,
+    roleIdSelected,
+    roleOk,
+    leaderForRole,
+    leaderByRoleIdSize: leaderByRoleId.size,
+    leaderByRoleIdKeys: [...leaderByRoleId.keys()].slice(0, 5)
+  });
   const hireMgrSel = g('blk_hire_manager', 'hire_manager_select');
 
   const mgr = (v.blk_manager?.inp?.value as string | undefined) ?? '';
