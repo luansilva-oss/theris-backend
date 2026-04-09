@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
 import { sendSlackNotification } from '../services/slackService';
 import { syncUserToJumpCloud, provisionUserOnJumpCloud } from '../services/jumpcloudSyncService';
+import { bindUserToGoogleWorkspaceDirectory } from '../services/jumpcloudService';
 import { mapTherisUnitNameToJumpCloudCompany } from '../config/jumpcloud';
 import { hasProfile } from '../middleware/auth';
 import { isInfraTicketType, isInboxMember } from '../lib/infraTicket';
@@ -2362,6 +2363,29 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
       }
     }
 
+    const isHiring = ONBOARDING_REQUEST_TYPES.includes(request.type);
+    if (isHiring) {
+      if (request.status === 'PENDING_MANAGER_APPROVAL') {
+        canAddSolution = false;
+        solutionBlockReason =
+          'Aguardando aprovação do gestor direto antes que o Time de SI possa encerrar este chamado.';
+      } else if (request.status === 'PENDING_SI') {
+        const viewer = userId
+          ? await prisma.user.findUnique({ where: { id: userId }, select: { email: true } })
+          : null;
+        const isSI = viewer?.email && SI_BYPASS_APPROVER_EMAILS.includes(viewer.email.toLowerCase());
+        if (!isSI) {
+          canAddSolution = false;
+          solutionBlockReason = 'A solução final deve ser adicionada pelo Time de Segurança da Informação.';
+        }
+      } else if (
+        !['APROVADO', 'REPROVADO', 'RESOLVED', 'RESOLVIDO', 'CONCLUIDO', 'FECHADO'].includes(request.status)
+      ) {
+        canAddSolution = false;
+        solutionBlockReason = 'Este chamado ainda está em andamento.';
+      }
+    }
+
     const requestHistory = await prisma.historicoMudanca.findMany({
       where: { entidadeTipo: 'Request', entidadeId: id },
       orderBy: { createdAt: 'asc' },
@@ -3468,8 +3492,9 @@ async function executeHiringSiSideEffects(
     const onboardingResult = await runOnboardingAutomation(id, request as { type: string; details: string | null }, approverId);
     if (!onboardingResult) return;
 
-    void tryHiringJumpCloudProvisionForEmail(onboardingResult.userEmail)
-      .then(async (jumpCloudSi) => {
+    void (async () => {
+      try {
+        const jumpCloudSi = await tryHiringJumpCloudProvisionForEmail(onboardingResult.userEmail);
         if (jumpCloudSi?.outcome === 'created') {
           await prisma.request.update({ where: { id }, data: { jumpcloudCreatedAt: new Date() } }).catch(() => {});
           try {
@@ -3483,12 +3508,16 @@ async function executeHiringSiSideEffects(
             }
           } catch (_) {}
         }
-      })
-      .catch((err) => console.error('[HIRING] JumpCloud (Slack SI):', err));
-
-    void syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
-      console.error('[HIRING] sync JumpCloud (Slack SI):', err)
-    );
+        await syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId);
+        if (jumpCloudSi?.outcome === 'created' && jumpCloudSi.jumpcloudId) {
+          void bindUserToGoogleWorkspaceDirectory(jumpCloudSi.jumpcloudId).catch((e) =>
+            console.error('[HIRING] Falha ao vincular Google Workspace Directory:', e)
+          );
+        }
+      } catch (err) {
+        console.error('[HIRING] JumpCloud (Slack SI):', err);
+      }
+    })();
 
     try {
       await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);

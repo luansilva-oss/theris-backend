@@ -469,3 +469,39 @@ export async function recordPasswordExpiryNotification(userId: string): Promise<
     console.error('[JumpCloud] recordPasswordExpiryNotification:', e);
   }
 }
+
+const DEFAULT_JC_GOOGLE_WORKSPACE_DIRECTORY_ID = '684047c6ebf8f50001856182';
+
+/**
+ * Associa o usuário JumpCloud (system user _id) ao diretório Google Workspace configurado no painel JC.
+ */
+export async function bindUserToGoogleWorkspaceDirectory(jumpcloudUserId: string): Promise<void> {
+  const apiKey = process.env.JUMPCLOUD_API_KEY?.trim();
+  if (!apiKey) {
+    console.warn('[JumpCloud] bindUserToGoogleWorkspaceDirectory: JUMPCLOUD_API_KEY ausente');
+    return;
+  }
+  const id = (jumpcloudUserId || '').trim();
+  if (!id) return;
+
+  const directoryId =
+    process.env.JC_GOOGLE_WORKSPACE_DIRECTORY_ID?.trim() || DEFAULT_JC_GOOGLE_WORKSPACE_DIRECTORY_ID;
+  const url = `https://console.jumpcloud.com/api/v2/users/${id}/associations`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify({
+      op: 'add',
+      type: 'g_suite',
+      id: directoryId
+    })
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`JumpCloud bind directory failed: ${res.status} ${body}`);
+  }
+}
