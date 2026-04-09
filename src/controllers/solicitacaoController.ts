@@ -3508,6 +3508,8 @@ async function executeHiringSiSideEffects(
             }
           } catch (_) {}
         }
+        // Aguarda propagação no JumpCloud antes de sincronizar grupos ap_*
+        await new Promise((resolve) => setTimeout(resolve, 3000));
         await syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId);
         if (jumpCloudSi?.outcome === 'created' && jumpCloudSi.jumpcloudId) {
           void bindUserToGoogleWorkspaceDirectory(jumpCloudSi.jumpcloudId).catch((e) =>
