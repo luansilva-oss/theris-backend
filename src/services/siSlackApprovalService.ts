@@ -32,8 +32,15 @@ export function getSiRecipientSlackIdsForAex(ownerApprovedBySlackId: string | nu
   return rest.length > 0 ? rest : all;
 }
 
-export function getSiRecipientSlackIdsForOnboarding(): string[] {
-  return getSiSlackIdsFromEnv();
+/** Onboarding HIRING: exclui da lista SI quem aprovou como gestor e/ou o solicitante (conflito de interesse). Lista vazia → todos (igual AEX). */
+export function getSiRecipientSlackIdsForOnboarding(
+  managerSlackId?: string | null,
+  requesterSlackId?: string | null
+): string[] {
+  const all = getSiSlackIdsFromEnv();
+  const excluded = new Set([managerSlackId, requesterSlackId].filter(Boolean) as string[]);
+  const filtered = all.filter((id) => !excluded.has(id));
+  return filtered.length > 0 ? filtered : all;
 }
 
 async function openDmPostReturnTs(
@@ -164,8 +171,14 @@ export async function sendSiTeamAexApprovalDms(
   }
 }
 
-export async function sendSiTeamOnboardingApprovalDms(client: WebClient, requestId: string, summary: string): Promise<void> {
-  const recipients = getSiRecipientSlackIdsForOnboarding();
+export async function sendSiTeamOnboardingApprovalDms(
+  client: WebClient,
+  requestId: string,
+  summary: string,
+  managerSlackId?: string | null,
+  requesterSlackId?: string | null
+): Promise<void> {
+  const recipients = getSiRecipientSlackIdsForOnboarding(managerSlackId, requesterSlackId);
   const blocks = onboardingSiBlocks(requestId, summary);
   const refs: SiDmRef[] = [];
   for (const uid of recipients) {
@@ -262,8 +275,17 @@ export async function handleSiDualApprovalSlackAction(params: {
 
   if (!isHiring && !isAex) return;
 
-  const allowed =
-    isHiring ? getSiRecipientSlackIdsForOnboarding() : getSiRecipientSlackIdsForAex(req.ownerApprovedBy ?? undefined);
+  let requesterSlackIdForFilter: string | null = null;
+  if (isHiring && req.requester?.email) {
+    try {
+      const lu = await params.client.users.lookupByEmail({ email: req.requester.email });
+      requesterSlackIdForFilter = lu.user?.id ?? null;
+    } catch (_) {}
+  }
+
+  const allowed = isHiring
+    ? getSiRecipientSlackIdsForOnboarding(req.ownerApprovedBy ?? undefined, requesterSlackIdForFilter)
+    : getSiRecipientSlackIdsForAex(req.ownerApprovedBy ?? undefined);
   if (!allowed.includes(actorSlackId)) {
     await params.respond?.({
       response_type: 'ephemeral',
@@ -276,6 +298,14 @@ export async function handleSiDualApprovalSlackAction(params: {
     await params.respond?.({
       response_type: 'ephemeral',
       text: 'Quem aprovou como Owner não pode aprovar também como SI neste chamado.'
+    });
+    return;
+  }
+
+  if (isHiring && req.ownerApprovedBy && actorSlackId === req.ownerApprovedBy) {
+    await params.respond?.({
+      response_type: 'ephemeral',
+      text: 'Quem aprovou como gestor direto não pode aprovar também como SI neste chamado.'
     });
     return;
   }

@@ -973,7 +973,8 @@ async function runHiringSlackFlowAfterCreate(
   client: WebClient,
   created: { id: string; status: string; details: string | null },
   detailsWithMeta: Record<string, unknown>,
-  requesterName: string
+  requesterName: string,
+  requesterSlackId?: string | null
 ): Promise<void> {
   const short = created.id.slice(0, 8);
   const d = detailsWithMeta;
@@ -1050,7 +1051,7 @@ async function runHiringSlackFlowAfterCreate(
     await prisma.request.update({ where: { id: created.id }, data: { details: JSON.stringify(parsed) } });
   } else if (created.status === 'PENDING_SI') {
     const { sendSiTeamOnboardingApprovalDms } = await import('./siSlackApprovalService');
-    await sendSiTeamOnboardingApprovalDms(client, created.id, summaryLines);
+    await sendSiTeamOnboardingApprovalDms(client, created.id, summaryLines, null, requesterSlackId ?? null);
   }
 }
 
@@ -1205,9 +1206,13 @@ async function saveRequest(
     }
 
     if (dbType === 'HIRING') {
-      void runHiringSlackFlowAfterCreate(client, created, detailsWithMeta, requesterPeople?.name || 'Solicitante').catch((e) =>
-        console.error('[HIRING] pós-criação Slack:', e)
-      );
+      void runHiringSlackFlowAfterCreate(
+        client,
+        created,
+        detailsWithMeta,
+        requesterPeople?.name || 'Solicitante',
+        body.user?.id
+      ).catch((e) => console.error('[HIRING] pós-criação Slack:', e));
     }
 
     if (dbType === 'FIRING') {
@@ -1597,7 +1602,9 @@ slackApp.action({ action_id: /^onb_mgr_(approve|reject)$/, block_id: 'onb_mgr_de
         approverId: null,
         adminNote: 'Aprovado pelo gestor direto (Slack).',
         updatedAt: new Date(),
-        siSlackMessageTs: null
+        siSlackMessageTs: null,
+        ownerApprovedBy: actorSlackId,
+        ownerApprovedByName: deciderName
       }
     });
     if (cnt.count === 0) {
@@ -1612,8 +1619,16 @@ slackApp.action({ action_id: /^onb_mgr_(approve|reject)$/, block_id: 'onb_mgr_de
     const ad = String(details.actionDate || details.startDate || '—');
     const summaryLines = `*Novo colaborador:* ${collab}\n*Cargo:* ${role}\n*Departamento:* ${dept}\n*Unidade:* ${unit}\n*Tipo de contratação:* ${ct}\n*Data de ação:* ${ad}\n*Solicitante:* ${req.requester?.name || '—'}`;
 
+    let requesterSlackId: string | null = null;
+    if (req.requester?.email) {
+      try {
+        const lu = await client.users.lookupByEmail({ email: req.requester.email });
+        requesterSlackId = lu.user?.id ?? null;
+      } catch (_) {}
+    }
+
     const { sendSiTeamOnboardingApprovalDms } = await import('./siSlackApprovalService');
-    await sendSiTeamOnboardingApprovalDms(client, requestId, summaryLines);
+    await sendSiTeamOnboardingApprovalDms(client, requestId, summaryLines, actorSlackId, requesterSlackId);
 
     await postSlackAcessosChannel(
       client,
