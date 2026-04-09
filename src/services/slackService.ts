@@ -966,6 +966,92 @@ function isRhBypassRequester(name: string | null | undefined): boolean {
   return n === RH_BYPASS_REQUESTER_NAME || n.toLowerCase().includes('renata czapiewski');
 }
 
+/** Pós-criação HIRING: canal acessos + DM ao gestor (e-mail) ou DMs ao SI (bypass RH). */
+async function runHiringSlackFlowAfterCreate(
+  client: WebClient,
+  created: { id: string; status: string; details: string | null },
+  detailsWithMeta: Record<string, unknown>,
+  requesterName: string
+): Promise<void> {
+  const short = created.id.slice(0, 8);
+  const d = detailsWithMeta;
+  const collab = String(d.collaboratorName || '—');
+  const role = String(d.role || '—');
+  const dept = String(d.department || d.dept || '—');
+  const unit = String(d.unit || '—');
+  const ct = String(d.contractType || '—');
+  const ad = String(d.actionDate || d.startDate || '—');
+  const summaryLines = `*Novo colaborador:* ${collab}\n*Cargo:* ${role}\n*Departamento:* ${dept}\n*Unidade:* ${unit}\n*Tipo de contratação:* ${ct}\n*Data de ação:* ${ad}\n*Solicitante (Theris):* ${requesterName}`;
+
+  await postSlackAcessosChannel(client, `📋 Onboarding aberto · ${collab} · #${short} · ${formatTimestampBrt()} BRT`, [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `📋 *Onboarding aberto*\n*Colaborador:* ${collab}\n*Solicitante:* ${requesterName}\n*Quando:* ${formatTimestampBrt()} BRT\n*Chamado:* #${short}`
+      }
+    }
+  ]);
+
+  if (created.status === 'PENDING_MANAGER_APPROVAL') {
+    const mgrEmail = String(d.managerEmail || '').trim().toLowerCase();
+    if (!mgrEmail) return;
+    let mgrSlackId: string;
+    try {
+      const lu = await client.users.lookupByEmail({ email: mgrEmail });
+      mgrSlackId = lu.user?.id || '';
+      if (!mgrSlackId) {
+        console.warn('[HIRING] Gestor sem usuário Slack para o e-mail:', mgrEmail);
+        return;
+      }
+    } catch (e) {
+      console.error('[HIRING] lookupByEmail gestor:', e);
+      return;
+    }
+
+    const text = `Onboarding #${short} — aprovação como gestor`;
+    const blocks: unknown[] = [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `👤 *Nova contratação — sua aprovação (#${short})*\n\n${summaryLines}\n\nAvalie o chamado:` }
+      },
+      {
+        type: 'actions',
+        block_id: 'onb_mgr_decision',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '✅ Aprovar', emoji: true },
+            action_id: 'onb_mgr_approve',
+            value: created.id,
+            style: 'primary'
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '❌ Recusar', emoji: true },
+            action_id: 'onb_mgr_reject',
+            value: created.id
+          }
+        ]
+      }
+    ];
+    const open = await client.conversations.open({ users: mgrSlackId });
+    const ch = open.channel?.id;
+    if (!ch) return;
+    const pm = await client.chat.postMessage({ channel: ch, text, blocks: blocks as any });
+    const ts = pm.ts;
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = JSON.parse(created.details || '{}');
+    } catch (_) {}
+    parsed.onboardingManagerDm = { userId: mgrSlackId, ts };
+    await prisma.request.update({ where: { id: created.id }, data: { details: JSON.stringify(parsed) } });
+  } else if (created.status === 'PENDING_SI') {
+    const { sendSiTeamOnboardingApprovalDms } = await import('./siSlackApprovalService');
+    await sendSiTeamOnboardingApprovalDms(client, created.id, summaryLines);
+  }
+}
+
 async function saveRequest(
   body: any,
   client: any,
@@ -1030,23 +1116,33 @@ async function saveRequest(
       source: 'slack'
     };
 
-    // Regra de bypass /pessoas: Renata Czapiewski Silva pula gestor e vai direto para SI
-    if (PEOPLE_REQUEST_TYPES_SLACK.includes(dbType)) {
-      const requester = await prisma.user.findUnique({
-        where: { id: requesterId },
-        select: { name: true, managerId: true }
-      });
-      if (isRhBypassRequester(requester?.name)) {
+    const requesterPeople = await prisma.user.findUnique({
+      where: { id: requesterId },
+      select: { name: true, managerId: true }
+    });
+
+    // Contratação (/pessoas): gestor (e-mail informado) → SI (padrão AEX)
+    if (dbType === 'HIRING') {
+      status = 'PENDING_MANAGER_APPROVAL';
+      currentApproverRole = 'HIRING_DIRECT_MANAGER';
+      approverId = null;
+      if (isRhBypassRequester(requesterPeople?.name)) {
+        status = 'PENDING_SI';
+        currentApproverRole = 'SI_ANALYST';
+        detailsWithMeta = { ...detailsWithMeta, bypassGestor: true };
+      }
+    } else if (PEOPLE_REQUEST_TYPES_SLACK.includes(dbType)) {
+      // Regra de bypass /pessoas: Renata pula gestor Theris e vai direto para SI
+      if (isRhBypassRequester(requesterPeople?.name)) {
         status = 'PENDENTE_SI';
         currentApproverRole = 'SI_ANALYST';
         approverId = null;
         detailsWithMeta = { ...detailsWithMeta, bypassGestor: true };
-      } else if (requester?.managerId) {
+      } else if (requesterPeople?.managerId) {
         status = 'PENDENTE_GESTOR';
         currentApproverRole = 'MANAGER';
-        approverId = requester.managerId;
+        approverId = requesterPeople.managerId;
       }
-      // se não tem gestor, mantém PENDENTE_SI
     }
 
     // Inclui Slack ID e e-mail do solicitante nos detalhes (auditoria e exibição no painel)
@@ -1064,6 +1160,9 @@ async function saveRequest(
       approverId = null;
     }
 
+    const hireFull = dbType === 'HIRING' ? String((details as { collaboratorName?: string }).collaboratorName || '') : null;
+    const hireMgrEmail = dbType === 'HIRING' ? String((details as { managerEmail?: string }).managerEmail || '').trim() : null;
+
     const created = await prisma.request.create({
       data: {
         requesterId,
@@ -1079,24 +1178,60 @@ async function saveRequest(
         ...(isExtraordinary && accessLevel && { accessLevel }),
         ...(actionDate && { actionDate: new Date(actionDate) }),
         ...(accessPeriodDays != null && { accessPeriodDays: Math.round(accessPeriodDays) }),
-        ...(accessPeriodRaw && { accessPeriodRaw })
+        ...(accessPeriodRaw && { accessPeriodRaw }),
+        ...(dbType === 'HIRING' && hireFull && { onboardingFullName: hireFull }),
+        ...(dbType === 'HIRING' && hireMgrEmail && { onboardingManagerEmail: hireMgrEmail })
       }
     });
 
     console.log('[Chamado] Tentando enviar notificação SI para chamado:', created.id, 'tipo:', created.type);
     try {
-      await notificarSINovoTicket({
-        id: created.id,
-        type: created.type,
-        status: created.status,
-        justification: created.justification,
-        details: created.details,
-        requesterId: created.requesterId,
-        createdAt: created.createdAt
-      });
-      console.log('[Chamado] Slack SI enviado com sucesso para chamado:', created.id);
+      if (dbType !== 'HIRING') {
+        await notificarSINovoTicket({
+          id: created.id,
+          type: created.type,
+          status: created.status,
+          justification: created.justification,
+          details: created.details,
+          requesterId: created.requesterId,
+          createdAt: created.createdAt
+        });
+        console.log('[Chamado] Slack SI enviado com sucesso para chamado:', created.id);
+      }
     } catch (notifErr) {
       console.error('[Chamado] Erro ao enviar Slack SI:', notifErr);
+    }
+
+    if (dbType === 'HIRING') {
+      void runHiringSlackFlowAfterCreate(client, created, detailsWithMeta, requesterPeople?.name || 'Solicitante').catch((e) =>
+        console.error('[HIRING] pós-criação Slack:', e)
+      );
+    }
+
+    if (dbType === 'FIRING') {
+      const short = created.id.slice(0, 8);
+      const d = detailsWithMeta;
+      const nome = String(d.collaboratorName || '—');
+      const cargo = String(d.role || '—');
+      const dept = String(d.dept || d.department || '—');
+      const sol = requesterPeople?.name || 'Solicitante';
+      firePostSlackAcessosChannel(
+        `🔴 Offboarding aberto — ${nome}, ${cargo}, ${dept} | Solicitante: ${sol} | Ticket: #${short}`
+      );
+    }
+    if (dbType === 'CHANGE_ROLE') {
+      const short = created.id.slice(0, 8);
+      const d = detailsWithMeta;
+      const nome = String(d.collaboratorName || '—');
+      const cur = (d.current as { role?: string; dept?: string }) || {};
+      const fut = (d.future as { role?: string; dept?: string }) || {};
+      const cargoAtual = String(cur.role || '—');
+      const novoCargo = String(fut.role || '—');
+      const dept = String(fut.dept || cur.dept || '—');
+      const sol = requesterPeople?.name || 'Solicitante';
+      firePostSlackAcessosChannel(
+        `🔄 Movimentação interna aberta — ${nome}: ${cargoAtual} → ${novoCargo}, ${dept} | Solicitante: ${sol} | Ticket: #${short}`
+      );
     }
 
     if (isExtraordinary && toolName) {
@@ -1396,6 +1531,178 @@ slackApp.action({ action_id: /^aex_owner_(approve|reject)_v2$/, block_id: 'aex_o
   } catch (e) {
     console.error('❌ Erro ao processar decisão AEX pelo owner:', e);
   }
+});
+
+// ============================================================
+// Onboarding (HIRING): gestor direto Aprovar / Recusar — action_id onb_mgr_approve | onb_mgr_reject
+// ============================================================
+slackApp.action({ action_id: /^onb_mgr_(approve|reject)$/, block_id: 'onb_mgr_decision' }, async ({ ack, body, client, respond }) => {
+  const b = body as any;
+  if (b.type !== 'block_actions') {
+    await ack();
+    return;
+  }
+  await ack();
+  const action = b.actions?.[0];
+  const requestId = action?.value as string | undefined;
+  const actorSlackId = b.user?.id as string | undefined;
+  if (!requestId || !actorSlackId) return;
+
+  const isApprove = action?.action_id === 'onb_mgr_approve';
+
+  const req = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, name: true, email: true } } }
+  });
+  if (!req || req.type !== 'HIRING' || req.status !== 'PENDING_MANAGER_APPROVAL') {
+    await respond?.({ response_type: 'ephemeral', text: 'Este chamado não está aguardando sua aprovação ou já foi tratado.' });
+    return;
+  }
+
+  let details: Record<string, unknown> = {};
+  try {
+    details = JSON.parse(req.details || '{}');
+  } catch (_) {}
+  const mgrEmail = String(details.managerEmail || '').trim().toLowerCase();
+  if (!mgrEmail) return;
+
+  let expectedSlack: string | null = null;
+  try {
+    const lu = await client.users.lookupByEmail({ email: mgrEmail });
+    expectedSlack = lu.user?.id ?? null;
+  } catch (_) {}
+  if (!expectedSlack || expectedSlack !== actorSlackId) {
+    await respond?.({ response_type: 'ephemeral', text: 'Apenas o gestor direto (e-mail informado no formulário) pode aprovar ou recusar.' });
+    return;
+  }
+
+  let deciderName = 'Gestor';
+  try {
+    const info = await client.users.info({ user: actorSlackId });
+    deciderName = info.user?.real_name || info.user?.name || deciderName;
+  } catch (_) {}
+
+  const short = requestId.slice(0, 8);
+  const collab = String(details.collaboratorName || '—');
+  const msgTs = b.message?.ts as string | undefined;
+
+  if (isApprove) {
+    const cnt = await prisma.request.updateMany({
+      where: { id: requestId, status: 'PENDING_MANAGER_APPROVAL', type: 'HIRING' },
+      data: {
+        status: 'PENDING_SI',
+        currentApproverRole: 'SI_ANALYST',
+        approverId: null,
+        adminNote: 'Aprovado pelo gestor direto (Slack).',
+        updatedAt: new Date(),
+        siSlackMessageTs: null
+      }
+    });
+    if (cnt.count === 0) {
+      await respond?.({ response_type: 'ephemeral', text: 'Este chamado já foi tratado.' });
+      return;
+    }
+
+    const role = String(details.role || '—');
+    const dept = String(details.department || details.dept || '—');
+    const unit = String(details.unit || '—');
+    const ct = String(details.contractType || '—');
+    const ad = String(details.actionDate || details.startDate || '—');
+    const summaryLines = `*Novo colaborador:* ${collab}\n*Cargo:* ${role}\n*Departamento:* ${dept}\n*Unidade:* ${unit}\n*Tipo de contratação:* ${ct}\n*Data de ação:* ${ad}\n*Solicitante:* ${req.requester?.name || '—'}`;
+
+    const { sendSiTeamOnboardingApprovalDms } = await import('./siSlackApprovalService');
+    await sendSiTeamOnboardingApprovalDms(client, requestId, summaryLines);
+
+    await postSlackAcessosChannel(
+      client,
+      `✅ Onboarding aprovado pelo gestor · ${collab} · #${short} · ${deciderName} · ${formatTimestampBrt()} BRT`
+    );
+    await postSlackAcessosChannel(
+      client,
+      `ℹ️ Solicitação de aprovação SI enviada (DM) · ${collab} · #${short} · ${formatTimestampBrt()} BRT`
+    );
+
+    if (msgTs) {
+      await client.chat
+        .update({
+          channel: b.channel?.id || b.container?.channel_id,
+          ts: msgTs,
+          text: `✅ Você aprovou o onboarding #${short}. Encaminhado ao SI.`,
+          blocks: [
+            {
+              type: 'section',
+              text: { type: 'mrkdwn', text: `✅ *Aprovado por você* (#${short})\nEncaminhado ao time de SI para aprovação final.` }
+            }
+          ]
+        })
+        .catch((e) => console.error('[onb_mgr] chat.update:', e));
+    }
+  } else {
+    const cnt = await prisma.request.updateMany({
+      where: { id: requestId, status: 'PENDING_MANAGER_APPROVAL', type: 'HIRING' },
+      data: {
+        status: 'REJECTED',
+        adminNote: 'Recusado pelo gestor direto (Slack).',
+        updatedAt: new Date()
+      }
+    });
+    if (cnt.count === 0) {
+      await respond?.({ response_type: 'ephemeral', text: 'Este chamado já foi tratado.' });
+      return;
+    }
+
+    if (req.requester?.email) {
+      try {
+        const lookup = await client.users.lookupByEmail({ email: req.requester.email });
+        if (lookup.user?.id) {
+          await sendDmToSlackUser(
+            client,
+            lookup.user.id,
+            `❌ O gestor direto recusou o pedido de onboarding (#${short}) para *${collab}*.`
+          );
+        }
+      } catch (e) {
+        console.error('[onb_mgr] DM solicitante:', e);
+      }
+    }
+
+    await postSlackAcessosChannel(
+      client,
+      `❌ Onboarding recusado pelo gestor · ${collab} · #${short} · ${deciderName} · ${formatTimestampBrt()} BRT`
+    );
+
+    if (msgTs) {
+      await client.chat
+        .update({
+          channel: b.channel?.id || b.container?.channel_id,
+          ts: msgTs,
+          text: `❌ Você recusou o onboarding #${short}.`,
+          blocks: [
+            {
+              type: 'section',
+              text: { type: 'mrkdwn', text: `❌ *Recusado por você* (#${short})` }
+            }
+          ]
+        })
+        .catch((e) => console.error('[onb_mgr] chat.update:', e));
+    }
+  }
+});
+
+// ============================================================
+// AEX + Onboarding: SI Aprovar / Recusar — aex_si_approve_v2 | aex_si_reject_v2
+// ============================================================
+slackApp.action({ action_id: /^aex_si_(approve|reject)_v2$/, block_id: 'aex_si_decision' }, async ({ ack, body, client, respond }) => {
+  const b = body as any;
+  if (b.type !== 'block_actions') {
+    await ack();
+    return;
+  }
+  await ack();
+  const action = b.actions?.[0];
+  const isApprove = action?.action_id === 'aex_si_approve_v2';
+  const { handleSiDualApprovalSlackAction } = await import('./siSlackApprovalService');
+  await handleSiDualApprovalSlackAction({ client, body: b, isApprove, respond });
 });
 
 // ============================================================
@@ -2592,13 +2899,25 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   if (!emailValue) {
     errs.blk_email = 'Informe o e-mail corporativo.';
   }
+  const mgrName = v.blk_manager?.inp?.value?.trim() || '';
+  if (!mgrName) errs.blk_manager = 'Informe o gestor direto.';
+  const mgrEmail = v.blk_manager_email?.inp?.value?.trim() || '';
+  if (!mgrEmail) {
+    errs.blk_manager_email = 'Informe o e-mail do gestor direto.';
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mgrEmail)) {
+    errs.blk_manager_email = 'E-mail do gestor inválido.';
+  }
+  const actionDate = v.blk_action_date?.picker?.selected_date;
+  if (!actionDate) errs.blk_action_date = 'Selecione a data de ação.';
+  if (!v.blk_contract_type?.inp_select?.selected_option?.value) {
+    errs.blk_contract_type = 'Selecione o tipo de contratação.';
+  }
   if (Object.keys(errs).length > 0) {
     await ack({ response_action: 'errors', errors: errs });
     return;
   }
   await ack();
-  const name = v.blk_name.inp.value;
-  const startDate = v.blk_date.picker?.selected_date || 'A definir';
+  const name = v.blk_name.inp.value.trim();
   const unitP = parsePessoasPipeSelect(v.blk_hire_unit.hire_unit_select.selected_option?.value);
   const deptP = parsePessoasPipeSelect(v.blk_hire_dept.hire_dept_select.selected_option?.value);
   const roleP = parsePessoasPipeSelect(v.blk_hire_role.hire_role_select.selected_option?.value);
@@ -2607,7 +2926,9 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   const details: Record<string, unknown> = {
     info: `Contratação: ${name}`,
     collaboratorName: name,
-    startDate,
+    fullName: name,
+    startDate: actionDate,
+    actionDate,
     unit: unitName,
     ...(unitP && unitP.id !== '__noid__' ? { unitId: unitP.id } : {}),
     role: roleP?.name ?? '',
@@ -2615,13 +2936,23 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
     department: deptP?.name ?? '',
     ...(roleP ? { newRoleId: roleP.id } : {}),
     ...(deptP ? { newDepartmentId: deptP.id } : {}),
-    managerName: v.blk_manager?.inp?.value?.trim() || undefined,
+    managerName: mgrName,
+    managerEmail: mgrEmail,
     corporateEmail: emailValue,
     collaboratorEmail: emailValue,
     contractType: contractOpt?.value ?? contractOpt?.text?.text ?? undefined,
     obs: v.blk_obs?.inp?.value?.trim() || undefined
   };
-  await saveRequest(body, client, 'HIRING', details, `Início: ${startDate}`, `✅ Contratação de *${name}* registrada.`);
+  await saveRequest(
+    body,
+    client,
+    'HIRING',
+    details,
+    `Data de ação: ${actionDate}`,
+    `✅ Contratação de *${name}* registrada. Aguardando aprovação do gestor direto (e-mail informado).`,
+    false,
+    actionDate
+  );
 });
 
 slackApp.view('submit_fire', async ({ ack, body, view, client }) => {
@@ -3300,6 +3631,37 @@ export function formatTimestampBrt(d: Date = new Date()): string {
     minute: '2-digit',
     second: '2-digit'
   });
+}
+
+/** Canal de auditoria de acessos/onboarding (SLACK_ACESSOS_CHANNEL_ID). */
+export async function postSlackAcessosChannel(
+  client: WebClient,
+  text: string,
+  blocks?: unknown[]
+): Promise<void> {
+  const ch = (process.env.SLACK_ACESSOS_CHANNEL_ID || '').trim();
+  if (!ch) return;
+  await client.chat
+    .postMessage({
+      channel: ch,
+      text,
+      ...(blocks ? { blocks: blocks as any } : {})
+    })
+    .catch((e) => console.error('[SLACK_ACESSOS_CHANNEL_ID] postMessage:', e));
+}
+
+/** Fire-and-forget: canal SLACK_ACESSOS_CHANNEL_ID com timestamp BRT (mesmo padrão do HIRING). */
+export function firePostSlackAcessosChannel(line: string): void {
+  const text = `${line} · ${formatTimestampBrt()} BRT`;
+  void (async () => {
+    try {
+      const app = getSlackApp();
+      if (!app?.client) return;
+      await postSlackAcessosChannel(app.client, text);
+    } catch (e) {
+      console.error('[firePostSlackAcessosChannel]', e);
+    }
+  })();
 }
 
 /** Atualiza a mensagem do Block Kit após clique em botão (DM ou canal). */

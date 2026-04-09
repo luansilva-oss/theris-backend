@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import { rateLimit } from 'express-rate-limit';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -57,6 +57,7 @@ import { startCleanupSessionsCron } from './crons/cleanupSessions';
 import { startReviewAccessCron } from './crons/reviewAccessCron';
 import { startJumpCloudPasswordCron } from './crons/jumpcloudPasswordCron';
 import { startJumpCloudPasswordExpiryCron } from './crons/jumpcloudPasswordExpiryCron';
+import { startOnboardingSlackActionDateCron } from './crons/onboardingSlackActionDateCron';
 import { startJumpCloudDivergenceCron } from './jobs/jumpcloudDivergenceCheck';
 import { startValidateAexToolSyncCron } from './jobs/validateAexToolSync';
 import { startExpireExtraordinaryAccessCron } from './jobs/expireExtraordinaryAccess';
@@ -116,6 +117,8 @@ startReviewAccessCron();
 startJumpCloudPasswordCron();
 // Cron: JumpCloud senha expirando em 7 dias, 1x/dia às 08:00 (Brasília)
 startJumpCloudPasswordExpiryCron();
+// Cron: lembrete data de ação Slack (onboarding HIRING aprovado), diário 08:30 BRT
+startOnboardingSlackActionDateCron();
 // Cron: divergências Employment Theris × JumpCloud, segundas às 08:00 (Brasília)
 startJumpCloudDivergenceCron();
 // Cron: validação catálogo ap_* × grupos JumpCloud, segundas às 08:30 (Brasília)
@@ -163,7 +166,7 @@ const apiGeneralLimiter = rateLimit({
   message: { error: 'Muitas requisições. Tente novamente em um minuto.' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip ?? req.socket?.remoteAddress ?? 'unknown',
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? req.socket?.remoteAddress ?? '127.0.0.1'),
 });
 app.use('/api', apiGeneralLimiter);
 
@@ -175,7 +178,7 @@ const authRateLimiter = rateLimit({
   message: { error: 'Muitas tentativas. Tente novamente em alguns minutos.' },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip ?? req.socket?.remoteAddress ?? 'unknown',
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? req.socket?.remoteAddress ?? '127.0.0.1'),
 });
 app.use('/api/login', authRateLimiter);
 app.use('/api/auth', authRateLimiter);

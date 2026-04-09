@@ -17,7 +17,8 @@ const NEUTRAL_SPECIFIC_STYLES: Record<string, { bg: string; color: string }> = {
   PENDENTE_OWNER: { bg: 'rgba(249, 115, 22, 0.2)', color: '#f97316' },
   PENDING_OWNER: { bg: 'rgba(249, 115, 22, 0.2)', color: '#f97316' },
   PENDENTE_SI: { bg: 'rgba(14, 165, 233, 0.2)', color: '#0EA5E9' },
-  PENDING_SI: { bg: 'rgba(14, 165, 233, 0.2)', color: '#0EA5E9' }
+  PENDING_SI: { bg: 'rgba(14, 165, 233, 0.2)', color: '#0EA5E9' },
+  PENDING_MANAGER_APPROVAL: { bg: 'rgba(249, 115, 22, 0.2)', color: '#f97316' }
 };
 
 export type StatusConfigEntry = { label: string; variant: RequestStatusVariant };
@@ -49,6 +50,7 @@ export const REQUEST_STATUS_CONFIG: Record<string, StatusConfigEntry> = {
   PENDENTE_OWNER: { label: 'Pendente (responsável)', variant: 'neutral' },
   PENDING_OWNER: { label: 'Pendente (Owner)', variant: 'neutral' },
   PENDING_SI: { label: 'Pendente (SI)', variant: 'neutral' },
+  PENDING_MANAGER_APPROVAL: { label: 'Pendente (gestor direto)', variant: 'neutral' },
   PENDING: { label: 'Pendente', variant: 'neutral' },
   PENDING_LEADER: { label: 'Pendente (líder)', variant: 'neutral' },
   EM_ATENDIMENTO: { label: 'Em atendimento', variant: 'neutral' },
@@ -70,7 +72,8 @@ export const CHAMADO_PENDING_ALL_STATUSES: string[] = [
   'PENDENTE_OWNER',
   'PENDING_OWNER',
   'PENDENTE_SI',
-  'PENDING_SI'
+  'PENDING_SI',
+  'PENDING_MANAGER_APPROVAL'
 ];
 
 /**
@@ -83,6 +86,8 @@ export const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'PENDENTE_SI', label: 'Pendente (SI)' },
   { value: 'PENDENTE_OWNER', label: 'Pendente (responsável)' },
   { value: 'PENDING_OWNER', label: 'Pendente (Owner)' },
+  { value: 'PENDING_SI', label: 'Pendente (SI)' },
+  { value: 'PENDING_MANAGER_APPROVAL', label: 'Pendente (gestor direto)' },
   { value: 'EM_ATENDIMENTO', label: 'Em atendimento' },
   { value: 'AGENDADO', label: 'Agendado' },
   { value: 'APROVADO', label: 'Aprovado' },
@@ -101,6 +106,7 @@ export const CHAMADO_STATUS_EDIT_OPTIONS: { value: string; label: string }[] = [
   { value: 'PENDENTE_OWNER', label: 'Pendente (responsável)' },
   { value: 'PENDING_OWNER', label: 'Pendente (Owner)' },
   { value: 'PENDING_SI', label: 'Pendente (SI)' },
+  { value: 'PENDING_MANAGER_APPROVAL', label: 'Pendente (gestor direto)' },
   { value: 'EM_ATENDIMENTO', label: 'Em atendimento' },
   { value: 'AGENDADO', label: 'Agendado' },
   { value: 'APROVADO', label: 'Aprovado' },

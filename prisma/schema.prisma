@@ -266,6 +266,16 @@ model Request {
   accessPeriodDays      Int?     // Período em dias convertido (AEX /acessos)
   accessPeriodRaw       String?  // Ex: "30 dias", "2 meses"
 
+  /// Onboarding (/pessoas Contratação): nome completo e e-mail do gestor (denormalizado; também em details JSON).
+  onboardingFullName     String?
+  onboardingManagerEmail String?
+  /// DMs do SI com botões Aprovar/Recusar — [{ "userId": "U…", "ts": "…" }] para chat.update após decisão.
+  siSlackMessageTs       Json?
+  jumpcloudCreatedAt     DateTime?
+  googleCreatedAt        DateTime?
+  /// Lembrete único: data de ação (Slack workspace) atingida — cron onboarding.
+  slackActionDateNotifiedAt DateTime?
+
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

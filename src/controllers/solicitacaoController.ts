@@ -242,8 +242,28 @@ async function runOffboardingAutomation(
   }
 
   void import('../services/jumpcloudSyncService')
-    .then((m) => m.suspendUserOnJumpCloud(targetUser.email))
+    .then((m) =>
+      m.suspendUserOnJumpCloud(targetUser.email).then(() => {
+        slack.firePostSlackAcessosChannel(`🔧 Usuário removido/suspenso no JumpCloud | Ticket: #${requestId.slice(0, 8)}`);
+      })
+    )
     .catch((err) => console.error('[OFFBOARDING] Falha fire-and-forget suspensão JC:', err));
+
+  void import('../services/googleWorkspaceService')
+    .then(({ suspendGoogleWorkspaceUserFireAndForget }) => {
+      suspendGoogleWorkspaceUserFireAndForget({
+        email: targetUser.email,
+        requestId,
+        onDone: (ok) => {
+          if (ok) {
+            void import('../services/slackService').then(({ firePostSlackAcessosChannel }) =>
+              firePostSlackAcessosChannel(`🔧 Usuário suspenso no Google Workspace | Ticket: #${requestId.slice(0, 8)}`)
+            );
+          }
+        }
+      });
+    })
+    .catch((err) => console.error('[OFFBOARDING] Google offboard (não bloqueia):', err));
 
   await prisma.user.update({
     where: { id: targetUser.id },
@@ -284,6 +304,8 @@ async function runOffboardingAutomation(
   } catch (notifErr) {
     console.error('[Automação] Desligamento: falha ao notificar owners / SI (não bloqueia):', notifErr);
   }
+
+  slack.firePostSlackAcessosChannel(`🔒 Offboarding concluído — ${targetUser.name} | Ticket: #${requestId.slice(0, 8)}`);
 }
 
 /**
@@ -321,7 +343,14 @@ async function runOnboardingAutomation(
     return;
   }
   const details = d as Record<string, string | undefined>;
-  const collaboratorName = (details.collaboratorName || details.Colaborador || details.target || details.name || '').trim();
+  const collaboratorName = (
+    details.fullName ||
+    details.collaboratorName ||
+    details.Colaborador ||
+    details.target ||
+    details.name ||
+    ''
+  ).trim();
   const roleName = (details.role || details.Cargo || details.cargo || details.jobTitle || '').trim();
   const departmentName = (details.department || details.Depto || details.dept || '').trim();
   const unitName = (details.unit || details.unitName || details.Unidade || details.unidade || '').trim();
@@ -398,7 +427,17 @@ async function runOnboardingAutomation(
   const departmentNameRes = department.name;
   const unitNameRes = unit?.name ?? '—';
 
+  const managerEmailOnb = (details.managerEmail || details.managerCorporateEmail || '').trim();
+
   if (user) {
+    let managerId: string | null = null;
+    if (managerEmailOnb) {
+      const mgr = await prisma.user.findFirst({
+        where: { email: { equals: managerEmailOnb, mode: 'insensitive' } },
+        select: { id: true }
+      });
+      managerId = mgr?.id ?? null;
+    }
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -406,7 +445,8 @@ async function runOnboardingAutomation(
         departmentId: department.id,
         unitId: unit?.id ?? null,
         jobTitle: role.name,
-        isActive: true
+        isActive: true,
+        ...(managerId ? { managerId } : {})
       }
     });
     try {
@@ -434,6 +474,15 @@ async function runOnboardingAutomation(
     return;
   }
 
+  let managerIdCreate: string | null = null;
+  if (managerEmailOnb) {
+    const mgr = await prisma.user.findFirst({
+      where: { email: { equals: managerEmailOnb, mode: 'insensitive' } },
+      select: { id: true }
+    });
+    managerIdCreate = mgr?.id ?? null;
+  }
+
   const created = await prisma.user.create({
     data: {
       name: collaboratorName || collaboratorEmail.split('@')[0],
@@ -442,7 +491,8 @@ async function runOnboardingAutomation(
       unitId: unit?.id ?? null,
       jobTitle: role.name,
       roleId: role.id,
-      isActive: true
+      isActive: true,
+      ...(managerIdCreate ? { managerId: managerIdCreate } : {})
     }
   });
   try {
@@ -1047,6 +1097,10 @@ async function runChangeRoleAutomation(
   // Sincronizar Catálogo (Access): remover acessos do KBS anterior que não estão no novo; adicionar/atualizar acessos do KBS novo
   try {
     await syncAccessAfterRoleChange(targetUser.id, kbsAnterior, kbsNovo);
+    try {
+      const { firePostSlackAcessosChannel } = await import('../services/slackService');
+      firePostSlackAcessosChannel(`🔧 KBS atualizado para novo cargo | Ticket: #${requestId.slice(0, 8)}`);
+    } catch (_) {}
   } catch (syncErr) {
     console.error('[Automação CHANGE_ROLE] Falha ao sincronizar Access com Catálogo (não bloqueia):', syncErr);
   }
@@ -1534,6 +1588,18 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     const siApprovedBy = (request as { siApprovedBy?: string }).siApprovedBy;
     const isAexPendingSI = request.status === 'PENDING_SI' && isAex;
 
+    if (
+      (action === 'APROVADO' || action === 'REPROVADO') &&
+      !isVpn &&
+      ((request.status === 'PENDING_SI' && (isAexPendingSI || request.type === 'HIRING')) ||
+        (request.status === 'PENDING_MANAGER_APPROVAL' && request.type === 'HIRING'))
+    ) {
+      return res.status(403).json({
+        error: 'USE_SLACK_ACTION',
+        message: 'Esta etapa só pode ser concluída pelos botões na DM do Slack.'
+      });
+    }
+
     if (action === 'APROVADO' && (isAex || isVpn)) {
       if (isVpn && !ownerApprovedBy) {
         return res.status(403).json({
@@ -1627,6 +1693,26 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
         try {
           await notifyTicketEvent(id, 'ASSIGNEE_CHANGED', { assigneeId: approverId });
         } catch (_) {}
+      }
+
+      {
+        const { firePostSlackAcessosChannel } = await import('../services/slackService');
+        const ticketShort = id.slice(0, 8);
+        if (OFFBOARDING_REQUEST_TYPES.includes(request.type)) {
+          if (request.status === 'PENDENTE_GESTOR') {
+            firePostSlackAcessosChannel(`❌ Offboarding recusado por gestor | Ticket: #${ticketShort}`);
+          } else if (request.status === 'PENDENTE_SI') {
+            firePostSlackAcessosChannel(`❌ Offboarding recusado por SI | Ticket: #${ticketShort}`);
+          }
+        }
+        if (request.type === 'CHANGE_ROLE') {
+          let rejectApprover = '—';
+          if (approverId) {
+            const u = await prisma.user.findUnique({ where: { id: approverId }, select: { name: true } });
+            if (u?.name) rejectApprover = u.name;
+          }
+          firePostSlackAcessosChannel(`❌ Movimentação recusada por ${rejectApprover} | Ticket: #${ticketShort}`);
+        }
       }
 
       if (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(request.type) || request.isExtraordinary) {
@@ -1813,6 +1899,26 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       where: { id },
       data: updateData
     });
+
+    if (action === 'APROVADO' && updateData.status === 'APROVADO') {
+      const { firePostSlackAcessosChannel } = await import('../services/slackService');
+      const ticketShort = id.slice(0, 8);
+      let approverName = '—';
+      if (approverId) {
+        const u = await prisma.user.findUnique({ where: { id: approverId }, select: { name: true } });
+        if (u?.name) approverName = u.name;
+      }
+      if (OFFBOARDING_REQUEST_TYPES.includes(request.type) && (request.status === 'PENDENTE_GESTOR' || request.status === 'PENDENTE_SI')) {
+        if (request.status === 'PENDENTE_GESTOR') {
+          firePostSlackAcessosChannel(`✅ Offboarding aprovado pelo gestor ${approverName} | Ticket: #${ticketShort}`);
+        } else {
+          firePostSlackAcessosChannel(`✅ Offboarding aprovado pelo SI (${approverName}) | Ticket: #${ticketShort}`);
+        }
+      }
+      if (request.type === 'CHANGE_ROLE' && (request.status === 'PENDENTE_GESTOR' || request.status === 'PENDENTE_SI')) {
+        firePostSlackAcessosChannel(`✅ Movimentação aprovada por ${approverName} | Ticket: #${ticketShort}`);
+      }
+    }
 
     if (approverId && request.assigneeId !== approverId) {
       const { registrarMudanca } = await import('../lib/auditLog');
@@ -2056,9 +2162,14 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
               // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
               // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY para garantir correspondência exata
-              syncUserToJumpCloud(result.userEmail).catch((err) =>
-                console.error('[JumpCloud Sync] Erro:', err)
-              );
+              const { firePostSlackAcessosChannel } = await import('../services/slackService');
+              syncUserToJumpCloud(result.userEmail)
+                .then(() => {
+                  firePostSlackAcessosChannel(
+                    `🔧 JumpCloud atualizado — novo cargo/departamento sincronizado | Ticket: #${id.slice(0, 8)}`
+                  );
+                })
+                .catch((err) => console.error('[JumpCloud Sync] Erro:', err));
             }
             console.log('[CHANGE_ROLE] Mudança aplicada com sucesso. userId atualizado; notificações em seguida.');
           } else {
@@ -2108,6 +2219,14 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
             } catch (notifErr) {
               console.error('[Automação CHANGE_ROLE] Falha ao notificar owners (não bloqueia aprovação):', notifErr);
             }
+          }
+          if (result.success) {
+            try {
+              const detNome = JSON.parse(request.details || '{}') as { collaboratorName?: string };
+              const nomeFim = String(detNome.collaboratorName || result.collaboratorName || '—');
+              const { firePostSlackAcessosChannel } = await import('../services/slackService');
+              firePostSlackAcessosChannel(`🔒 Movimentação concluída — ${nomeFim} | Ticket: #${id.slice(0, 8)}`);
+            } catch (_) {}
           }
           if (!result.success && request.requester?.email) {
             sendSlackNotification(request.requester.email, 'APROVADO', adminNote || 'Solicitação aprovada.', request.type, undefined, request.details);
@@ -2343,7 +2462,12 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         });
       }
       if (!siApprovedBy) {
-        // Permitir que SI defina APROVADO ao adicionar solução — preencher siApprovedBy
+        if (existing.status === 'PENDING_SI') {
+          return res.status(403).json({
+            error: 'USE_SLACK_ACTION',
+            message: 'A aprovação do SI deve ser feita pelos botões na DM do Slack.'
+          });
+        }
         if (!userId) {
           return res.status(401).json({ error: 'Usuário não identificado.' });
         }
@@ -2364,6 +2488,18 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           }
         } catch (_) {}
       }
+    }
+
+    if (
+      status !== undefined &&
+      String(status) === 'APROVADO' &&
+      existing.type === 'HIRING' &&
+      (existing.status === 'PENDING_SI' || existing.status === 'PENDING_MANAGER_APPROVAL')
+    ) {
+      return res.status(403).json({
+        error: 'USE_SLACK_ACTION',
+        message: 'Onboarding: aprove ou recuse pelos botões na DM do Slack.'
+      });
     }
 
     const data: Record<string, unknown> = {};
@@ -2468,6 +2604,25 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
 
     // Automação: se o status foi alterado para APROVADO, executar regras (desligamento, onboarding, acesso extraordinário, CHANGE_ROLE)
     if (newStatus === 'APROVADO') {
+      {
+        const { firePostSlackAcessosChannel } = await import('../services/slackService');
+        const ticketShort = id.slice(0, 8);
+        let metaApprover = '—';
+        if (userId) {
+          const u = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+          if (u?.name) metaApprover = u.name;
+        }
+        if (OFFBOARDING_REQUEST_TYPES.includes(existing.type) && (existing.status === 'PENDENTE_GESTOR' || existing.status === 'PENDENTE_SI')) {
+          if (existing.status === 'PENDENTE_GESTOR') {
+            firePostSlackAcessosChannel(`✅ Offboarding aprovado pelo gestor ${metaApprover} | Ticket: #${ticketShort}`);
+          } else {
+            firePostSlackAcessosChannel(`✅ Offboarding aprovado pelo SI (${metaApprover}) | Ticket: #${ticketShort}`);
+          }
+        }
+        if (existing.type === 'CHANGE_ROLE' && (existing.status === 'PENDENTE_GESTOR' || existing.status === 'PENDENTE_SI')) {
+          firePostSlackAcessosChannel(`✅ Movimentação aprovada por ${metaApprover} | Ticket: #${ticketShort}`);
+        }
+      }
       if (existing.type === 'CHANGE_ROLE') {
         console.log('[CHANGE_ROLE] Executando fluxo pós-aprovação (metadata) para requestId:', id);
         try {
@@ -2477,9 +2632,14 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
               // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
               // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
               // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY para garantir correspondência exata
-              syncUserToJumpCloud(result.userEmail).catch((err) =>
-                console.error('[JumpCloud Sync] Erro:', err)
-              );
+              const { firePostSlackAcessosChannel } = await import('../services/slackService');
+              syncUserToJumpCloud(result.userEmail)
+                .then(() => {
+                  firePostSlackAcessosChannel(
+                    `🔧 JumpCloud atualizado — novo cargo/departamento sincronizado | Ticket: #${id.slice(0, 8)}`
+                  );
+                })
+                .catch((err) => console.error('[JumpCloud Sync] Erro:', err));
             }
             console.log('[CHANGE_ROLE] (metadata) Mudança aplicada com sucesso.');
           } else {
@@ -2526,6 +2686,14 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
             } catch (notifErr) {
               console.error('[Automação CHANGE_ROLE] Falha ao notificar owners (metadata, não bloqueia):', notifErr);
             }
+          }
+          if (result.success) {
+            try {
+              const detNome = JSON.parse(existing.details || '{}') as { collaboratorName?: string };
+              const nomeFim = String(detNome.collaboratorName || result.collaboratorName || '—');
+              const { firePostSlackAcessosChannel } = await import('../services/slackService');
+              firePostSlackAcessosChannel(`🔒 Movimentação concluída — ${nomeFim} | Ticket: #${id.slice(0, 8)}`);
+            } catch (_) {}
           }
         } catch (changeRoleError) {
           console.error('[CHANGE_ROLE] Erro ao aplicar movimentação (metadata):', changeRoleError);
@@ -3190,3 +3358,423 @@ export const exportRequestsCsv = async (req: Request, res: Response) => {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buffer);
 };
+
+// --- Aprovação SI via Slack (AEX + HIRING): efeitos pós-Prisma ---
+
+function isAexRequestRow(r: { type: string; isExtraordinary: boolean }): boolean {
+  return r.type === 'ACCESS_TOOL_EXTRA' || (EXTRAORDINARY_ACCESS_REQUEST_TYPES.includes(r.type) && r.isExtraordinary);
+}
+
+async function executeAexSiSideEffects(
+  request: {
+    id: string;
+    type: string;
+    requesterId: string | null;
+    details: string | null;
+    isExtraordinary?: boolean;
+    toolName?: string | null;
+    accessLevel?: string | null;
+    ownerApprovedBy?: string | null;
+    siApprovedBy?: string | null;
+    accessPeriodRaw?: string | null;
+    extraordinaryDuration?: number | null;
+    extraordinaryUnit?: string | null;
+    requester: { id?: string; email?: string | null } | null;
+  },
+  approverId: string | null
+): Promise<void> {
+  const id = request.id;
+  try {
+    const aexAuto = await runExtraordinaryAccessAutomation(id, request);
+    if (aexAuto) {
+      await supersedePriorExtraordinaryAccessAfterRenewal({
+        requesterId: aexAuto.requesterId,
+        toolId: aexAuto.toolId,
+        keepAccessId: aexAuto.accessId
+      });
+    }
+    await fireAexJumpCloudProvisionAfterPrisma({
+      details: request.details,
+      requesterId: request.requesterId
+    });
+    const { registrarMudanca } = await import('../lib/auditLog');
+    const toolNameAex =
+      request.toolName ||
+      (() => {
+        try {
+          const d = JSON.parse(request.details || '{}');
+          return d.tool || d.toolName || '—';
+        } catch {
+          return '—';
+        }
+      })();
+    const accessLevelAex =
+      request.accessLevel ||
+      (() => {
+        try {
+          const d = JSON.parse(request.details || '{}');
+          return d.target || d.targetValue || '—';
+        } catch {
+          return '—';
+        }
+      })();
+    const periodo =
+      request.accessPeriodRaw ||
+      (request.extraordinaryDuration != null && request.extraordinaryUnit
+        ? `${request.extraordinaryDuration} ${request.extraordinaryUnit}`
+        : undefined);
+    await registrarMudanca({
+      tipo: 'AEX_APPROVED',
+      entidadeTipo: 'User',
+      entidadeId: request.requesterId || id,
+      descricao: `Acesso extraordinário concedido: ${toolNameAex} - ${accessLevelAex}`,
+      dadosDepois: {
+        ferramenta: toolNameAex,
+        nivel: accessLevelAex,
+        periodo,
+        ownerApprovedBy: request.ownerApprovedBy,
+        siApprovedBy: request.siApprovedBy,
+        requestId: id
+      },
+      autorId: approverId ?? undefined
+    });
+    if (request.requester?.email) {
+      const { getSlackApp } = await import('../services/slackService');
+      const { sendAexApprovedBySIDM } = await import('../services/aexOwnerService');
+      const app = getSlackApp();
+      if (app?.client) {
+        try {
+          const lookup = await app.client.users.lookupByEmail({ email: request.requester.email });
+          const requesterSlackId = lookup.user?.id;
+          if (requesterSlackId) {
+            await sendAexApprovedBySIDM(app.client, requesterSlackId, id, toolNameAex, accessLevelAex);
+          }
+        } catch (e) {
+          console.error('[AEX] Erro ao notificar solicitante (Slack SI):', e);
+        }
+      }
+    }
+  } catch (triggerError) {
+    console.error('❌ executeAexSiSideEffects:', triggerError);
+  }
+}
+
+async function executeHiringSiSideEffects(
+  request: { id: string; type: string; details: string | null; requester: { name?: string | null; email?: string | null } | null },
+  approverId: string | null
+): Promise<void> {
+  const id = request.id;
+  try {
+    const onboardingResult = await runOnboardingAutomation(id, request as { type: string; details: string | null }, approverId);
+    if (!onboardingResult) return;
+
+    void tryHiringJumpCloudProvisionForEmail(onboardingResult.userEmail)
+      .then(async (jumpCloudSi) => {
+        if (jumpCloudSi?.outcome === 'created') {
+          await prisma.request.update({ where: { id }, data: { jumpcloudCreatedAt: new Date() } }).catch(() => {});
+          try {
+            const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+            const app = getSlackApp();
+            if (app?.client) {
+              await postSlackAcessosChannel(
+                app.client,
+                `🔧 Usuário criado no JumpCloud · ${onboardingResult.collaboratorName} · #${id.slice(0, 8)} · ${formatTimestampBrt()} BRT`
+              );
+            }
+          } catch (_) {}
+        }
+      })
+      .catch((err) => console.error('[HIRING] JumpCloud (Slack SI):', err));
+
+    void syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
+      console.error('[HIRING] sync JumpCloud (Slack SI):', err)
+    );
+
+    try {
+      await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);
+    } catch (syncErr) {
+      console.error('[Onboarding Slack SI] sync Access:', syncErr);
+    }
+
+    let d: Record<string, unknown> = {};
+    try {
+      d = JSON.parse(request.details || '{}');
+    } catch (_) {}
+    const { provisionGoogleWorkspaceUserFireAndForget } = await import('../services/googleWorkspaceService');
+    provisionGoogleWorkspaceUserFireAndForget({
+      email: onboardingResult.userEmail,
+      fullName: onboardingResult.collaboratorName,
+      jobTitle: onboardingResult.jobTitle,
+      department: onboardingResult.departmentName,
+      unit: onboardingResult.unitName,
+      managerEmail: (d.managerEmail as string) || undefined,
+      requestId: id,
+      onDone: async (ok) => {
+        if (ok) {
+          await prisma.request.update({ where: { id }, data: { googleCreatedAt: new Date() } }).catch(() => {});
+          try {
+            const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+            const app = getSlackApp();
+            if (app?.client) {
+              await postSlackAcessosChannel(
+                app.client,
+                `🔧 Usuário criado / provisionado no Google Workspace · ${onboardingResult.collaboratorName} · #${id.slice(0, 8)} · ${formatTimestampBrt()} BRT`
+              );
+            }
+          } catch (_) {}
+        }
+      }
+    });
+
+    const { notificarOwnersJoiner } = await import('../services/slackService');
+    const closer = approverId
+      ? await prisma.user.findUnique({ where: { id: approverId }, select: { name: true } })
+      : null;
+    void notificarOwnersJoiner({
+      requestId: id,
+      requestType: request.type,
+      collaboratorName: onboardingResult.collaboratorName,
+      collaboratorUserId: onboardingResult.userId,
+      jobTitle: onboardingResult.jobTitle,
+      departmentName: onboardingResult.departmentName,
+      unitName: onboardingResult.unitName,
+      startDate: onboardingResult.startDate,
+      roleId: onboardingResult.roleId,
+      requesterName: request.requester?.name ?? null,
+      closedByName: closer?.name ?? null,
+      jumpCloudSi: undefined
+    }).catch((notifErr) => console.error('[Joiner Slack SI]:', notifErr));
+
+    if (request.requester?.email) {
+      sendSlackNotification(
+        request.requester.email,
+        'APROVADO',
+        'Onboarding aprovado pelo time de SI.',
+        'HIRING',
+        undefined,
+        request.details
+      );
+    }
+  } catch (e) {
+    console.error('❌ executeHiringSiSideEffects:', e);
+  }
+}
+
+export async function approveAexViaSlack(
+  requestId: string,
+  actorSlackId: string,
+  therisApproverId: string | null
+): Promise<'ok' | 'race' | 'bad_status'> {
+  const req = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, email: true } } }
+  });
+  if (!req || req.status !== 'PENDING_SI' || !isAexRequestRow(req)) return 'bad_status';
+
+  const cnt = await prisma.request.updateMany({
+    where: { id: requestId, status: 'PENDING_SI', siApprovedBy: null },
+    data: {
+      status: 'APROVADO',
+      siApprovedBy: actorSlackId,
+      siApprovedAt: new Date(),
+      approverId: therisApproverId,
+      ...(therisApproverId ? { assigneeId: therisApproverId } : {}),
+      adminNote: 'Aprovado pelo SI (Slack).',
+      updatedAt: new Date()
+    }
+  });
+  if (cnt.count === 0) return 'race';
+
+  const { registrarMudanca } = await import('../lib/auditLog');
+  await registrarMudanca({
+    tipo: 'AEX_SI_APPROVED',
+    entidadeTipo: 'Request',
+    entidadeId: requestId,
+    descricao: 'Time de SI aprovou a solicitação AEX (Slack)',
+    dadosAntes: { status: 'PENDING_SI' },
+    dadosDepois: { status: 'APROVADO', siApprovedBy: actorSlackId },
+    autorId: therisApproverId ?? undefined
+  });
+
+  const fresh = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, email: true } } }
+  });
+  if (fresh) await executeAexSiSideEffects(fresh, therisApproverId);
+
+  try {
+    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      const nm = therisApproverId
+        ? await prisma.user.findUnique({ where: { id: therisApproverId }, select: { name: true } })
+        : null;
+      const line = `✅ Aprovado pelo SI · AEX · #${requestId.slice(0, 8)} · por ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`;
+      await postSlackAcessosChannel(app.client, line);
+    }
+  } catch (_) {}
+
+  return 'ok';
+}
+
+export async function rejectAexViaSlack(
+  requestId: string,
+  actorSlackId: string,
+  therisApproverId: string | null
+): Promise<'ok' | 'race'> {
+  const cnt = await prisma.request.updateMany({
+    where: { id: requestId, status: 'PENDING_SI' },
+    data: {
+      status: 'REJECTED',
+      adminNote: 'Recusado pelo SI (Slack).',
+      updatedAt: new Date(),
+      ...(therisApproverId ? { approverId: therisApproverId, assigneeId: therisApproverId } : {})
+    }
+  });
+  if (cnt.count === 0) return 'race';
+
+  const req = await prisma.request.findUnique({ where: { id: requestId }, include: { requester: { select: { email: true } } } });
+  const toolNameAex =
+    (req as { toolName?: string })?.toolName ||
+    (() => {
+      try {
+        const d = JSON.parse(req?.details || '{}');
+        return d.tool || d.toolName || '—';
+      } catch {
+        return '—';
+      }
+    })();
+
+  const { registrarMudanca } = await import('../lib/auditLog');
+  await registrarMudanca({
+    tipo: 'AEX_SI_REJECTED',
+    entidadeTipo: 'Request',
+    entidadeId: requestId,
+    descricao: 'Time de SI reprovou a solicitação AEX (Slack)',
+    dadosDepois: { status: 'REJECTED', slackActor: actorSlackId },
+    autorId: therisApproverId ?? undefined
+  });
+
+  if (req?.requester?.email) {
+    try {
+      const { getSlackApp } = await import('../services/slackService');
+      const { sendAexRejectedBySIDM } = await import('../services/aexOwnerService');
+      const app = getSlackApp();
+      if (app?.client) {
+        const lookup = await app.client.users.lookupByEmail({ email: req.requester.email });
+        if (lookup.user?.id) await sendAexRejectedBySIDM(app.client, lookup.user.id, requestId, toolNameAex);
+      }
+    } catch (e) {
+      console.error('[AEX] reject Slack SI notify:', e);
+    }
+  }
+
+  try {
+    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      const nm = await prisma.user.findUnique({ where: { id: therisApproverId || '' }, select: { name: true } });
+      const line = `❌ AEX recusado pelo SI · #${requestId.slice(0, 8)} · por ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`;
+      await postSlackAcessosChannel(app.client, line);
+    }
+  } catch (_) {}
+
+  return 'ok';
+}
+
+export async function approveHiringViaSlack(
+  requestId: string,
+  actorSlackId: string,
+  therisApproverId: string | null
+): Promise<'ok' | 'race' | 'bad_status'> {
+  const req = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, name: true, email: true } } }
+  });
+  if (!req || req.status !== 'PENDING_SI' || req.type !== 'HIRING') return 'bad_status';
+
+  const cnt = await prisma.request.updateMany({
+    where: { id: requestId, status: 'PENDING_SI', siApprovedBy: null, type: 'HIRING' },
+    data: {
+      status: 'APROVADO',
+      siApprovedBy: actorSlackId,
+      siApprovedAt: new Date(),
+      approverId: therisApproverId,
+      ...(therisApproverId ? { assigneeId: therisApproverId } : {}),
+      adminNote: 'Aprovado pelo SI (Slack) — onboarding.',
+      updatedAt: new Date()
+    }
+  });
+  if (cnt.count === 0) return 'race';
+
+  const fresh = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, name: true, email: true } } }
+  });
+  if (fresh) await executeHiringSiSideEffects(fresh, therisApproverId);
+
+  try {
+    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      const nm = await prisma.user.findUnique({ where: { id: therisApproverId || '' }, select: { name: true } });
+      const d = JSON.parse(fresh?.details || '{}');
+      const collab = (d.collaboratorName as string) || '—';
+      const line = `✅ Aprovado pelo SI (Onboarding) · ${collab} · #${requestId.slice(0, 8)} · ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`;
+      await postSlackAcessosChannel(app.client, line);
+    }
+  } catch (_) {}
+
+  return 'ok';
+}
+
+export async function rejectHiringViaSlack(
+  requestId: string,
+  actorSlackId: string,
+  therisApproverId: string | null
+): Promise<'ok' | 'race'> {
+  const cnt = await prisma.request.updateMany({
+    where: { id: requestId, status: 'PENDING_SI', type: 'HIRING' },
+    data: {
+      status: 'REJECTED',
+      adminNote: 'Recusado pelo SI (Slack) — onboarding.',
+      updatedAt: new Date(),
+      ...(therisApproverId ? { approverId: therisApproverId, assigneeId: therisApproverId } : {})
+    }
+  });
+  if (cnt.count === 0) return 'race';
+
+  const req = await prisma.request.findUnique({ where: { id: requestId }, include: { requester: { select: { email: true } } } });
+  if (req?.requester?.email) {
+    try {
+      const { getSlackApp, sendDmToSlackUser } = await import('../services/slackService');
+      const app = getSlackApp();
+      if (app?.client) {
+        const lookup = await app.client.users.lookupByEmail({ email: req.requester.email });
+        if (lookup.user?.id) {
+          await sendDmToSlackUser(
+            app.client,
+            lookup.user.id,
+            `❌ Seu pedido de onboarding (#${requestId.slice(0, 8)}) foi recusado pelo time de SI.`
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[HIRING] reject notify:', e);
+    }
+  }
+
+  try {
+    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      const nm = await prisma.user.findUnique({ where: { id: therisApproverId || '' }, select: { name: true } });
+      const d = JSON.parse(req?.details || '{}');
+      const collab = (d.collaboratorName as string) || '—';
+      const line = `❌ Onboarding recusado pelo SI · ${collab} · #${requestId.slice(0, 8)} · ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`;
+      await postSlackAcessosChannel(app.client, line);
+    }
+  } catch (_) {}
+
+  return 'ok';
+}

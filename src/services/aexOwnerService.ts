@@ -304,8 +304,7 @@ Aguardando aprovação do responsável pela ferramenta.`);
   }
 }
 
-/** Envia DM para Owner confirmando aprovação e para SI com link do painel.
- * Se o Owner for do time de SI, inclui aviso: aprovação final deve ser feita por outro integrante. */
+/** Envia DM para Owner confirmando aprovação e DMs ao SI com botões Aprovar/Recusar. */
 export async function sendAexOwnerApprovedDMs(
   client: { chat: { postMessage: (opts: any) => Promise<any> } },
   requestId: string,
@@ -315,43 +314,23 @@ export async function sendAexOwnerApprovedDMs(
   ownerSlackId: string,
   ownerName?: string
 ): Promise<void> {
-  const shortId = requestId.slice(0, 8);
-  const ticketsUrl = `${FRONTEND_URL}/tickets`;
-
   try {
     await sendDmToSlackUser(client as any, ownerSlackId, '✅ Você aprovou o acesso. Aguardando validação final do time de SI.');
   } catch (e) {
     console.error('[AEX] Erro ao confirmar DM para owner:', e);
   }
 
-  const siIds = await getSISlackIds();
-  const ownerIsSI = await isSIMember(ownerSlackId);
   const ownerDisplayName = ownerName || 'Owner';
 
-  let siMessage = `✅ *Owner aprovou o Acesso Extraordinário #${shortId}*
-
-*Solicitante:* ${requesterName}
-*Ferramenta:* ${toolName}
-*Nível:* ${accessLevel}`;
-
-  if (ownerIsSI) {
-    siMessage += `
-
-⚠️ Atenção: o Owner (${ownerDisplayName}) é do time de SI.
-A aprovação final deve ser feita por Luan, Vladimir ou Allan — exceto ${ownerDisplayName}.`;
-  }
-
-  siMessage += `
-
-Acesse o painel para a aprovação final: ${ticketsUrl}`;
-
-  for (const channel of siIds) {
-    try {
-      await sendDmToSlackUser(client as any, channel, siMessage);
-    } catch (e) {
-      console.error(`[AEX] Erro ao notificar SI (${channel}):`, e);
-    }
-  }
+  const { sendSiTeamAexApprovalDms } = await import('./siSlackApprovalService');
+  await sendSiTeamAexApprovalDms(client as any, {
+    requestId,
+    toolName,
+    accessLevel,
+    requesterName,
+    ownerApprovedSlackId: ownerSlackId,
+    ownerDisplayName
+  });
 }
 
 /** NOTIF REJEIÇÃO — DM para solicitante quando Owner reprova */

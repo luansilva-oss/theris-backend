@@ -391,7 +391,7 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
   const v = view.state?.values ?? {};
   const g = (bid: string, aid: string) => v[bid]?.[aid]?.selected_option?.value as string | undefined;
   const nameVal = String(v.blk_name?.inp?.value ?? '');
-  const startDate = (v.blk_date?.picker?.selected_date as string | undefined) ?? null;
+  const actionDateVal = (v.blk_action_date?.picker?.selected_date as string | undefined) ?? null;
   const unitSel = g('blk_hire_unit', 'hire_unit_select');
   const deptSel = g('blk_hire_dept', 'hire_dept_select');
   const roleSel = g('blk_hire_role', 'hire_role_select');
@@ -407,6 +407,7 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
   const roleOpts = await roleOptionsForDepartment(deptId);
 
   const mgr = (v.blk_manager?.inp?.value as string | undefined) ?? '';
+  const mgrEmail = (v.blk_manager_email?.inp?.value as string | undefined) ?? '';
   const email = (v.blk_email?.inp?.value as string | undefined) ?? '';
   const contractOpt = v.blk_contract_type?.inp_select?.selected_option as { value?: string; text?: { text?: string } } | undefined;
   const obs = (v.blk_obs?.inp?.value as string | undefined) ?? '';
@@ -415,17 +416,18 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
     {
       type: 'input',
       block_id: 'blk_name',
-      label: { type: 'plain_text', text: 'Nome Completo' },
+      label: { type: 'plain_text', text: 'Nome completo' },
       element: { type: 'plain_text_input', action_id: 'inp', initial_value: nameVal || undefined }
     },
     {
       type: 'input',
-      block_id: 'blk_date',
-      label: { type: 'plain_text', text: 'Data de Início' },
+      block_id: 'blk_email',
+      label: { type: 'plain_text', text: 'E-mail corporativo' },
       element: {
-        type: 'datepicker',
-        action_id: 'picker',
-        ...(startDate ? { initial_date: startDate } : {})
+        type: 'plain_text_input',
+        action_id: 'inp',
+        placeholder: { type: 'plain_text', text: 'exemplo@empresa.com' },
+        initial_value: email || undefined
       }
     },
     cascadeSelectInputBlock('blk_hire_unit', 'Unidade', 'hire_unit_select', 'Selecione a unidade...', unitOpts, unitSel),
@@ -448,16 +450,19 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
     {
       type: 'input',
       block_id: 'blk_manager',
-      optional: true,
       label: { type: 'plain_text', text: 'Gestor direto' },
       element: { type: 'plain_text_input', action_id: 'inp', initial_value: mgr || undefined }
     },
     {
       type: 'input',
-      block_id: 'blk_email',
-      optional: true,
-      label: { type: 'plain_text', text: 'E-mail corporativo' },
-      element: { type: 'plain_text_input', action_id: 'inp', placeholder: { type: 'plain_text', text: 'exemplo@empresa.com' }, initial_value: email || undefined }
+      block_id: 'blk_manager_email',
+      label: { type: 'plain_text', text: 'E-mail do gestor direto' },
+      element: {
+        type: 'plain_text_input',
+        action_id: 'inp',
+        placeholder: { type: 'plain_text', text: 'gestor@empresa.com' },
+        initial_value: mgrEmail || undefined
+      }
     },
     {
       type: 'input',
@@ -479,6 +484,16 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
               }
             }
           : {})
+      }
+    },
+    {
+      type: 'input',
+      block_id: 'blk_action_date',
+      label: { type: 'plain_text', text: 'Data de ação' },
+      element: {
+        type: 'datepicker',
+        action_id: 'picker',
+        ...(actionDateVal ? { initial_date: actionDateVal } : {})
       }
     },
     {
@@ -712,6 +727,14 @@ export function registerPessoasModalCascadeHandlers(app: App): void {
       await updateHireView(body as { view: PessoasViewLike & { id: string; hash: string } }, client as { views: { update: (a: unknown) => Promise<unknown> } });
     } catch (e) {
       console.error('[pessoas] views.update hire dept:', e);
+    }
+  });
+  app.action('hire_role_select', async ({ ack, body, client }) => {
+    await ack();
+    try {
+      await updateHireView(body as { view: PessoasViewLike & { id: string; hash: string } }, client as { views: { update: (a: unknown) => Promise<unknown> } });
+    } catch (e) {
+      console.error('[pessoas] views.update hire role:', e);
     }
   });
 
