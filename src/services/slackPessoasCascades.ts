@@ -90,6 +90,81 @@ async function roleOptionsForDepartment(deptId: string | null): Promise<{ text: 
   }
 }
 
+/** Líder do cargo (mesmos dados que a hierarquia / estrutura); e-mail obrigatório para usar o dropdown no onboarding. */
+export type HireRoleLeader = { id: string; name: string; email: string };
+
+/** Cargos do departamento + mapa líder por roleId (uma consulta; sem fetch extra ao trocar cargo). */
+async function hireRoleDataForDepartment(deptId: string | null): Promise<{
+  options: { text: { type: 'plain_text'; text: string }; value: string }[];
+  leaderByRoleId: Map<string, HireRoleLeader | null>;
+}> {
+  if (!deptId) {
+    return { options: phOptions('Selecione o departamento primeiro'), leaderByRoleId: new Map() };
+  }
+  try {
+    const roles = await prisma.role.findMany({
+      where: { departmentId: deptId },
+      select: {
+        id: true,
+        name: true,
+        leader: { select: { id: true, name: true, email: true } }
+      },
+      orderBy: { name: 'asc' },
+      take: 100
+    });
+    if (roles.length === 0) {
+      return { options: phOptions('Nenhum cargo neste departamento'), leaderByRoleId: new Map() };
+    }
+    const leaderByRoleId = new Map<string, HireRoleLeader | null>();
+    const options = roles.map((r) => {
+      const l = r.leader;
+      const leader =
+        l?.email?.trim() ? { id: l.id, name: (l.name || '—').trim() || '—', email: l.email.trim() } : null;
+      leaderByRoleId.set(r.id, leader);
+      const t = r.name.length > 75 ? r.name.slice(0, 72) + '...' : r.name;
+      return { text: { type: 'plain_text' as const, text: t }, value: `${r.id}|${r.name}` };
+    });
+    return { options, leaderByRoleId };
+  } catch {
+    return { options: phOptions('Erro ao carregar cargos'), leaderByRoleId: new Map() };
+  }
+}
+
+/** Valor do static_select de gestor (onboarding); limite Slack 150 chars. */
+function encodeHireManagerSelectValue(leader: HireRoleLeader): string {
+  let name = leader.name;
+  let email = leader.email;
+  for (let k = 0; k < 12; k++) {
+    const raw = JSON.stringify({ i: leader.id, n: name, e: email });
+    const b64 = Buffer.from(raw, 'utf8').toString('base64');
+    if (b64.length <= 150) return b64;
+    name = name.slice(0, Math.max(8, Math.floor(name.length * 0.75)));
+    email = email.slice(0, Math.max(12, Math.floor(email.length * 0.85)));
+  }
+  return `id:${leader.id}`;
+}
+
+/** Decodifica opção do dropdown de gestor (submit_hire). Retorna null se for token `id:` (resolver no handler com DB). */
+export function decodeHireManagerSelectValue(val: string | undefined | null): HireRoleLeader | null {
+  if (!val || isPh(val)) return null;
+  if (val.startsWith('id:')) return null;
+  try {
+    const json = Buffer.from(val, 'base64').toString('utf8');
+    const o = JSON.parse(json) as { i?: string; n?: string; e?: string };
+    if (o.i && o.n != null && o.e) return { id: String(o.i), name: String(o.n), email: String(o.e) };
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/** Se o valor do select for `id:uuid`, devolve o id do usuário líder. */
+export function hireManagerSelectLeaderIdOnly(val: string | undefined | null): string | null {
+  if (!val || isPh(val)) return null;
+  if (val.startsWith('id:')) return val.slice(3).trim() || null;
+  return null;
+}
+
 function buildStaticSelectElement(
   actionId: string,
   placeholder: string,
@@ -404,7 +479,11 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
 
   const unitOpts = await unitSelectOptions();
   const deptOpts = await deptOptionsForUnit(unitId);
-  const roleOpts = await roleOptionsForDepartment(deptId);
+  const { options: roleOpts, leaderByRoleId } = await hireRoleDataForDepartment(deptId);
+
+  const roleIdSelected = parsePipe(roleOk)?.id ?? null;
+  const leaderForRole = roleIdSelected ? leaderByRoleId.get(roleIdSelected) ?? null : null;
+  const hireMgrSel = g('blk_hire_manager', 'hire_manager_select');
 
   const mgr = (v.blk_manager?.inp?.value as string | undefined) ?? '';
   const mgrEmail = (v.blk_manager_email?.inp?.value as string | undefined) ?? '';
@@ -412,7 +491,8 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
   const contractOpt = v.blk_contract_type?.inp_select?.selected_option as { value?: string; text?: { text?: string } } | undefined;
   const obs = (v.blk_obs?.inp?.value as string | undefined) ?? '';
 
-  return [
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const blocks: any[] = [
     {
       type: 'input',
       block_id: 'blk_name',
@@ -446,24 +526,48 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
       'Selecione o departamento primeiro',
       roleOpts,
       roleOk
-    ),
-    {
-      type: 'input',
-      block_id: 'blk_manager',
-      label: { type: 'plain_text', text: 'Gestor direto' },
-      element: { type: 'plain_text_input', action_id: 'inp', initial_value: mgr || undefined }
-    },
-    {
-      type: 'input',
-      block_id: 'blk_manager_email',
-      label: { type: 'plain_text', text: 'E-mail do gestor direto' },
-      element: {
-        type: 'plain_text_input',
-        action_id: 'inp',
-        placeholder: { type: 'plain_text', text: 'gestor@empresa.com' },
-        initial_value: mgrEmail || undefined
+    )
+  ];
+
+  if (roleOk && leaderForRole) {
+    const enc = encodeHireManagerSelectValue(leaderForRole);
+    const labelText =
+      leaderForRole.name.length > 75 ? leaderForRole.name.slice(0, 72) + '...' : leaderForRole.name;
+    const mgrOpts = [{ text: { type: 'plain_text' as const, text: labelText }, value: enc }];
+    const selectedMgr = mgrOpts.some((o) => o.value === hireMgrSel) ? hireMgrSel! : enc;
+    blocks.push(
+      cascadeSelectInputBlock(
+        'blk_hire_manager',
+        'Gestor direto (líder do cargo)',
+        'hire_manager_select',
+        'Selecione o gestor',
+        mgrOpts,
+        selectedMgr
+      )
+    );
+  } else if (roleOk) {
+    blocks.push(
+      {
+        type: 'input',
+        block_id: 'blk_manager',
+        label: { type: 'plain_text', text: 'Gestor direto' },
+        element: { type: 'plain_text_input', action_id: 'inp', initial_value: mgr || undefined }
+      },
+      {
+        type: 'input',
+        block_id: 'blk_manager_email',
+        label: { type: 'plain_text', text: 'E-mail do gestor direto' },
+        element: {
+          type: 'plain_text_input',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'gestor@empresa.com' },
+          initial_value: mgrEmail || undefined
+        }
       }
-    },
+    );
+  }
+
+  blocks.push(
     {
       type: 'input',
       block_id: 'blk_contract_type',
@@ -503,7 +607,9 @@ export async function buildHireModalBlocks(view: PessoasViewLike) {
       label: { type: 'plain_text', text: 'Observações' },
       element: { type: 'plain_text_input', multiline: true, action_id: 'inp', initial_value: obs || undefined }
     }
-  ];
+  );
+
+  return blocks;
 }
 
 export async function buildFireModalBlocks(view: PessoasViewLike) {
@@ -735,6 +841,14 @@ export function registerPessoasModalCascadeHandlers(app: App): void {
       await updateHireView(body as { view: PessoasViewLike & { id: string; hash: string } }, client as { views: { update: (a: unknown) => Promise<unknown> } });
     } catch (e) {
       console.error('[pessoas] views.update hire role:', e);
+    }
+  });
+  app.action('hire_manager_select', async ({ ack, body, client }) => {
+    await ack();
+    try {
+      await updateHireView(body as { view: PessoasViewLike & { id: string; hash: string } }, client as { views: { update: (a: unknown) => Promise<unknown> } });
+    } catch (e) {
+      console.error('[pessoas] views.update hire manager:', e);
     }
   });
 

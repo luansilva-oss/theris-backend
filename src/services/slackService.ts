@@ -9,7 +9,9 @@ import {
   buildMoveCargoModalBlocks,
   buildHireModalBlocks,
   buildFireModalBlocks,
-  isPessoasSelectPlaceholder
+  isPessoasSelectPlaceholder,
+  decodeHireManagerSelectValue,
+  hireManagerSelectLeaderIdOnly
 } from './slackPessoasCascades';
 
 const prisma = new PrismaClient();
@@ -2899,13 +2901,42 @@ slackApp.view('submit_hire', async ({ ack, body, view, client }) => {
   if (!emailValue) {
     errs.blk_email = 'Informe o e-mail corporativo.';
   }
-  const mgrName = v.blk_manager?.inp?.value?.trim() || '';
-  if (!mgrName) errs.blk_manager = 'Informe o gestor direto.';
-  const mgrEmail = v.blk_manager_email?.inp?.value?.trim() || '';
-  if (!mgrEmail) {
-    errs.blk_manager_email = 'Informe o e-mail do gestor direto.';
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mgrEmail)) {
-    errs.blk_manager_email = 'E-mail do gestor inválido.';
+  let mgrName = '';
+  let mgrEmail = '';
+  const hireMgrRaw = v.blk_hire_manager?.hire_manager_select?.selected_option?.value;
+  if (v.blk_hire_manager?.hire_manager_select) {
+    let decoded = decodeHireManagerSelectValue(hireMgrRaw);
+    const idOnly = hireManagerSelectLeaderIdOnly(hireMgrRaw);
+    if (!decoded && idOnly) {
+      const u = await prisma.user.findUnique({
+        where: { id: idOnly },
+        select: { name: true, email: true }
+      });
+      if (u?.email?.trim()) {
+        decoded = { id: idOnly, name: (u.name || '—').trim(), email: u.email.trim() };
+      }
+    }
+    if (decoded) {
+      mgrName = decoded.name.trim();
+      mgrEmail = decoded.email.trim();
+      if (!mgrName) errs.blk_hire_manager = 'Gestor sem nome cadastrado.';
+      if (!mgrEmail) {
+        errs.blk_hire_manager = 'Gestor sem e-mail cadastrado.';
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mgrEmail)) {
+        errs.blk_hire_manager = 'E-mail do gestor inválido.';
+      }
+    } else {
+      errs.blk_hire_manager = 'Selecione o gestor direto.';
+    }
+  } else {
+    mgrName = v.blk_manager?.inp?.value?.trim() || '';
+    if (!mgrName) errs.blk_manager = 'Informe o gestor direto.';
+    mgrEmail = v.blk_manager_email?.inp?.value?.trim() || '';
+    if (!mgrEmail) {
+      errs.blk_manager_email = 'Informe o e-mail do gestor direto.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mgrEmail)) {
+      errs.blk_manager_email = 'E-mail do gestor inválido.';
+    }
   }
   const actionDate = v.blk_action_date?.picker?.selected_date;
   if (!actionDate) errs.blk_action_date = 'Selecione a data de ação.';
