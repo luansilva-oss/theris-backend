@@ -71,7 +71,14 @@ export async function provisionUserOnJumpCloud(user: {
       return { created: false, jumpcloudId: String(existingId) };
     }
 
-    const username = email.split('@')[0] || email;
+    const rawUsername = email.split('@')[0] || email;
+    const username =
+      rawUsername
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9\-._]/g, '')
+        .replace(/^[^a-zA-Z]+/, '')
+        .slice(0, 30) || 'user';
     const body: Record<string, unknown> = {
       email,
       username,

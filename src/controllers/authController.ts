@@ -329,6 +329,7 @@ export const verifyMfa = async (req: Request, res: Response) => {
     }).catch((e) => console.error('[verifyMfa] HistoricoMudanca:', e));
     res.json({ valid: true });
   } catch (error) {
+    console.error('[verifyMfa] Erro inesperado:', error);
     res.status(500).json({ error: 'Erro ao verificar MFA' });
   }
 };
