@@ -1592,8 +1592,8 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
     if (
       (action === 'APROVADO' || action === 'REPROVADO') &&
       !isVpn &&
-      ((request.status === 'PENDING_SI' && (isAexPendingSI || request.type === 'HIRING')) ||
-        (request.status === 'PENDING_MANAGER_APPROVAL' && request.type === 'HIRING'))
+      request.status === 'PENDING_SI' &&
+      (isAexPendingSI || request.type === 'HIRING')
     ) {
       return res.status(403).json({
         error: 'USE_SLACK_ACTION',
@@ -2365,11 +2365,7 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
 
     const isHiring = ONBOARDING_REQUEST_TYPES.includes(request.type);
     if (isHiring) {
-      if (request.status === 'PENDING_MANAGER_APPROVAL') {
-        canAddSolution = false;
-        solutionBlockReason =
-          'Aguardando aprovação do gestor direto antes que o Time de SI possa encerrar este chamado.';
-      } else if (request.status === 'PENDING_SI') {
+      if (request.status === 'PENDING_SI') {
         const viewer = userId
           ? await prisma.user.findUnique({ where: { id: userId }, select: { email: true } })
           : null;
@@ -2514,12 +2510,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       }
     }
 
-    if (
-      status !== undefined &&
-      String(status) === 'APROVADO' &&
-      existing.type === 'HIRING' &&
-      (existing.status === 'PENDING_SI' || existing.status === 'PENDING_MANAGER_APPROVAL')
-    ) {
+    if (status !== undefined && String(status) === 'APROVADO' && existing.type === 'HIRING' && existing.status === 'PENDING_SI') {
       return res.status(403).json({
         error: 'USE_SLACK_ACTION',
         message: 'Onboarding: aprove ou recuse pelos botões na DM do Slack.'
@@ -3501,9 +3492,15 @@ async function executeHiringSiSideEffects(
             const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
             const app = getSlackApp();
             if (app?.client) {
+              const short = id.slice(0, 8);
               await postSlackAcessosChannel(
                 app.client,
-                `🔧 Usuário criado no JumpCloud · ${onboardingResult.collaboratorName} · #${id.slice(0, 8)} · ${formatTimestampBrt()} BRT`
+                `🔧 Usuário criado no JumpCloud · ${onboardingResult.collaboratorName} · #${short} · ${formatTimestampBrt()} BRT`
+              );
+              await postSlackAcessosChannel(
+                app.client,
+                `✅ Onboarding concluído pelo time de SI · ${onboardingResult.collaboratorName} · #${short} · ${formatTimestampBrt()} BRT\n` +
+                  `📋 Favor registrar o ID do chamado *#${short}* na task do ClickUp aberta pela liderança do novo colaborador.`
               );
             }
           } catch (_) {}

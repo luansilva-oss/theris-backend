@@ -260,7 +260,7 @@ export const sendMfa = async (req: Request, res: Response) => {
       dadosDepois: { ip: getClientIp(req) },
       autorId: user.id,
     }).catch((e) => console.error('[sendMfa] HistoricoMudanca:', e));
-    res.json({ message: 'Código enviado' });
+    res.json({ success: true, userId: user.id, message: 'Código enviado' });
   } catch (error) {
     await logLoginAttempt({ req, email: null, success: false, failReason: 'MFA_SEND_FAILED', userId: undefined });
     res.status(500).json({ error: 'Erro ao enviar MFA' });
@@ -269,7 +269,19 @@ export const sendMfa = async (req: Request, res: Response) => {
 
 // VERIFICAR MFA
 export const verifyMfa = async (req: Request, res: Response) => {
+  console.log('[verifyMfa] body recebido:', {
+    userId: req.body.userId,
+    hasCode: !!req.body.code,
+    bodyKeys: Object.keys(req.body ?? {})
+  });
   const { userId, code } = req.body;
+
+  if (!userId || !code) {
+    return res.status(400).json({
+      error: 'userId e code são obrigatórios',
+      valid: false
+    });
+  }
 
   try {
     const user = await prisma.user.findUnique({
