@@ -59,6 +59,7 @@ jobs:
         working-directory: apps/theris-backend
         env:
           DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url_with_pooler }}"
+          DIRECT_URL: "${{ steps.create_neon_branch.outputs.db_url }}"
 
       - name: Post Schema Diff Comment to PR
         uses: neondatabase/schema-diff-action@v1
