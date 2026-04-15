@@ -1,30 +1,26 @@
-node_modules
-dist
-.env
-npm-debug.log
-# Dependências do Node (PESADO - Nunca envie isso)
+# Dependências
 node_modules/
 
-# Arquivos de Build (Gerados automaticamente pelo TypeScript)
+# Build artifacts
 dist/
+dist-server/
+*.tsbuildinfo
 
-# Variáveis de Ambiente (SEGURANÇA - Contém suas senhas)
+# Ambiente
 .env
+.env.*.local
 
-# Logs de erro (Sujeira do sistema)
-npm-debug.log
-*.log
+# Swap files
+*.swp
+*.swo
 
-# Arquivos de Sistema (Lixo do Mac/Windows)
+# OS
 .DS_Store
 Thumbs.db
 
-# Cobertura de Testes (Se usarmos no futuro)
-coverage/node_modules/
-dist/
-.env
+# Logs
 *.log
-.DS_Store
-/src/generated/prisma
-.env.swp
-*.swp
+npm-debug.log*
+
+# Render
+.render-buildinfo.json

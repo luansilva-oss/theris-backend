@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    // Configurações para o Node.js (Backend)
+    "module": "CommonJS",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    // Suporte a React (para o editor não reclamar)
+    "jsx": "react-jsx",
+    // Configurações Relaxadas (para evitar erros de tipagem chatos)
+    "strict": false,
+    "noImplicitAny": false,
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": [
+    "src"
+  ],
+  // ⚠️ AQUI ESTÁ A CORREÇÃO MÁGICA:
+  // Mandamos o compilador do Backend IGNORAR os arquivos de entrada do Frontend
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-server",
+    "src/App.tsx",
+    "src/main.tsx",
+    "src/lib/api.ts",
+    "src/vite-env.d.ts"
+  ]
+}
