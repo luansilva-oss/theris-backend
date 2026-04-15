@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
-    { "path": "./apps/theris-backend" }
+    { "path": "./apps/theris-backend" },
+    { "path": "./apps/sgsi-backend" }
   ]
 }
