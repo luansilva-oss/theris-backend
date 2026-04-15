@@ -6,8 +6,10 @@ import type { WebClient } from '@slack/web-api';
 import { prisma } from '../lib/prisma';
 import {
   approveAexViaSlack,
+  approveFiringViaSlack,
   approveHiringViaSlack,
   rejectAexViaSlack,
+  rejectFiringViaSlack,
   rejectHiringViaSlack
 } from '../controllers/solicitacaoController';
 
@@ -125,6 +127,33 @@ function onboardingSiBlocks(requestId: string, summary: string): unknown[] {
   ];
 }
 
+function firingSiBlocks(requestId: string, summary: string): unknown[] {
+  const shortId = requestId.slice(0, 8);
+  const body = `🔴 *Offboarding — aprovação SI (#${shortId})*\n\n${summary}\n\nAvalie o chamado:`;
+  return [
+    { type: 'section', text: { type: 'mrkdwn', text: body } },
+    {
+      type: 'actions',
+      block_id: 'aex_si_decision',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '✅ Aprovar', emoji: true },
+          action_id: 'aex_si_approve_v2',
+          value: `approve_${requestId}`,
+          style: 'primary'
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '❌ Recusar', emoji: true },
+          action_id: 'aex_si_reject_v2',
+          value: `reject_${requestId}`
+        }
+      ]
+    }
+  ];
+}
+
 export async function sendSiTeamAexApprovalDms(
   client: WebClient,
   params: {
@@ -193,6 +222,31 @@ export async function sendSiTeamOnboardingApprovalDms(
   }
 }
 
+export async function sendSiTeamFiringApprovalDms(
+  client: WebClient,
+  requestId: string,
+  summary: string,
+  requesterSlackId?: string | null
+): Promise<void> {
+  const recipients = getSiRecipientSlackIdsForOnboarding(requesterSlackId);
+  const blocks = firingSiBlocks(requestId, summary);
+  const refs: SiDmRef[] = [];
+  for (const uid of recipients) {
+    try {
+      const { ts } = await openDmPostReturnTs(client, uid, `Offboarding #${requestId.slice(0, 8)} — aprovação SI`, blocks);
+      refs.push({ userId: uid, ts });
+    } catch (e) {
+      console.error('[SI Slack] Falha DM Offboarding para', uid, e);
+    }
+  }
+  if (refs.length > 0) {
+    await prisma.request.update({
+      where: { id: requestId },
+      data: { siSlackMessageTs: refs as unknown as object[] }
+    });
+  }
+}
+
 async function chatUpdateDmMessage(client: WebClient, userId: string, ts: string, text: string, blocks?: unknown[]): Promise<void> {
   try {
     const open = await client.conversations.open({ users: userId });
@@ -208,7 +262,7 @@ export async function refreshPeerSiDmsAfterDecision(
   client: WebClient,
   refs: SiDmRef[] | null | undefined,
   actorSlackId: string,
-  opts: { approved: boolean; deciderName: string; kind: 'aex' | 'onboarding' }
+  opts: { approved: boolean; deciderName: string; kind: 'aex' | 'onboarding' | 'firing' }
 ): Promise<void> {
   if (!refs || !Array.isArray(refs)) return;
   for (const r of refs) {
@@ -265,21 +319,22 @@ export async function handleSiDualApprovalSlackAction(params: {
   }
 
   const isHiring = req.type === 'HIRING';
+  const isFiring = req.type === 'FIRING';
   const isAex =
     req.type === 'ACCESS_TOOL_EXTRA' ||
     (['ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(req.type) && req.isExtraordinary);
 
-  if (!isHiring && !isAex) return;
+  if (!isHiring && !isFiring && !isAex) return;
 
   let requesterSlackIdForFilter: string | null = null;
-  if (isHiring && req.requester?.email) {
+  if ((isHiring || isFiring) && req.requester?.email) {
     try {
       const lu = await params.client.users.lookupByEmail({ email: req.requester.email });
       requesterSlackIdForFilter = lu.user?.id ?? null;
     } catch (_) {}
   }
 
-  const allowed = isHiring
+  const allowed = isHiring || isFiring
     ? getSiRecipientSlackIdsForOnboarding(requesterSlackIdForFilter)
     : getSiRecipientSlackIdsForAex(req.ownerApprovedBy ?? undefined);
   if (!allowed.includes(actorSlackId)) {
@@ -362,6 +417,28 @@ export async function handleSiDualApprovalSlackAction(params: {
         deciderName,
         kind: 'onboarding'
       });
+    } else if (isFiring) {
+      const r = await approveFiringViaSlack(requestId, actorSlackId, therisApproverId);
+      if (r === 'bad_status') return;
+      if (r === 'race') {
+        await params.respond?.({
+          response_type: 'ephemeral',
+          text: `Este chamado já foi tratado por ${await resolveSlackDisplayName(params.client, req.siApprovedBy || '')}.`
+        });
+        return;
+      }
+      if (r !== 'ok') return;
+      await updateActorSiDmConfirmed(
+        params.client,
+        actorSlackId,
+        actorTs,
+        `✅ Você aprovou o offboarding #${requestId.slice(0, 8)}. Automação em processamento.`
+      );
+      await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
+        approved: true,
+        deciderName,
+        kind: 'firing'
+      });
     }
   } else {
     if (isAex) {
@@ -405,6 +482,27 @@ export async function handleSiDualApprovalSlackAction(params: {
         approved: false,
         deciderName,
         kind: 'onboarding'
+      });
+    } else if (isFiring) {
+      const r = await rejectFiringViaSlack(requestId, actorSlackId, therisApproverId);
+      if (r === 'race') {
+        await params.respond?.({
+          response_type: 'ephemeral',
+          text: `Este chamado já foi tratado por ${await resolveSlackDisplayName(params.client, req.siApprovedBy || '')}.`
+        });
+        return;
+      }
+      if (r !== 'ok') return;
+      await updateActorSiDmConfirmed(
+        params.client,
+        actorSlackId,
+        actorTs,
+        `❌ Você recusou o offboarding #${requestId.slice(0, 8)}.`
+      );
+      await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
+        approved: false,
+        deciderName,
+        kind: 'firing'
       });
     }
   }

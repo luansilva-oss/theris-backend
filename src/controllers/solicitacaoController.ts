@@ -245,7 +245,9 @@ async function runOffboardingAutomation(
   void import('../services/jumpcloudSyncService')
     .then((m) =>
       m.suspendUserOnJumpCloud(targetUser.email).then(() => {
-        slack.firePostSlackAcessosChannel(`🔧 Usuário removido/suspenso no JumpCloud | Ticket: #${requestId.slice(0, 8)}`);
+        slack.firePostSlackAcessosChannel(
+          `🔧 Usuário suspenso no JumpCloud · ${targetUser.name} · #${requestId.slice(0, 8)}`
+        );
       })
     )
     .catch((err) => console.error('[OFFBOARDING] Falha fire-and-forget suspensão JC:', err));
@@ -306,7 +308,7 @@ async function runOffboardingAutomation(
     console.error('[Automação] Desligamento: falha ao notificar owners / SI (não bloqueia):', notifErr);
   }
 
-  slack.firePostSlackAcessosChannel(`🔒 Offboarding concluído — ${targetUser.name} | Ticket: #${requestId.slice(0, 8)}`);
+  slack.firePostSlackAcessosChannel(`🔒 Offboarding concluído · ${targetUser.name} · #${requestId.slice(0, 8)}`);
 }
 
 /**
@@ -1201,24 +1203,30 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     // ROTA B: GESTÃO DE PESSOAS / DEPUTY — gestor aprova; exceção: Renata Czapiewski Silva vai direto para SI
     // Para CHANGE_ROLE: ao criar o chamado, enviar details.newRoleId e details.newDepartmentId (ou future.roleId / future.departmentId) quando disponíveis, para priorizar busca por ID na automação.
     else if (['DEPUTY_DESIGNATION', 'CHANGE_ROLE', 'HIRING', 'FIRING', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'].includes(safeType)) {
-      const requester = await prisma.user.findUnique({
-        where: { id: safeRequesterId },
-        include: { manager: true }
-      });
-      if (isRhBypassRequester(requester?.name)) {
-        status = 'PENDENTE_SI';
+      if (safeType === 'FIRING') {
+        status = 'PENDING_SI';
         currentApproverRole = 'SI_ANALYST';
         approverId = null;
-        detailsObj = { ...detailsObj, bypassGestor: true };
-        detailsString = JSON.stringify(detailsObj);
-      } else if (requester?.managerId) {
-        approverId = requester.managerId;
-        status = 'PENDENTE_GESTOR';
-        currentApproverRole = 'MANAGER';
       } else {
-        status = 'PENDENTE_SI';
-        currentApproverRole = 'SI_ANALYST';
-        approverId = null;
+        const requester = await prisma.user.findUnique({
+          where: { id: safeRequesterId },
+          include: { manager: true }
+        });
+        if (isRhBypassRequester(requester?.name)) {
+          status = 'PENDENTE_SI';
+          currentApproverRole = 'SI_ANALYST';
+          approverId = null;
+          detailsObj = { ...detailsObj, bypassGestor: true };
+          detailsString = JSON.stringify(detailsObj);
+        } else if (requester?.managerId) {
+          approverId = requester.managerId;
+          status = 'PENDENTE_GESTOR';
+          currentApproverRole = 'MANAGER';
+        } else {
+          status = 'PENDENTE_SI';
+          currentApproverRole = 'SI_ANALYST';
+          approverId = null;
+        }
       }
     }
     // ROTA C: GENÉRICA
@@ -1307,19 +1315,68 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
     console.log('[Chamado] Tentando enviar notificação SI (novo ticket) para chamado:', newRequest.id, 'tipo:', newRequest.type);
     try {
-      const { notificarSINovoTicket } = await import('../services/slackService');
-      await notificarSINovoTicket({
-        id: newRequest.id,
-        type: newRequest.type,
-        status: newRequest.status,
-        justification: newRequest.justification,
-        details: newRequest.details,
-        requesterId: newRequest.requesterId,
-        createdAt: newRequest.createdAt
-      });
-      console.log('[Chamado] Slack SI enviado com sucesso para chamado:', newRequest.id);
+      if (safeType !== 'FIRING') {
+        const { notificarSINovoTicket } = await import('../services/slackService');
+        await notificarSINovoTicket({
+          id: newRequest.id,
+          type: newRequest.type,
+          status: newRequest.status,
+          justification: newRequest.justification,
+          details: newRequest.details,
+          requesterId: newRequest.requesterId,
+          createdAt: newRequest.createdAt
+        });
+        console.log('[Chamado] Slack SI enviado com sucesso para chamado:', newRequest.id);
+      }
     } catch (notifErr) {
       console.error('[Chamado] Erro ao enviar Slack SI:', notifErr);
+    }
+
+    if (safeType === 'FIRING') {
+      void (async () => {
+        try {
+          const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+          const { sendSiTeamFiringApprovalDms } = await import('../services/siSlackApprovalService');
+          const app = getSlackApp();
+          if (!app?.client) return;
+
+          let requesterSlackId: string | null = null;
+          if (safeRequesterId) {
+            const requester = await prisma.user.findUnique({
+              where: { id: safeRequesterId },
+              select: { email: true }
+            });
+            if (requester?.email) {
+              try {
+                const lu = await app.client.users.lookupByEmail({
+                  email: requester.email
+                });
+                requesterSlackId = lu.user?.id ?? null;
+              } catch (_) {}
+            }
+          }
+
+          const d = detailsObj && typeof detailsObj === 'object' ? detailsObj : {};
+          const collab = String(d.collaboratorName || d.nome || '—');
+          const role = String(d.role || d.cargo || '—');
+          const dept = String(d.department || d.dept || '—');
+          const unit = String(d.unit || '—');
+          const short = newRequest.id.slice(0, 8);
+          const summary = `*Colaborador:* ${collab}\n*Cargo:* ${role}\n*Departamento:* ${dept}\n*Unidade:* ${unit}`;
+
+          await postSlackAcessosChannel(
+            app.client,
+            `🔴 Offboarding aberto — ${collab}, ${role}, ${dept} | Ticket: #${short}`
+          );
+          await sendSiTeamFiringApprovalDms(app.client, newRequest.id, summary, requesterSlackId);
+          await postSlackAcessosChannel(
+            app.client,
+            `ℹ️ Solicitação de aprovação SI enviada (DM) · ${collab} · #${short} · ${formatTimestampBrt()} BRT`
+          );
+        } catch (e) {
+          console.error('[createSolicitacao FIRING] Slack flow:', e);
+        }
+      })();
     }
 
     if ((isExtraordinary || ['ACCESS_TOOL_EXTRA', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(safeType)) && toolNameAex) {
@@ -1593,7 +1650,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       (action === 'APROVADO' || action === 'REPROVADO') &&
       !isVpn &&
       request.status === 'PENDING_SI' &&
-      (isAexPendingSI || request.type === 'HIRING')
+      (isAexPendingSI || request.type === 'HIRING' || request.type === 'FIRING')
     ) {
       return res.status(403).json({
         error: 'USE_SLACK_ACTION',
@@ -2364,7 +2421,8 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
     }
 
     const isHiring = ONBOARDING_REQUEST_TYPES.includes(request.type);
-    if (isHiring) {
+    const isFiringSiApproval = request.type === 'FIRING';
+    if (isHiring || isFiringSiApproval) {
       if (request.status === 'PENDING_SI') {
         const viewer = userId
           ? await prisma.user.findUnique({ where: { id: userId }, select: { email: true } })
@@ -2510,10 +2568,18 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
       }
     }
 
-    if (status !== undefined && String(status) === 'APROVADO' && existing.type === 'HIRING' && existing.status === 'PENDING_SI') {
+    if (
+      status !== undefined &&
+      String(status) === 'APROVADO' &&
+      (existing.type === 'HIRING' || existing.type === 'FIRING') &&
+      existing.status === 'PENDING_SI'
+    ) {
       return res.status(403).json({
         error: 'USE_SLACK_ACTION',
-        message: 'Onboarding: aprove ou recuse pelos botões na DM do Slack.'
+        message:
+          existing.type === 'HIRING'
+            ? 'Onboarding: aprove ou recuse pelos botões na DM do Slack.'
+            : 'Offboarding: aprove ou recuse pelos botões na DM do Slack.'
       });
     }
 
@@ -3749,6 +3815,109 @@ export async function approveHiringViaSlack(
       const d = JSON.parse(fresh?.details || '{}');
       const collab = (d.collaboratorName as string) || '—';
       const line = `✅ Aprovado pelo SI (Onboarding) · ${collab} · #${requestId.slice(0, 8)} · ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`;
+      await postSlackAcessosChannel(app.client, line);
+    }
+  } catch (_) {}
+
+  return 'ok';
+}
+
+export async function approveFiringViaSlack(
+  requestId: string,
+  actorSlackId: string,
+  therisApproverId: string | null
+): Promise<'ok' | 'race' | 'bad_status'> {
+  const req = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, name: true, email: true } } }
+  });
+  if (!req || req.status !== 'PENDING_SI' || req.type !== 'FIRING') return 'bad_status';
+
+  const cnt = await prisma.request.updateMany({
+    where: { id: requestId, status: 'PENDING_SI', siApprovedBy: null, type: 'FIRING' },
+    data: {
+      status: 'APROVADO',
+      siApprovedBy: actorSlackId,
+      siApprovedAt: new Date(),
+      approverId: therisApproverId,
+      ...(therisApproverId ? { assigneeId: therisApproverId } : {}),
+      adminNote: 'Aprovado pelo SI (Slack) — offboarding.',
+      updatedAt: new Date()
+    }
+  });
+  if (cnt.count === 0) return 'race';
+
+  const fresh = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, name: true, email: true } } }
+  });
+  if (fresh) {
+    try {
+      await runOffboardingAutomation(fresh.id, fresh.type, fresh.details, fresh.actionDate, therisApproverId);
+    } catch (e) {
+      console.error('[FIRING] runOffboardingAutomation após aprovação SI:', e);
+    }
+  }
+
+  try {
+    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      const nm = await prisma.user.findUnique({ where: { id: therisApproverId || '' }, select: { name: true } });
+      const d = JSON.parse(fresh?.details || '{}');
+      const collab = (d.collaboratorName as string) || '—';
+      const line = `✅ Offboarding aprovado pelo SI · ${collab} · #${requestId.slice(0, 8)} · ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`;
+      await postSlackAcessosChannel(app.client, line);
+    }
+  } catch (_) {}
+
+  return 'ok';
+}
+
+export async function rejectFiringViaSlack(
+  requestId: string,
+  actorSlackId: string,
+  therisApproverId: string | null
+): Promise<'ok' | 'race'> {
+  const cnt = await prisma.request.updateMany({
+    where: { id: requestId, status: 'PENDING_SI', type: 'FIRING' },
+    data: {
+      status: 'REPROVADO',
+      adminNote: 'Recusado pelo SI (Slack) — offboarding.',
+      updatedAt: new Date(),
+      ...(therisApproverId ? { approverId: therisApproverId, assigneeId: therisApproverId } : {})
+    }
+  });
+  if (cnt.count === 0) return 'race';
+
+  const req = await prisma.request.findUnique({ where: { id: requestId }, include: { requester: { select: { email: true } } } });
+  if (req?.requester?.email) {
+    try {
+      const { getSlackApp, sendDmToSlackUser } = await import('../services/slackService');
+      const app = getSlackApp();
+      if (app?.client) {
+        const lookup = await app.client.users.lookupByEmail({ email: req.requester.email });
+        if (lookup.user?.id) {
+          await sendDmToSlackUser(
+            app.client,
+            lookup.user.id,
+            `❌ Seu pedido de offboarding (#${requestId.slice(0, 8)}) foi recusado pelo time de SI.`
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[FIRING] reject notify:', e);
+    }
+  }
+
+  try {
+    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      const nm = await prisma.user.findUnique({ where: { id: therisApproverId || '' }, select: { name: true } });
+      const d = JSON.parse(req?.details || '{}');
+      const collab = (d.collaboratorName as string) || '—';
+      const line = `❌ Offboarding recusado pelo SI · ${collab} · #${requestId.slice(0, 8)} · ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`;
       await postSlackAcessosChannel(app.client, line);
     }
   } catch (_) {}

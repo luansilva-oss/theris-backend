@@ -1005,6 +1005,37 @@ async function runHiringSlackFlowAfterCreate(
   );
 }
 
+/** Pós-criação FIRING (/pessoas): canal acessos + DMs ao SI (solicitante excluído da lista). */
+async function runFiringSlackFlowAfterCreate(
+  client: WebClient,
+  created: { id: string },
+  detailsWithMeta: Record<string, unknown>,
+  requesterName: string,
+  requesterSlackId?: string | null
+): Promise<void> {
+  const short = created.id.slice(0, 8);
+  const d = detailsWithMeta;
+  const nome = String(d.collaboratorName || '—');
+  const cargo = String(d.role || '—');
+  const dept = String(d.dept || d.department || '—');
+  const unit = String(d.unit || '—');
+  const ad = String(d.actionDate || d.startDate || '—');
+  const summaryBody = `🔴 Offboarding — ${nome}, ${cargo}, ${dept}, ${unit}\nSolicitante: ${requesterName} | Data de ação: ${ad} | Ticket: #${short}`;
+
+  await postSlackAcessosChannel(
+    client,
+    `🔴 Offboarding aberto — ${nome}, ${cargo}, ${dept} | Solicitante: ${requesterName} | Ticket: #${short}`
+  );
+
+  const { sendSiTeamFiringApprovalDms } = await import('./siSlackApprovalService');
+  await sendSiTeamFiringApprovalDms(client, created.id, summaryBody, requesterSlackId ?? null);
+
+  await postSlackAcessosChannel(
+    client,
+    `ℹ️ Solicitação de aprovação SI enviada (DM) · ${nome} · #${short} · ${formatTimestampBrt()} BRT`
+  );
+}
+
 async function saveRequest(
   body: any,
   client: any,
@@ -1082,6 +1113,10 @@ async function saveRequest(
       if (isRhBypassRequester(requesterPeople?.name)) {
         detailsWithMeta = { ...detailsWithMeta, bypassGestor: true };
       }
+    } else if (dbType === 'FIRING') {
+      status = 'PENDING_SI';
+      currentApproverRole = 'SI_ANALYST';
+      approverId = null;
     } else if (PEOPLE_REQUEST_TYPES_SLACK.includes(dbType)) {
       // Regra de bypass /pessoas: Renata pula gestor Theris e vai direto para SI
       if (isRhBypassRequester(requesterPeople?.name)) {
@@ -1137,7 +1172,7 @@ async function saveRequest(
 
     console.log('[Chamado] Tentando enviar notificação SI para chamado:', created.id, 'tipo:', created.type);
     try {
-      if (dbType !== 'HIRING') {
+      if (dbType !== 'HIRING' && dbType !== 'FIRING') {
         await notificarSINovoTicket({
           id: created.id,
           type: created.type,
@@ -1164,15 +1199,21 @@ async function saveRequest(
     }
 
     if (dbType === 'FIRING') {
-      const short = created.id.slice(0, 8);
-      const d = detailsWithMeta;
-      const nome = String(d.collaboratorName || '—');
-      const cargo = String(d.role || '—');
-      const dept = String(d.dept || d.department || '—');
-      const sol = requesterPeople?.name || 'Solicitante';
-      firePostSlackAcessosChannel(
-        `🔴 Offboarding aberto — ${nome}, ${cargo}, ${dept} | Solicitante: ${sol} | Ticket: #${short}`
-      );
+      let requesterSlackIdForFiring: string | null = null;
+      const reqUser = await prisma.user.findUnique({ where: { id: requesterId }, select: { email: true } });
+      if (reqUser?.email) {
+        try {
+          const lu = await client.users.lookupByEmail({ email: reqUser.email });
+          requesterSlackIdForFiring = lu.user?.id ?? null;
+        } catch (_) {}
+      }
+      void runFiringSlackFlowAfterCreate(
+        client,
+        created,
+        detailsWithMeta,
+        requesterPeople?.name || 'Solicitante',
+        requesterSlackIdForFiring
+      ).catch((e) => console.error('[FIRING] pós-criação Slack:', e));
     }
     if (dbType === 'CHANGE_ROLE') {
       const short = created.id.slice(0, 8);
