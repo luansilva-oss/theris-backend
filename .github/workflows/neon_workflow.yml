@@ -55,7 +55,7 @@ jobs:
           expires_at: ${{ env.EXPIRES_AT }}
 
       - name: Run Migrations
-        run: npx prisma migrate deploy
+        run: npx prisma@5 migrate deploy
         working-directory: apps/theris-backend
         env:
           DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url_with_pooler }}"
