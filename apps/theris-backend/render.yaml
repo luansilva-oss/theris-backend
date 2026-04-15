@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: theris-backend
+    env: node
+    # Seed removido do build: rodar seed a cada deploy apagava dados em produção.
+# Para ambiente novo: rodar manualmente uma vez: npm run seed:master
+buildCommand: npm install && npx prisma generate && npx prisma migrate deploy && npx vite build && npx tsc
+    startCommand: node dist-server/index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.0
