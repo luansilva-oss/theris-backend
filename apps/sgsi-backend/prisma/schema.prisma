@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum ActionType {
+  MEETING
+  REVIEW
+  AUDIT
+  TRAINING
+  ACTIVITY
+  REPORT
+}
+
+enum Frequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  ANNUAL
+  ON_DEMAND
+}
+
+enum ActionStatus {
+  SCHEDULED
+  DUE_SOON
+  OVERDUE
+  IN_PROGRESS
+  COMPLETED
+  SUSPENDED
+}
+
+enum Urgency {
+  IMMEDIATE
+  PLANNED
+}
+
+enum ChangeStatus {
+  OPEN
+  MEETING_SCHEDULED
+  DECISION_RECORDED
+  CLOSED
+}
+
+enum OccurrenceResult {
+  COMPLETED
+  PARTIAL
+  SKIPPED
+}
+
+model SgsiRecurringAction {
+  id                String        @id @default(cuid())
+  name              String
+  description       String?
+  type              ActionType
+  frequency         Frequency
+  isoControls       String[]
+  isoDescription    String?
+  conGc10Ref        String?
+  relatedPolicies   String[]
+  responsibleEmail  String
+  backupEmail       String?
+  lastDoneAt        DateTime?
+  nextDueAt         DateTime
+  startedAt         DateTime      @default(now())
+  status            ActionStatus  @default(SCHEDULED)
+  isActive          Boolean       @default(true)
+  clickupListId     String?
+  lastClickupTaskId String?
+  lastAlertSentAt   DateTime?
+  lastDueSentAt     DateTime?
+  occurrences       SgsiOccurrence[]
+  changeImpacts     SgsiChangeImpact[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("sgsi_recurring_actions")
+}
+
+model SgsiOccurrence {
+  id              String           @id @default(cuid())
+  actionId        String
+  action          SgsiRecurringAction @relation(fields: [actionId], references: [id])
+  executedByEmail String
+  executedAt      DateTime         @default(now())
+  result          OccurrenceResult @default(COMPLETED)
+  notes           String?
+  clickupTaskId   String?
+  slackMessageTs  String?
+  source          String           @default("PANEL")
+  createdAt       DateTime         @default(now())
+
+  @@map("sgsi_occurrences")
+}
+
+model SgsiChange {
+  id              String        @id @default(cuid())
+  title           String
+  description     String
+  urgency         Urgency
+  isoControls     String[]
+  reportedByEmail String
+  reportedAt      DateTime      @default(now())
+  status          ChangeStatus  @default(OPEN)
+  meetingAt       DateTime?
+  meetingNotes    String?
+  decidedAt       DateTime?
+  decision        String?
+  decisionMakers  String[]
+  clickupTaskId   String?
+  slackMessageTs  String?
+  impacts         SgsiChangeImpact[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("sgsi_changes")
+}
+
+model SgsiChangeImpact {
+  id                  String        @id @default(cuid())
+  changeId            String
+  change              SgsiChange    @relation(fields: [changeId], references: [id])
+  actionId            String
+  action              SgsiRecurringAction @relation(fields: [actionId], references: [id])
+  impactDescription   String?
+  resolved            Boolean       @default(false)
+  resolvedAt          DateTime?
+  createdAt           DateTime      @default(now())
+
+  @@unique([changeId, actionId])
+  @@map("sgsi_change_impacts")
+}
+
+model SgsiAuditLog {
+  id          String    @id @default(cuid())
+  actorEmail  String
+  actorName   String?
+  action      String
+  entityType  String
+  entityId    String
+  before      Json?
+  after       Json?
+  metadata    Json?
+  source      String    @default("PANEL")
+  createdAt   DateTime  @default(now())
+
+  @@map("sgsi_audit_logs")
+}
+
+model SgsiCronLog {
+  id               String    @id @default(cuid())
+  cronName         String
+  startedAt        DateTime
+  finishedAt       DateTime?
+  success          Boolean   @default(false)
+  actionsProcessed Int       @default(0)
+  alertsSent       Int       @default(0)
+  errorsCount      Int       @default(0)
+  errorDetails     Json?
+  createdAt        DateTime  @default(now())
+
+  @@map("sgsi_cron_logs")
+}
