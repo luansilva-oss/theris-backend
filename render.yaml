@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: theris-backend
+    env: node
+    rootDir: apps/theris-backend
+    buildCommand: npm install && npx prisma generate && npx vite build && npx tsc -p tsconfig.json && npx prisma migrate deploy
+    startCommand: node dist/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.0
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
+      - key: JUMPCLOUD_API_KEY
+        sync: false
+      - key: CLICKUP_API_TOKEN
+        sync: false
+      - key: SGSI_SERVICE_TOKEN
+        sync: false

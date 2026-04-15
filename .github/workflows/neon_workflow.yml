@@ -56,7 +56,7 @@ jobs:
 
       - name: Run Migrations
         run: npx prisma migrate deploy
-        working-directory: teris-backend
+        working-directory: apps/theris-backend
         env:
           DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url_with_pooler }}"
 
