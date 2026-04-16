@@ -1,5 +1,6 @@
 import express from 'express'
 import dotenv from 'dotenv'
+import usersRouter from './routes/users'
 
 dotenv.config()
 
@@ -14,6 +15,8 @@ app.get('/health', (_, res) => {
     timestamp: new Date().toISOString()
   })
 })
+
+app.use('/users', usersRouter)
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
