@@ -3,6 +3,7 @@ import dotenv from 'dotenv'
 import usersRouter from './routes/users'
 import actionsRouter from './routes/actions'
 import accessRouter from './routes/access'
+import changesRouter from './routes/changes'
 
 dotenv.config()
 
@@ -21,6 +22,7 @@ app.get('/health', (_, res) => {
 app.use('/users', usersRouter)
 app.use('/actions', actionsRouter)
 app.use('/access', accessRouter)
+app.use('/changes', changesRouter)
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
