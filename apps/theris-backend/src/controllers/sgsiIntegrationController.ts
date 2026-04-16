@@ -93,3 +93,52 @@ export async function getBoardMembers(req: Request, res: Response): Promise<void
     res.status(500).json({ error: 'Erro ao buscar membros do Board.' });
   }
 }
+
+// POST /api/sgsi-integration/auth/verify — verifica sessão pelo x-user-id e retorna dados do usuário
+export async function verifyToken(req: Request, res: Response): Promise<void> {
+  try {
+    const userId = (req.headers['x-user-id'] as string)?.trim();
+    if (!userId) {
+      res.status(401).json({ error: 'Header x-user-id não fornecido.' });
+      return;
+    }
+
+    const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutos
+
+    const session = await prisma.session.findUnique({ where: { userId } });
+    if (!session) {
+      res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+      return;
+    }
+
+    const elapsed = new Date().getTime() - session.lastActivity.getTime();
+    if (elapsed > SESSION_TIMEOUT_MS) {
+      res.status(401).json({ error: 'Sessão expirada por inatividade.' });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, systemProfile: true, isActive: true },
+    });
+
+    if (!user) {
+      res.status(403).json({ error: 'Usuário não encontrado.' });
+      return;
+    }
+
+    if (!user.isActive) {
+      res.status(403).json({ error: 'Usuário inativo.' });
+      return;
+    }
+
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      systemProfile: user.systemProfile,
+    });
+  } catch {
+    res.status(500).json({ error: 'Erro ao verificar sessão.' });
+  }
+}

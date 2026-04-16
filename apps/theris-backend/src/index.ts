@@ -64,7 +64,7 @@ import { startExpireExtraordinaryAccessCron } from './jobs/expireExtraordinaryAc
 import { startRecertifyExtraordinaryAccessCron } from './jobs/recertifyExtraordinaryAccess';
 import webhookRouter from './routes/webhooks';
 import { requireServiceToken } from './middleware/requireServiceToken';
-import { getUsers, getUserByEmail, getSiMembers, getBoardMembers } from './controllers/sgsiIntegrationController';
+import { getUsers, getUserByEmail, getSiMembers, getBoardMembers, verifyToken } from './controllers/sgsiIntegrationController';
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -305,6 +305,7 @@ app.get('/api/sgsi-integration/users', requireServiceToken, getUsers);
 app.get('/api/sgsi-integration/users/by-email/:email', requireServiceToken, getUserByEmail);
 app.get('/api/sgsi-integration/users/si-members', requireServiceToken, getSiMembers);
 app.get('/api/sgsi-integration/users/board', requireServiceToken, getBoardMembers);
+app.post('/api/sgsi-integration/auth/verify', requireServiceToken, verifyToken);
 
 // ============================================================
 // --- SERVIR FRONTEND ---
