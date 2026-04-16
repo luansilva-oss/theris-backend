@@ -63,6 +63,8 @@ import { startValidateAexToolSyncCron } from './jobs/validateAexToolSync';
 import { startExpireExtraordinaryAccessCron } from './jobs/expireExtraordinaryAccess';
 import { startRecertifyExtraordinaryAccessCron } from './jobs/recertifyExtraordinaryAccess';
 import webhookRouter from './routes/webhooks';
+import { requireServiceToken } from './middleware/requireServiceToken';
+import { getUsers, getUserByEmail, getSiMembers, getBoardMembers } from './controllers/sgsiIntegrationController';
 
 // Slack
 import { slackReceiver } from './services/slackService';
@@ -297,6 +299,12 @@ app.patch('/api/solicitacoes/:id/inbox', patchRequestInbox);
 app.post('/api/solicitacoes/:id/comments', createComment);
 app.post('/api/solicitacoes/:id/attachments', createAttachment);
 app.patch('/api/solicitacoes/:id', updateSolicitacao);
+
+// --- SGSI INTEGRATION ---
+app.get('/api/sgsi-integration/users', requireServiceToken, getUsers);
+app.get('/api/sgsi-integration/users/by-email/:email', requireServiceToken, getUserByEmail);
+app.get('/api/sgsi-integration/users/si-members', requireServiceToken, getSiMembers);
+app.get('/api/sgsi-integration/users/board', requireServiceToken, getBoardMembers);
 
 // ============================================================
 // --- SERVIR FRONTEND ---
