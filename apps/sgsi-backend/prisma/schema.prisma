@@ -154,6 +154,24 @@ model SgsiAuditLog {
   @@map("sgsi_audit_logs")
 }
 
+enum SgsiRole {
+  ADMIN    // Acesso total ao portal SGSI (time de SI)
+  MEMBER   // Registra mudanças e conclui ações
+  VIEWER   // Somente leitura
+}
+
+model SgsiUserAccess {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  name      String
+  role      SgsiRole  @default(VIEWER)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("sgsi_user_access")
+}
+
 model SgsiCronLog {
   id               String    @id @default(cuid())
   cronName         String
