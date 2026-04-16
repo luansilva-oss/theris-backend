@@ -15,6 +15,7 @@ const AUTH_EXEMPT: { method: string; pathPrefix: string }[] = [
 function isAuthExempt(req: Request): boolean {
   const url = (req.originalUrl || req.url || '').split('?')[0];
   if (url.startsWith('/api/slack') || url.startsWith('/api/webhooks')) return true;
+  if (url.startsWith('/api/sgsi-integration')) return true;
   return AUTH_EXEMPT.some((e) => e.method === req.method && (url === e.pathPrefix || url.startsWith(e.pathPrefix + '/')));
 }
 
