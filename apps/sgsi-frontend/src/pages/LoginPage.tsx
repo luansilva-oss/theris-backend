@@ -27,7 +27,7 @@ export function LoginPage() {
 
         const data = await res.json();
         localStorage.setItem('sgsi_user_id', data.userId);
-        window.location.href = '/dashboard';
+        window.location.href = '/';
       } catch {
         setError('Erro ao conectar com o servidor. Tente novamente.');
       } finally {
