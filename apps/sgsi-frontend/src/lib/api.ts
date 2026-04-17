@@ -74,16 +74,23 @@ export type ActionExecution = {
   nextDueDate: string | null;
 }
 
+/** Campos extras aceitos pelo SGSI ao criar/atualizar ações (além de Partial<Action>). */
+export type ActionUpsertPayload = Partial<Action> & {
+  nextDueAt?: string | null;
+  responsibleEmail?: string;
+  conGc10Ref?: string;
+};
+
 export const getActions = (status?: ActionStatus) =>
   sgsiGet<Action[]>(`/actions${status ? `?status=${status}` : ''}`);
 
 export const getAction = (id: string) =>
   sgsiGet<Action>(`/actions/${id}`);
 
-export const createAction = (data: Partial<Action>) =>
+export const createAction = (data: ActionUpsertPayload) =>
   sgsiPost<Action>('/actions', data);
 
-export const updateAction = (id: string, data: Partial<Action>) =>
+export const updateAction = (id: string, data: ActionUpsertPayload) =>
   sgsiPatch<Action>(`/actions/${id}`, data);
 
 export const completeAction = (id: string, notes?: string) =>
@@ -146,3 +153,6 @@ export const updateAccess = (email: string, role: SgsiRole) =>
   sgsiPatch(`/access/${email}`, { role });
 export const revokeAccess = (email: string) =>
   sgsiPatch(`/access/${email}`, { isActive: false });
+
+export const deleteAction = (id: string) =>
+  sgsiPatch<Action>(`/actions/${id}`, { isActive: false });
