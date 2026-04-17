@@ -5,6 +5,7 @@ import { getAction, completeAction, updateAction } from '../lib/api';
 import type { Action } from '../lib/api';
 import { StatusBadge } from '../components/shared/StatusBadge';
 import { frequencyLabels, typeLabels } from '../lib/labels';
+import { useToast } from '../context/ToastContext';
 
 function formatDate(d: string | null) {
   if (!d) return '—';
@@ -25,6 +26,7 @@ export function AcaoDetailPage() {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
+  const { toast } = useToast();
 
   const load = () => {
     if (!id) { setLoading(false); setAction(null); return; }
@@ -42,9 +44,10 @@ export function AcaoDetailPage() {
     try {
       await completeAction(id, notes);
       setShowModal(false);
+      toast('Conclusão registrada!', 'success');
       setNotes('');
       load();
-    } catch { alert('Erro ao registrar conclusão.'); }
+    } catch { toast('Erro ao registrar conclusão.', 'error'); }
     finally { setSaving(false); }
   }
 
@@ -54,8 +57,9 @@ export function AcaoDetailPage() {
     try {
       await updateAction(id, { notes: notesValue });
       setEditingNotes(false);
+      toast('Observações salvas.', 'success');
       load();
-    } catch { alert('Erro ao salvar observações.'); }
+    } catch { toast('Erro ao salvar observações.', 'error'); }
     finally { setSavingNotes(false); }
   }
 

@@ -5,6 +5,7 @@ import { getChanges, createChange } from '../lib/api';
 import type { Change, ChangeUrgency } from '../lib/api';
 import { StatusBadge } from '../components/shared/StatusBadge';
 import { EmptyState } from '../components/shared/EmptyState';
+import { useToast } from '../context/ToastContext';
 
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('pt-BR');
@@ -17,6 +18,7 @@ export function MudancasPage() {
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', urgency: 'IMEDIATA' as ChangeUrgency, isoControls: '' });
+  const { toast } = useToast();
 
   const load = () => {
     setLoading(true);
@@ -39,10 +41,11 @@ export function MudancasPage() {
         isoControls: form.isoControls.split(',').map(s => s.trim()).filter(Boolean),
       });
       setShowModal(false);
+      toast('Mudança registrada!', 'success');
       setForm({ title: '', description: '', urgency: 'IMEDIATA', isoControls: '' });
       load();
     } catch {
-      alert('Erro ao criar mudança.');
+      toast('Erro ao criar mudança.', 'error');
     } finally {
       setSaving(false);
     }

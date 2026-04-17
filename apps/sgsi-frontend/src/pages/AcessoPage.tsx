@@ -3,6 +3,8 @@ import { UserPlus, ShieldOff } from 'lucide-react';
 import { getAccessList, grantAccess, updateAccess, revokeAccess } from '../lib/api';
 import type { SgsiUser, SgsiRole } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 
 const roleColors: Record<SgsiRole, string> = {
   ADMIN: '#3b82f6',
@@ -18,6 +20,8 @@ export function AcessoPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ email: '', role: 'MEMBER' as SgsiRole });
   const isAdmin = user?.sgsiRole === 'ADMIN';
+  const { toast } = useToast();
+  const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -32,21 +36,16 @@ export function AcessoPage() {
     try {
       await grantAccess(form.email, form.role);
       setShowModal(false);
+      toast('Acesso concedido.', 'success');
       setForm({ email: '', role: 'MEMBER' });
       load();
-    } catch { alert('Erro ao conceder acesso. Verifique o e-mail.'); }
+    } catch { toast('Erro ao conceder acesso. Verifique o e-mail.', 'error'); }
     finally { setSaving(false); }
   }
 
   async function handleChangeRole(email: string, role: SgsiRole) {
     try { await updateAccess(email, role); load(); }
-    catch { alert('Erro ao atualizar papel.'); }
-  }
-
-  async function handleRevoke(email: string) {
-    if (!confirm(`Revogar acesso de ${email}?`)) return;
-    try { await revokeAccess(email); load(); }
-    catch { alert('Erro ao revogar acesso.'); }
+    catch { toast('Erro ao atualizar papel.', 'error'); }
   }
 
   return (
@@ -121,7 +120,7 @@ export function AcessoPage() {
                   {isAdmin && (
                     <td className="px-5 py-3">
                       {u.email !== user?.email && u.isActive && (
-                        <button onClick={() => handleRevoke(u.email)}
+                        <button onClick={() => setConfirmRevoke(u.email)}
                           className="flex items-center gap-1 text-xs hover:opacity-80"
                           style={{ color: '#ef4444' }}>
                           <ShieldOff size={12} /> Revogar
@@ -173,6 +172,26 @@ export function AcessoPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {confirmRevoke && (
+        <ConfirmDialog
+          message={`Revogar acesso de ${confirmRevoke}?`}
+          danger
+          confirmLabel="Revogar"
+          onConfirm={async () => {
+            const email = confirmRevoke;
+            setConfirmRevoke(null);
+            try {
+              await revokeAccess(email);
+              toast('Acesso revogado.', 'success');
+              load();
+            } catch {
+              toast('Erro ao revogar acesso.', 'error');
+            }
+          }}
+          onCancel={() => setConfirmRevoke(null)}
+        />
       )}
     </div>
   );

@@ -9,6 +9,8 @@ import type { Action, ActionStatus, ActionFrequency } from '../lib/api';
 import { StatusBadge } from '../components/shared/StatusBadge';
 import { EmptyState } from '../components/shared/EmptyState';
 import { frequencyLabels, typeLabels, statusLabels } from '../lib/labels';
+import { useToast } from '../context/ToastContext';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 
 const statusOptions: { value: ActionStatus | ''; label: string }[] = [
   { value: '',            label: 'Todos os status' },
@@ -66,6 +68,8 @@ export function AcoesPage() {
   const [editingAction, setEditingAction] = useState<Action | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+  const [confirmData, setConfirmData] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -121,7 +125,7 @@ export function AcoesPage() {
       setShowFormModal(false);
       load();
     } catch {
-      alert('Erro ao salvar ação.');
+      toast('Erro ao salvar ação.', 'error');
     } finally {
       setSaving(false);
     }
@@ -129,13 +133,19 @@ export function AcoesPage() {
 
   async function handleDelete(action: Action, e: MouseEvent) {
     e.stopPropagation();
-    if (!confirm(`Excluir a ação "${action.name}"?`)) return;
-    try {
-      await deleteAction(action.id);
-      load();
-    } catch {
-      alert('Erro ao excluir ação.');
-    }
+    setConfirmData({
+      message: `Excluir a ação "${action.name}"? Esta operação não pode ser desfeita.`,
+      onConfirm: async () => {
+        setConfirmData(null);
+        try {
+          await deleteAction(action.id);
+          toast('Ação excluída com sucesso.', 'success');
+          load();
+        } catch {
+          toast('Erro ao excluir ação.', 'error');
+        }
+      },
+    });
   }
 
   async function handleComplete() {
@@ -144,10 +154,11 @@ export function AcoesPage() {
     try {
       await completeAction(showCompleteModal.id, completingNotes);
       setShowCompleteModal(null);
+      toast('Conclusão registrada com sucesso!', 'success');
       setCompletingNotes('');
       load();
     } catch {
-      alert('Erro ao registrar conclusão.');
+      toast('Erro ao registrar conclusão.', 'error');
     } finally {
       setCompleting(false);
     }
@@ -380,6 +391,16 @@ export function AcoesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {confirmData && (
+        <ConfirmDialog
+          message={confirmData.message}
+          danger
+          confirmLabel="Excluir"
+          onConfirm={confirmData.onConfirm}
+          onCancel={() => setConfirmData(null)}
+        />
       )}
     </div>
   );

@@ -4,6 +4,8 @@ import { ArrowLeft } from 'lucide-react';
 import { getChange, updateChange, decideChange, closeChange } from '../lib/api';
 import type { Change } from '../lib/api';
 import { StatusBadge } from '../components/shared/StatusBadge';
+import { useToast } from '../context/ToastContext';
+import { ConfirmDialog } from '../components/shared/ConfirmDialog';
 
 function formatDate(d: string | null) {
   if (!d) return '—';
@@ -19,6 +21,8 @@ export function MudancaDetailPage() {
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingNotes, setMeetingNotes] = useState('');
   const [decision, setDecision] = useState('');
+  const { toast } = useToast();
+  const [confirmClose, setConfirmClose] = useState(false);
 
   const load = () => {
     if (!id) {
@@ -41,8 +45,9 @@ export function MudancaDetailPage() {
     setSaving(true);
     try {
       await updateChange(id, { status: 'MEETING_SCHEDULED', meetingDate: new Date(meetingDate).toISOString(), meetingNotes });
+      toast('Reunião agendada.', 'success');
       load();
-    } catch { alert('Erro ao agendar reunião.'); }
+    } catch { toast('Erro ao agendar reunião.', 'error'); }
     finally { setSaving(false); }
   }
 
@@ -51,16 +56,9 @@ export function MudancaDetailPage() {
     setSaving(true);
     try {
       await decideChange(id, decision, []);
+      toast('Decisão registrada.', 'success');
       load();
-    } catch { alert('Erro ao registrar decisão.'); }
-    finally { setSaving(false); }
-  }
-
-  async function handleClose() {
-    if (!id || !confirm('Encerrar esta mudança?')) return;
-    setSaving(true);
-    try { await closeChange(id); load(); }
-    catch { alert('Erro ao encerrar.'); }
+    } catch { toast('Erro ao registrar decisão.', 'error'); }
     finally { setSaving(false); }
   }
 
@@ -194,11 +192,33 @@ export function MudancaDetailPage() {
       )}
 
       {change.status === 'DECISION_RECORDED' && (
-        <button onClick={handleClose} disabled={saving}
+        <button onClick={() => setConfirmClose(true)} disabled={saving}
           className="text-sm px-4 py-2 rounded-lg font-medium hover:opacity-80 disabled:opacity-50"
           style={{ background: '#22c55e', color: '#fff' }}>
           {saving ? 'Encerrando...' : 'Encerrar mudança'}
         </button>
+      )}
+
+      {confirmClose && (
+        <ConfirmDialog
+          message="Encerrar esta mudança? Ela ficará como concluída."
+          confirmLabel="Encerrar"
+          onConfirm={async () => {
+            setConfirmClose(false);
+            if (!id) return;
+            setSaving(true);
+            try {
+              await closeChange(id);
+              toast('Mudança encerrada.', 'success');
+              load();
+            } catch {
+              toast('Erro ao encerrar.', 'error');
+            } finally {
+              setSaving(false);
+            }
+          }}
+          onCancel={() => setConfirmClose(false)}
+        />
       )}
     </div>
   );
