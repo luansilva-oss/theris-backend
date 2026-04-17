@@ -5,6 +5,7 @@ import usersRouter from './routes/users'
 import actionsRouter from './routes/actions'
 import accessRouter from './routes/access'
 import changesRouter from './routes/changes'
+import logsRouter from './routes/logs'
 import { startAllCrons } from './crons/sgsiCrons'
 
 dotenv.config()
@@ -35,6 +36,7 @@ app.use('/users', usersRouter)
 app.use('/actions', actionsRouter)
 app.use('/access', accessRouter)
 app.use('/changes', changesRouter)
+app.use('/logs', logsRouter)
 
 startAllCrons()
 

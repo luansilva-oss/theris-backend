@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { PrismaClient } from '@prisma/client';
-import { enviarDm, enviarCanal } from '../integrations/slackClient';
+import { enviarDm, enviarCanal, enviarDmTimeSI } from '../integrations/slackClient';
 
 const prisma = new PrismaClient();
 
@@ -39,6 +39,7 @@ export function startAlertaAntecipado(): void {
         const texto = `⚠️ *Ação SGSI vence em ${diasRestantes} dia(s)*\n\n*${acao.name}*\nFrequência: ${acao.frequency}\nVencimento: ${acao.nextDueAt.toLocaleDateString('pt-BR')}\n\nAcesse o SGSI Dashboard para registrar a conclusão.`;
 
         await enviarDm(acao.responsibleEmail, texto);
+        await enviarDmTimeSI(texto);
         await prisma.sgsiRecurringAction.update({
           where: { id: acao.id },
           data: { status: 'DUE_SOON', lastAlertSentAt: new Date() },
@@ -88,6 +89,7 @@ export function startDiaDoVencimento(): void {
         const texto = `🔔 *Ação SGSI vence hoje*\n\n*${acao.name}*\nResponsável: ${acao.responsibleEmail}\nFrequência: ${acao.frequency}`;
 
         await enviarDm(acao.responsibleEmail, texto);
+        await enviarDmTimeSI(texto);
         await enviarCanal(texto);
         await prisma.sgsiRecurringAction.update({
           where: { id: acao.id },
@@ -137,6 +139,7 @@ export function startVerificacaoAtrasos(): void {
         const texto = `🚨 *Ação SGSI em atraso*\n\n*${acao.name}*\nVenceu em: ${acao.nextDueAt.toLocaleDateString('pt-BR')}\nResponsável: ${acao.responsibleEmail}\n\nPor favor, registre a conclusão ou justifique o atraso no SGSI Dashboard.`;
 
         await enviarDm(acao.responsibleEmail, texto);
+        await enviarDmTimeSI(texto);
         await prisma.sgsiRecurringAction.update({
           where: { id: acao.id },
           data: { status: 'OVERDUE' },
@@ -180,6 +183,7 @@ export function startRelatorioSemanal(): void {
       const texto = `📊 *Relatório Semanal SGSI*\n\n✅ Em dia: *${emDia}*\n⚠️ Próximas do vencimento: *${proximas}*\n🚨 Atrasadas: *${atrasadas}*\n🔄 Mudanças urgentes abertas: *${mudancasAbertas}*\n\n_${new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}_`;
 
       await enviarCanal(texto);
+      await enviarDmTimeSI(texto);
 
       await prisma.sgsiCronLog.update({
         where: { id: log.id },

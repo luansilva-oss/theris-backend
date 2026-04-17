@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getActions } from '../lib/api';
-import type { Action } from '../lib/api';
+import { getLogs } from '../lib/api';
+import type { LogEntry } from '../lib/api';
 
 function formatDateTime(d: string) {
   return new Date(d).toLocaleString('pt-BR', {
@@ -9,44 +9,32 @@ function formatDateTime(d: string) {
   });
 }
 
-interface ExecutionEntry {
-  id: string;
-  actionName: string;
-  completedAt: string;
-  completedByName?: string;
-  notes: string | null;
-  nextDueDate: string | null;
-}
+const kindLabel: Record<LogEntry['kind'], string> = {
+  cron: 'Slack / Cron',
+  execution: 'Conclusão',
+};
+
+const kindColor: Record<LogEntry['kind'], string> = {
+  cron: '#8b5cf6',
+  execution: '#22c55e',
+};
 
 export function HistoricoPage() {
-  const [entries, setEntries] = useState<ExecutionEntry[]>([]);
+  const [entries, setEntries] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [kindFilter, setKindFilter] = useState<'' | 'cron' | 'execution'>('');
 
   useEffect(() => {
-    getActions().then((actions: Action[]) => {
-      const all: ExecutionEntry[] = [];
-      for (const a of actions) {
-        for (const ex of a.executions || []) {
-          all.push({
-            id: ex.id,
-            actionName: a.name,
-            completedAt: ex.completedAt,
-            completedByName: ex.completedByName,
-            notes: ex.notes,
-            nextDueDate: ex.nextDueDate,
-          });
-        }
-      }
-      all.sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
-      setEntries(all);
-    }).finally(() => setLoading(false));
+    getLogs().then(setEntries).finally(() => setLoading(false));
   }, []);
 
-  const filtered = entries.filter(e =>
-    e.actionName.toLowerCase().includes(search.toLowerCase()) ||
-    (e.completedByName ?? '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = entries.filter(e => {
+    const matchesSearch = e.label.toLowerCase().includes(search.toLowerCase()) ||
+      e.detail.toLowerCase().includes(search.toLowerCase());
+    const matchesKind = !kindFilter || e.kind === kindFilter;
+    return matchesSearch && matchesKind;
+  });
 
   return (
     <div className="space-y-6">
@@ -55,47 +43,74 @@ export function HistoricoPage() {
           Histórico
         </h1>
         <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-          Todas as execuções registradas — cronologia auditável
+          Todas as execuções, disparos Slack e eventos do SGSI — cronologia auditável
         </p>
       </div>
 
-      <input type="text" placeholder="Buscar no histórico..."
-        value={search} onChange={e => setSearch(e.target.value)}
-        className="text-sm px-3 py-2 rounded-lg border outline-none"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)', width: 280 }} />
+      <div className="flex gap-3 flex-wrap">
+        <input type="text" placeholder="Buscar no histórico..."
+          value={search} onChange={e => setSearch(e.target.value)}
+          className="text-sm px-3 py-2 rounded-lg border outline-none"
+          style={{
+            background: 'var(--color-surface)',
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-text)',
+            width: 280,
+          }} />
+        <select value={kindFilter} onChange={e => setKindFilter(e.target.value as '' | 'cron' | 'execution')}
+          className="text-sm px-3 py-2 rounded-lg border outline-none"
+          style={{
+            background: 'var(--color-surface)',
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-text)',
+          }}>
+          <option value="">Todos os tipos</option>
+          <option value="execution">Conclusões de ações</option>
+          <option value="cron">Disparos Slack / Cron</option>
+        </select>
+      </div>
 
       <div className="rounded-xl border overflow-hidden"
         style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
         {loading ? (
-          <div className="py-12 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>Carregando...</div>
+          <div className="py-12 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            Carregando...
+          </div>
         ) : filtered.length === 0 ? (
           <div className="py-12 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            {entries.length === 0 ? 'Nenhuma execução registrada ainda.' : 'Nenhum resultado para a busca.'}
+            {entries.length === 0 ? 'Nenhum evento registrado ainda.' : 'Nenhum resultado para a busca.'}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b" style={{ borderColor: 'var(--color-border)' }}>
-                {['Ação', 'Executado por', 'Data', 'Próximo vencimento', 'Observações'].map(h => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-medium"
-                    style={{ color: 'var(--color-text-muted)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
-              {filtered.map(e => (
-                <tr key={e.id}>
-                  <td className="px-5 py-3 font-medium" style={{ color: 'var(--color-text)' }}>{e.actionName}</td>
-                  <td className="px-5 py-3" style={{ color: 'var(--color-text-muted)' }}>{e.completedByName || '—'}</td>
-                  <td className="px-5 py-3 whitespace-nowrap" style={{ color: 'var(--color-text-muted)' }}>{formatDateTime(e.completedAt)}</td>
-                  <td className="px-5 py-3" style={{ color: 'var(--color-text-muted)' }}>
-                    {e.nextDueDate ? new Date(e.nextDueDate).toLocaleDateString('pt-BR') : '—'}
-                  </td>
-                  <td className="px-5 py-3 max-w-xs truncate" style={{ color: 'var(--color-text-muted)' }}>{e.notes || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+            {filtered.map(entry => (
+              <div key={entry.id} className="px-5 py-3 flex items-start gap-4">
+                <div className="shrink-0 mt-0.5">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                    style={{
+                      background: `${kindColor[entry.kind]}22`,
+                      color: kindColor[entry.kind],
+                    }}>
+                    {kindLabel[entry.kind]}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate" style={{
+                    color: entry.success ? 'var(--color-text)' : '#ef4444',
+                  }}>
+                    {entry.label}
+                  </div>
+                  {entry.detail && (
+                    <div className="text-xs mt-0.5 truncate" style={{ color: 'var(--color-text-muted)' }}>
+                      {entry.detail}
+                    </div>
+                  )}
+                </div>
+                <div className="text-xs shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                  {formatDateTime(entry.timestamp)}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

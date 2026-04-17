@@ -156,3 +156,14 @@ export const revokeAccess = (email: string) =>
 
 export const deleteAction = (id: string) =>
   sgsiPatch<Action>(`/actions/${id}`, { isActive: false });
+
+export interface LogEntry {
+  id: string;
+  kind: 'cron' | 'execution';
+  label: string;
+  detail: string;
+  success: boolean;
+  timestamp: string;
+}
+
+export const getLogs = () => sgsiGet<LogEntry[]>('/logs');
