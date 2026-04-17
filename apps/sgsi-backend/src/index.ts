@@ -1,4 +1,5 @@
 import express from 'express'
+import cors from 'cors'
 import dotenv from 'dotenv'
 import usersRouter from './routes/users'
 import actionsRouter from './routes/actions'
@@ -9,6 +10,16 @@ import { startAllCrons } from './crons/sgsiCrons'
 dotenv.config()
 
 const app = express()
+
+app.use(cors({
+  origin: [
+    'http://localhost:5174',
+    'http://localhost:5173',
+    'https://sgsi.grupo-3c.com',
+  ],
+  credentials: true,
+}))
+
 app.use(express.json())
 
 app.get('/health', (_, res) => {
