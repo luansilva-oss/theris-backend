@@ -8,7 +8,7 @@ function getUserId(): string | null {
 
 async function sgsiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${SGSI_API}${path}`);
-  if (!res.ok) throw new Error(`SGSI API error: ${res.status}`);
+  if (!res.ok) throw new Error(`SGSI GET ${path} failed: ${res.status}`);
   return res.json();
 }
 
@@ -18,75 +18,131 @@ async function sgsiPost<T>(path: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`SGSI API error: ${res.status}`);
+  if (!res.ok) throw new Error(`SGSI POST ${path} failed: ${res.status}`);
   return res.json();
 }
 
-async function sgsiPatch<T>(path: string, body: unknown): Promise<T> {
+async function sgsiPatch<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${SGSI_API}${path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`SGSI API error: ${res.status}`);
+  if (!res.ok) throw new Error(`SGSI PATCH ${path} failed: ${res.status}`);
   return res.json();
 }
 
-async function sgsiDelete<T>(path: string): Promise<T> {
-  const res = await fetch(`${SGSI_API}${path}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`SGSI API error: ${res.status}`);
-  return res.json();
-}
-
-export async function verifySession(userId: string): Promise<{
-  id: string;
-  name: string;
-  email: string;
-  systemProfile: string;
-}> {
+// AUTH
+export async function verifySession(userId: string) {
   const res = await fetch(`${THERIS_API}/api/sgsi-integration/auth/verify`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-service-token': SERVICE_TOKEN,
-      'x-user-id': userId,
-    },
+    headers: { 'Content-Type': 'application/json', 'X-Service-Token': SERVICE_TOKEN },
+    body: JSON.stringify({ userId }),
   });
-  if (!res.ok) throw new Error('Sessão inválida');
+  if (!res.ok) throw new Error('Session invalid');
   return res.json();
 }
 
-// Ações recorrentes
-export const actionsApi = {
-  list: () => sgsiGet<any[]>('/actions'),
-  get: (id: string) => sgsiGet<any>(`/actions/${id}`),
-  create: (data: unknown) => sgsiPost<any>('/actions', data),
-  update: (id: string, data: unknown) => sgsiPatch<any>(`/actions/${id}`, data),
-  complete: (id: string, data: unknown) => sgsiPost<any>(`/actions/${id}/complete`, data),
-};
+// ACTIONS
+export type ActionStatus = 'SCHEDULED' | 'DUE_SOON' | 'IN_PROGRESS' | 'OVERDUE' | 'COMPLETED';
+export type ActionFrequency = 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'ANNUAL' | 'ON_DEMAND';
 
-// Mudanças urgentes
-export const changesApi = {
-  list: () => sgsiGet<any[]>('/changes'),
-  get: (id: string) => sgsiGet<any>(`/changes/${id}`),
-  create: (data: unknown) => sgsiPost<any>('/changes', data),
-  update: (id: string, data: unknown) => sgsiPatch<any>(`/changes/${id}`, data),
-  decide: (id: string, data: unknown) => sgsiPost<any>(`/changes/${id}/decide`, data),
-  close: (id: string) => sgsiPost<any>(`/changes/${id}/close`),
-  addImpact: (id: string, data: unknown) => sgsiPost<any>(`/changes/${id}/impacts`, data),
-};
+export type Action = {
+  id: string;
+  name: string;
+  type: string;
+  frequency: ActionFrequency;
+  status: ActionStatus;
+  nextDueDate: string | null;
+  responsibleId: string;
+  responsibleName?: string;
+  isoControls: string[];
+  referenceCode: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  executions?: ActionExecution[];
+}
 
-// Usuários e acesso
-export const accessApi = {
-  list: () => sgsiGet<any[]>('/access'),
-  grant: (data: unknown) => sgsiPost<any>('/access', data),
-  update: (email: string, data: unknown) => sgsiPatch<any>(`/access/${encodeURIComponent(email)}`, data),
-  revoke: (email: string) => sgsiDelete<any>(`/access/${encodeURIComponent(email)}`),
-};
+export type ActionExecution = {
+  id: string;
+  actionId: string;
+  completedById: string;
+  completedByName?: string;
+  completedAt: string;
+  notes: string | null;
+  nextDueDate: string | null;
+}
 
-export const usersApi = {
-  list: () => sgsiGet<any[]>('/users'),
-  siMembers: () => sgsiGet<any[]>('/users/si-members'),
-};
+export const getActions = (status?: ActionStatus) =>
+  sgsiGet<Action[]>(`/actions${status ? `?status=${status}` : ''}`);
 
-export { getUserId };
+export const getAction = (id: string) =>
+  sgsiGet<Action>(`/actions/${id}`);
+
+export const createAction = (data: Partial<Action>) =>
+  sgsiPost<Action>('/actions', data);
+
+export const updateAction = (id: string, data: Partial<Action>) =>
+  sgsiPatch<Action>(`/actions/${id}`, data);
+
+export const completeAction = (id: string, notes?: string) =>
+  sgsiPost<ActionExecution>(`/actions/${id}/complete`, {
+    completedById: getUserId(),
+    notes,
+  });
+
+// CHANGES
+export type ChangeStatus = 'OPEN' | 'MEETING_SCHEDULED' | 'DECISION_RECORDED' | 'CLOSED';
+export type ChangeUrgency = 'IMEDIATA' | 'PLANEJADA';
+
+export type Change = {
+  id: string;
+  title: string;
+  description: string;
+  urgency: ChangeUrgency;
+  status: ChangeStatus;
+  isoControls: string[];
+  registeredById: string;
+  registeredByName?: string;
+  meetingDate: string | null;
+  meetingNotes: string | null;
+  decision: string | null;
+  decisionParticipants: string[];
+  createdAt: string;
+  updatedAt: string;
+  impactedActions?: Action[];
+}
+
+export const getChanges = () => sgsiGet<Change[]>('/changes');
+export const getChange = (id: string) => sgsiGet<Change>(`/changes/${id}`);
+export const createChange = (data: Partial<Change>) =>
+  sgsiPost<Change>('/changes', { ...data, registeredById: getUserId() });
+export const updateChange = (id: string, data: Partial<Change>) =>
+  sgsiPatch<Change>(`/changes/${id}`, data);
+export const decideChange = (id: string, decision: string, participants: string[]) =>
+  sgsiPost(`/changes/${id}/decide`, { decision, participants });
+export const closeChange = (id: string) =>
+  sgsiPost(`/changes/${id}/close`);
+
+// ACCESS
+export type SgsiRole = 'ADMIN' | 'MEMBER' | 'VIEWER';
+
+export type SgsiUser = {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  role: SgsiRole;
+  isActive: boolean;
+  grantedById: string;
+  createdAt: string;
+}
+
+export const getAccessList = () => sgsiGet<SgsiUser[]>('/access');
+export const grantAccess = (email: string, role: SgsiRole) =>
+  sgsiPost('/access', { email, role, grantedById: getUserId() });
+export const updateAccess = (email: string, role: SgsiRole) =>
+  sgsiPatch(`/access/${email}`, { role });
+export const revokeAccess = (email: string) =>
+  sgsiPatch(`/access/${email}`, { isActive: false });

@@ -1,55 +1,57 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { AppLayout } from './components/layout/AppLayout';
+import { Sidebar } from './components/layout/Sidebar';
 import { LoginPage } from './pages/LoginPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { AcoesPage } from './pages/AcoesPage';
+import { AcaoDetailPage } from './pages/AcaoDetailPage';
+import { MudancasPage } from './pages/MudancasPage';
+import { MudancaDetailPage } from './pages/MudancaDetailPage';
+import { HistoricoPage } from './pages/HistoricoPage';
+import { AcessoPage } from './pages/AcessoPage';
 
-const queryClient = new QueryClient();
-
-function ProtectedRoutes() {
+function AppLayout() {
   const { user, loading } = useAuth();
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center"
-        style={{ background: 'var(--color-bg)' }}>
-        <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-          Verificando sessão...
-        </div>
+      <div className="flex items-center justify-center h-screen"
+        style={{ background: 'var(--color-bg)', color: 'var(--color-text-muted)' }}>
+        Carregando...
       </div>
     );
   }
 
   if (!user) return <Navigate to="/login" replace />;
 
-  return <AppLayout />;
-}
-
-function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<ProtectedRoutes />}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<div style={{ color: 'var(--color-text)' }}>Dashboard — em breve</div>} />
-        <Route path="acoes" element={<div style={{ color: 'var(--color-text)' }}>Ações — em breve</div>} />
-        <Route path="mudancas" element={<div style={{ color: 'var(--color-text)' }}>Mudanças — em breve</div>} />
-        <Route path="historico" element={<div style={{ color: 'var(--color-text)' }}>Histórico — em breve</div>} />
-        <Route path="acesso" element={<div style={{ color: 'var(--color-text)' }}>Acesso — em breve</div>} />
-      </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    <div className="flex min-h-screen" style={{ background: 'var(--color-bg)' }}>
+      <Sidebar />
+      <main className="flex-1 ml-56 p-8">
+        <Routes>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/acoes" element={<AcoesPage />} />
+          <Route path="/acoes/:id" element={<AcaoDetailPage />} />
+          <Route path="/mudancas" element={<MudancasPage />} />
+          <Route path="/mudancas/:id" element={<MudancaDetailPage />} />
+          <Route path="/historico" element={<HistoricoPage />} />
+          <Route path="/acesso" element={<AcessoPage />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </main>
+    </div>
   );
 }
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/*" element={<AppLayout />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
