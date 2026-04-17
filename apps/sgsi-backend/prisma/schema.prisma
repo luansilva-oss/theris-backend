@@ -155,9 +155,10 @@ model SgsiAuditLog {
 }
 
 enum SgsiRole {
-  ADMIN    // Acesso total ao portal SGSI (time de SI)
-  MEMBER   // Registra mudanças e conclui ações
-  VIEWER   // Somente leitura
+  SUPER_ADMIN // Acesso total + gestão de usuários e configurações (Vladimir)
+  ADMIN       // Acesso total ao portal SGSI (time de SI)
+  MEMBER      // Registra mudanças e conclui ações
+  VIEWER      // Somente leitura
 }
 
 model SgsiUserAccess {
