@@ -1,19 +1,43 @@
-import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
+import { useGoogleLogin } from '@react-oauth/google';
+import { useState } from 'react';
+
+const THERIS_API = import.meta.env.VITE_THERIS_API_URL || 'http://localhost:3000';
 
 export function LoginPage() {
-  const [userId, setUserId] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    if (!userId.trim()) {
-      setError('Informe o ID de sessão do Theris.');
-      return;
-    }
-    localStorage.setItem('sgsi_user_id', userId.trim());
-    window.location.href = '/dashboard';
-  }
+  const handleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await fetch(`${THERIS_API}/api/login/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: tokenResponse.access_token }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          setError(data.error || 'Acesso negado. Verifique se seu e-mail está cadastrado no Theris.');
+          return;
+        }
+
+        const data = await res.json();
+        localStorage.setItem('sgsi_user_id', data.userId);
+        window.location.href = '/dashboard';
+      } catch {
+        setError('Erro ao conectar com o servidor. Tente novamente.');
+      } finally {
+        setLoading(false);
+      }
+    },
+    onError: () => {
+      setError('Erro ao autenticar com o Google. Tente novamente.');
+    },
+  });
 
   return (
     <div className="min-h-screen flex items-center justify-center"
@@ -34,38 +58,26 @@ export function LoginPage() {
           </div>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium mb-1.5"
-              style={{ color: 'var(--color-text-muted)' }}>
-              ID de Sessão (Theris)
-            </label>
-            <input
-              type="text"
-              value={userId}
-              onChange={e => setUserId(e.target.value)}
-              placeholder="Cole seu user ID aqui"
-              className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
-              style={{
-                background: 'var(--color-bg)',
-                borderColor: 'var(--color-border)',
-                color: 'var(--color-text)',
-              }}
-            />
+        {error && (
+          <div className="mb-4 p-3 rounded-lg text-xs"
+            style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--color-danger)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            {error}
           </div>
+        )}
 
-          {error && (
-            <p className="text-xs" style={{ color: 'var(--color-danger)' }}>{error}</p>
-          )}
-
-          <button
-            type="submit"
-            className="w-full py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
-            style={{ background: 'var(--color-primary)', color: '#fff' }}
-          >
-            Entrar
-          </button>
-        </form>
+        <button
+          onClick={() => handleLogin()}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-3 py-2.5 rounded-lg text-sm font-medium border transition-opacity hover:opacity-90 disabled:opacity-50"
+          style={{
+            background: '#fff',
+            color: '#374151',
+            borderColor: '#d1d5db'
+          }}
+        >
+          <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" alt="Google" />
+          {loading ? 'Entrando...' : 'Entrar com Google'}
+        </button>
 
         <p className="mt-6 text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
           Acesso restrito ao time de SI e liderança do Grupo 3C
