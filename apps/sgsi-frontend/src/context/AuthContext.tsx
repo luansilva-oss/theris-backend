@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('sgsi_user_id');
     localStorage.removeItem('sgsi_user');
     setUser(null);
-    window.location.href = '/login';
+    window.location.href = '/';
   }
 
   return (
