@@ -28,17 +28,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const userId = localStorage.getItem('sgsi_user_id');
+    const cached = localStorage.getItem('sgsi_user');
+
     if (!userId) {
       setLoading(false);
       return;
     }
 
+    if (cached) {
+      try {
+        setUser(JSON.parse(cached));
+        setLoading(false);
+        return;
+      } catch {}
+    }
+
     verifySession(userId)
       .then((data) => {
         setUser(data);
+        localStorage.setItem('sgsi_user', JSON.stringify(data));
       })
       .catch(() => {
         localStorage.removeItem('sgsi_user_id');
+    localStorage.removeItem('sgsi_user');
+        localStorage.removeItem('sgsi_user');
         setUser(null);
       })
       .finally(() => setLoading(false));
@@ -46,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     localStorage.removeItem('sgsi_user_id');
+    localStorage.removeItem('sgsi_user');
     setUser(null);
     window.location.href = '/login';
   }
