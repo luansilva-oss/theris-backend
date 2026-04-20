@@ -1,7 +1,7 @@
 /**
  * Preenche User.jumpcloudId para colaboradores ativos @grupo-3c.com ainda sem ID no Theris.
  * Uso: npx tsx src/scripts/backfillJumpcloudIds.ts
- * Requer: DATABASE_URL, JUMPCLOUD_API_KEY
+ * Requer: DATABASE_URL e credenciais JumpCloud (OAuth e/ou JUMPCLOUD_API_KEY)
  */
 import dotenv from 'dotenv';
 

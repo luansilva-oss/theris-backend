@@ -69,11 +69,14 @@ import { getUsers, getUserByEmail, getSiMembers, getBoardMembers, verifyToken } 
 // Slack
 import { slackReceiver } from './services/slackService';
 import { buildToolsAndLevelsMap } from './lib/buildToolsAndLevelsMap';
+import { logJumpCloudAuthBootstrap } from './services/jumpcloudAuth';
 
 dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
+
+logJumpCloudAuthBootstrap();
 
 // --- HTTPS FORÇADO (produção: redirecionar HTTP → HTTPS) ---
 app.use((req, res, next) => {

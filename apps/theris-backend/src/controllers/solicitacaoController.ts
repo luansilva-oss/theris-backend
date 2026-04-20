@@ -6,7 +6,8 @@ import { sendSlackNotification } from '../services/slackService';
 import {
   syncUserToJumpCloud,
   provisionUserOnJumpCloud,
-  tryBindJumpCloudKbsGroupAfterOnboarding
+  tryBindJumpCloudKbsGroupAfterOnboarding,
+  tryRebindJumpCloudKbsGroupAfterRoleChange
 } from '../services/jumpcloudSyncService';
 import { bindUserToGoogleWorkspaceDirectory } from '../services/jumpcloudService';
 import { mapTherisUnitNameToJumpCloudCompany } from '../config/jumpcloud';
@@ -418,6 +419,19 @@ async function runOnboardingAutomation(
     role = await prisma.role.create({
       data: { name: roleName, departmentId: department.id }
     });
+    const siBody =
+      `⚠️ *Novo cargo criado sem código KBS*\n\n` +
+      `Um cargo foi criado automaticamente durante o onboarding, mas está *sem o código KBS* preenchido no Theris. ` +
+      `Isso impede o vínculo automático ao grupo KBS correspondente no JumpCloud.\n\n` +
+      `• *Cargo:* ${role.name}\n` +
+      `• *Departamento:* ${department.name}\n` +
+      `• *Colaborador (e-mail):* \`${collaboratorEmail}\`\n` +
+      `• *Role ID:* \`${role.id}\`\n\n` +
+      `_Ação necessária:_ no Theris → Estrutura → Cargos, preencher o código KBS desse cargo e vincular manualmente o utilizador ao grupo KBS ` +
+      `no JumpCloud (ou aguardar próximo onboarding / CHANGE_ROLE após corrigir o \`role.code\` para bind/rebind automático).`;
+    void import('../services/jumpcloudSyncService')
+      .then((m) => m.notifySiSlackJumpCloudKbsIssue(siBody))
+      .catch((e) => console.error('[Onboarding] Falha ao enfileirar alerta SI (Role sem code):', e));
   }
 
   // d) Colaborador (User): upsert — roleId, departmentId, unitId, jobTitle, isActive
@@ -913,6 +927,9 @@ async function runChangeRoleAutomation(
   collaboratorName?: string;
   /** E-mail do colaborador após update (sync JumpCloud). */
   userEmail?: string;
+  /** Códigos KBS (Role.code) antes/depois do update — para rebind explícito nos usergroups JumpCloud. */
+  oldRoleCode?: string | null;
+  newRoleCode?: string | null;
   notifPayload?: {
     colaborador: { nome: string; cargoAnterior: string; deptAnterior: string; cargoNovo: string; deptNovo: string };
     kbsAnterior: KBSItem[];
@@ -1121,6 +1138,8 @@ async function runChangeRoleAutomation(
     success: true,
     collaboratorName: targetUser.name,
     userEmail: targetUser.email,
+    oldRoleCode: oldRole?.code ?? null,
+    newRoleCode: newRole?.code ?? null,
     notifPayload: {
       colaborador: { nome: targetUser.name, cargoAnterior, deptAnterior, cargoNovo, deptNovo },
       kbsAnterior,
@@ -2232,17 +2251,21 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
           const result = await runChangeRoleAutomation(id, request, approverId);
           if (result.success) {
             if (result.userEmail) {
-              // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
-              // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
+              // Employment no JC; em seguida rebind explícito KBS (remove grupo antigo + add novo) — tryRebindJumpCloudKbsGroupAfterRoleChange
               // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY para garantir correspondência exata
               const { firePostSlackAcessosChannel } = await import('../services/slackService');
-              syncUserToJumpCloud(result.userEmail)
+              void syncUserToJumpCloud(result.userEmail)
                 .then(() => {
                   firePostSlackAcessosChannel(
                     `🔧 JumpCloud atualizado — novo cargo/departamento sincronizado | Ticket: #${id.slice(0, 8)}`
                   );
+                  return tryRebindJumpCloudKbsGroupAfterRoleChange({
+                    userEmail: result.userEmail!,
+                    oldRoleCode: result.oldRoleCode ?? null,
+                    newRoleCode: result.newRoleCode ?? null
+                  });
                 })
-                .catch((err) => console.error('[JumpCloud Sync] Erro:', err));
+                .catch((err) => console.error('[JumpCloud Sync / CHANGE_ROLE KBS] Erro:', err));
             }
             console.log('[CHANGE_ROLE] Mudança aplicada com sucesso. userId atualizado; notificações em seguida.');
           } else {
@@ -2725,17 +2748,21 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
           const result = await runChangeRoleAutomation(id, existing, existing.approverId || userId);
           if (result.success) {
             if (result.userEmail) {
-              // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
-              // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
+              // Employment no JC; em seguida rebind explícito KBS — tryRebindJumpCloudKbsGroupAfterRoleChange
               // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY para garantir correspondência exata
               const { firePostSlackAcessosChannel } = await import('../services/slackService');
-              syncUserToJumpCloud(result.userEmail)
+              void syncUserToJumpCloud(result.userEmail)
                 .then(() => {
                   firePostSlackAcessosChannel(
                     `🔧 JumpCloud atualizado — novo cargo/departamento sincronizado | Ticket: #${id.slice(0, 8)}`
                   );
+                  return tryRebindJumpCloudKbsGroupAfterRoleChange({
+                    userEmail: result.userEmail!,
+                    oldRoleCode: result.oldRoleCode ?? null,
+                    newRoleCode: result.newRoleCode ?? null
+                  });
                 })
-                .catch((err) => console.error('[JumpCloud Sync] Erro:', err));
+                .catch((err) => console.error('[JumpCloud Sync / CHANGE_ROLE KBS] Erro:', err));
             }
             console.log('[CHANGE_ROLE] (metadata) Mudança aplicada com sucesso.');
           } else {

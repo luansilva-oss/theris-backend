@@ -3,10 +3,10 @@
  * Notificações Slack via canal JUMPCLOUD_SLACK_CHANNEL_ID e DMs.
  */
 import { PrismaClient } from '@prisma/client';
+import { hasJumpCloudCredentials, jumpcloudFetch } from './jumpcloudAuth';
 
 const prisma = new PrismaClient();
 
-const JUMPCLOUD_API_KEY = process.env.JUMPCLOUD_API_KEY || '';
 const JUMPCLOUD_SLACK_CHANNEL_ID = process.env.JUMPCLOUD_SLACK_CHANNEL_ID || '';
 /** POST https://api.jumpcloud.com/insights/directory/v1/events — Directory Insights API */
 const INSIGHTS_EVENTS_URL = 'https://api.jumpcloud.com/insights/directory/v1/events';
@@ -48,13 +48,12 @@ export async function getSystemUserIdByEmail(email: string): Promise<string | nu
     console.error('[JumpCloud] getSystemUserIdByEmail (cache Prisma):', e);
   }
 
-  if (!JUMPCLOUD_API_KEY) return null;
+  if (!hasJumpCloudCredentials()) return null;
   try {
     const encoded = encodeURIComponent(em);
     const url = `${SYSTEM_USERS_URL}?filter=email:eq:${encoded}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { 'x-api-key': JUMPCLOUD_API_KEY }
+    const res = await jumpcloudFetch(url, {
+      method: 'GET'
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -84,9 +83,8 @@ export async function getSystemUserIdByEmail(email: string): Promise<string | nu
  * Lança em caso de falha HTTP (ex.: onboarding KBS — o caller faz catch e notifica SI).
  */
 export async function addUserToGroup(jumpcloudUserId: string, groupId: string): Promise<void> {
-  const apiKey = JUMPCLOUD_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error('[JumpCloud] JUMPCLOUD_API_KEY não configurada.');
+  if (!hasJumpCloudCredentials()) {
+    throw new Error('[JumpCloud] Credenciais JumpCloud não configuradas (OAuth ou JUMPCLOUD_API_KEY).');
   }
   const uid = (jumpcloudUserId || '').trim();
   const gid = (groupId || '').trim();
@@ -94,12 +92,11 @@ export async function addUserToGroup(jumpcloudUserId: string, groupId: string): 
     throw new Error('[JumpCloud] addUserToGroup: userId ou groupId vazio.');
   }
   const url = `${JUMPCLOUD_API_V2}/usergroups/${gid}/members`;
-  const res = await fetch(url, {
+  const res = await jumpcloudFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'x-api-key': apiKey
+      Accept: 'application/json'
     },
     body: JSON.stringify({ op: 'add', type: 'user', id: uid })
   });
@@ -113,8 +110,8 @@ export async function addUserToGroup(jumpcloudUserId: string, groupId: string): 
  * Adiciona um usuário a um grupo VPN (POST /api/v2/usergroups/{groupId}/members).
  */
 export async function addUserToVpnGroup(groupId: string, jumpcloudUserId: string): Promise<boolean> {
-  if (!JUMPCLOUD_API_KEY) {
-    console.error('[JumpCloud] JUMPCLOUD_API_KEY não configurada.');
+  if (!hasJumpCloudCredentials()) {
+    console.error('[JumpCloud] Credenciais JumpCloud não configuradas.');
     return false;
   }
   try {
@@ -187,19 +184,13 @@ export async function setLastProcessedEventTimestamp(isoTimestamp: string): Prom
   }
 }
 
-/** Mascara API key para log (mostra só os primeiros 6 caracteres). */
-function maskApiKey(key: string): string {
-  if (!key || key.length <= 6) return '***';
-  return key.slice(0, 6) + '***';
-}
-
 /**
  * Consulta eventos do Password Manager (passwordmanager_item_copy e passwordmanager_item_reveal).
  * start_time: ISO timestamp do último evento processado; na primeira execução usar há 24h ou valor padrão.
  */
 export async function fetchPasswordManagerEvents(startTime: string): Promise<JumpCloudInsightEvent[]> {
-  if (!JUMPCLOUD_API_KEY) {
-    console.error('[JumpCloud] JUMPCLOUD_API_KEY não configurada.');
+  if (!hasJumpCloudCredentials()) {
+    console.error('[JumpCloud] Credenciais JumpCloud não configuradas.');
     return [];
   }
   try {
@@ -209,16 +200,14 @@ export async function fetchPasswordManagerEvents(startTime: string): Promise<Jum
       start_time: startTime,
       end_time: endTime
     };
-    const headers = {
-      'Content-Type': 'application/json',
-      'x-api-key': JUMPCLOUD_API_KEY
-    };
 
     console.log('[JumpCloud] Request', startTime, '->', endTime);
 
-    const res = await fetch(INSIGHTS_EVENTS_URL, {
+    const res = await jumpcloudFetch(INSIGHTS_EVENTS_URL, {
       method: 'POST',
-      headers,
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify(body)
     });
     if (!res.ok) {
@@ -374,8 +363,8 @@ export type JumpCloudUserExpiry = {
  * GET /api/systemusers com filtro password_expiration_date.
  */
 export async function fetchUsersWithPasswordExpiring(daysAhead: number = 7): Promise<JumpCloudUserExpiry[]> {
-  if (!JUMPCLOUD_API_KEY) {
-    console.error('[JumpCloud] JUMPCLOUD_API_KEY não configurada.');
+  if (!hasJumpCloudCredentials()) {
+    console.error('[JumpCloud] Credenciais JumpCloud não configuradas.');
     return [];
   }
   const endDate = new Date();
@@ -384,9 +373,8 @@ export async function fetchUsersWithPasswordExpiring(daysAhead: number = 7): Pro
 
   try {
     const url = `${SYSTEM_USERS_URL}?limit=100&filter=password_expiration_date:$lt:${filterDate}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { 'x-api-key': JUMPCLOUD_API_KEY }
+    const res = await jumpcloudFetch(url, {
+      method: 'GET'
     });
     if (!res.ok) {
       console.error('[JumpCloud] System Users API status:', res.status, await res.text());
@@ -493,9 +481,8 @@ const DEFAULT_JC_GOOGLE_WORKSPACE_DIRECTORY_ID = '684047c6ebf8f50001856182';
  * Associa o usuário JumpCloud (system user _id) ao diretório Google Workspace configurado no painel JC.
  */
 export async function bindUserToGoogleWorkspaceDirectory(jumpcloudUserId: string): Promise<void> {
-  const apiKey = process.env.JUMPCLOUD_API_KEY?.trim();
-  if (!apiKey) {
-    console.warn('[JumpCloud] bindUserToGoogleWorkspaceDirectory: JUMPCLOUD_API_KEY ausente');
+  if (!hasJumpCloudCredentials()) {
+    console.warn('[JumpCloud] bindUserToGoogleWorkspaceDirectory: credenciais JumpCloud ausentes');
     return;
   }
   const id = (jumpcloudUserId || '').trim();
@@ -504,10 +491,9 @@ export async function bindUserToGoogleWorkspaceDirectory(jumpcloudUserId: string
   const directoryId =
     process.env.JC_GOOGLE_WORKSPACE_DIRECTORY_ID?.trim() || DEFAULT_JC_GOOGLE_WORKSPACE_DIRECTORY_ID;
   const url = `https://console.jumpcloud.com/api/v2/users/${id}/associations`;
-  const res = await fetch(url, {
+  const res = await jumpcloudFetch(url, {
     method: 'POST',
     headers: {
-      'x-api-key': apiKey,
       'Content-Type': 'application/json',
       Accept: 'application/json'
     },

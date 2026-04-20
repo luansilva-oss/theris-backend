@@ -5,6 +5,7 @@
 import cron from 'node-cron';
 import { PrismaClient } from '@prisma/client';
 import { fetchAllJumpCloudUserGroups, type JcUserGroup } from '../services/jumpcloudGroupSyncService';
+import { hasJumpCloudCredentials } from '../services/jumpcloudAuth';
 import { getSlackApp, formatTimestampBrt } from '../services/slackService';
 
 const prisma = new PrismaClient();
@@ -49,8 +50,7 @@ export async function validateAexToolSync(): Promise<void> {
 
   const jcApGroups = allGroups.filter((g) => (g.name || '').toLowerCase().startsWith('ap_'));
 
-  const apiKeyPresent = !!(process.env.JUMPCLOUD_API_KEY || '').trim();
-  const jcFetchSuspectEmpty = apiKeyPresent && allGroups.length === 0;
+  const jcFetchSuspectEmpty = hasJumpCloudCredentials() && allGroups.length === 0;
 
   const jcByLower = new Map<string, JcUserGroup>();
   for (const g of jcApGroups) {
@@ -105,7 +105,7 @@ export async function validateAexToolSync(): Promise<void> {
         text: {
           type: 'mrkdwn',
           text:
-            '⚠️ *Aviso:* a API JumpCloud não retornou usergroups (lista vazia). Pode ser falha de rede, permissão ou API key. Conferir logs do servidor.'
+            '⚠️ *Aviso:* a API JumpCloud não retornou usergroups (lista vazia). Pode ser falha de rede, permissão ou credenciais. Conferir logs do servidor.'
         }
       });
     }

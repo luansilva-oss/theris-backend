@@ -6,6 +6,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { getSystemUserIdByEmail } from './jumpcloudService';
+import { hasJumpCloudCredentials, jumpcloudFetch } from './jumpcloudAuth';
 
 const prisma = new PrismaClient();
 
@@ -22,10 +23,6 @@ let userGroupsCache: { data: JcUserGroup[]; fetchedAt: number } | null = null;
 /** Cache KBS code (ex.: KBS-RA-2) → JumpCloud usergroup _id (além do cache paginado de `fetchAllJumpCloudUserGroups`). */
 const kbsCodeToGroupIdCache = new Map<string, string>();
 
-function getApiKey(): string | null {
-  return process.env.JUMPCLOUD_API_KEY?.trim() || null;
-}
-
 function parseUserGroupPage(data: unknown): JcUserGroup[] {
   if (Array.isArray(data)) return data as JcUserGroup[];
   const o = data as { results?: unknown; data?: unknown };
@@ -38,9 +35,8 @@ function parseUserGroupPage(data: unknown): JcUserGroup[] {
  * Lista todos os usergroups JumpCloud (paginado, até 1000). Cache em memória 5 min.
  */
 export async function fetchAllJumpCloudUserGroups(): Promise<JcUserGroup[]> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    console.warn('[JumpCloud KBS] JUMPCLOUD_API_KEY ausente; lista de usergroups vazia.');
+  if (!hasJumpCloudCredentials()) {
+    console.warn('[JumpCloud KBS] Credenciais JumpCloud ausentes; lista de usergroups vazia.');
     return [];
   }
   if (userGroupsCache && Date.now() - userGroupsCache.fetchedAt < CACHE_TTL_MS) {
@@ -52,9 +48,8 @@ export async function fetchAllJumpCloudUserGroups(): Promise<JcUserGroup[]> {
     for (let p = 0; p < MAX_PAGES; p++) {
       const skip = p * PAGE_SIZE;
       const url = `${JUMPCLOUD_API_V2}/usergroups?limit=${PAGE_SIZE}&skip=${skip}`;
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { 'x-api-key': apiKey }
+      const res = await jumpcloudFetch(url, {
+        method: 'GET'
       });
       if (!res.ok) {
         const t = await res.text().catch(() => '');
@@ -120,15 +115,13 @@ async function findUserGroupIdByToolCode(toolCode: string): Promise<string | nul
 }
 
 async function postUserGroupMemberOp(groupId: string, jumpcloudUserId: string, op: 'add' | 'remove'): Promise<boolean> {
-  const apiKey = getApiKey();
-  if (!apiKey) return false;
+  if (!hasJumpCloudCredentials()) return false;
   try {
     const url = `${JUMPCLOUD_API_V2}/usergroups/${groupId}/members`;
-    const res = await fetch(url, {
+    const res = await jumpcloudFetch(url, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ op, type: 'user', id: jumpcloudUserId })
     });
@@ -146,6 +139,11 @@ async function postUserGroupMemberOp(groupId: string, jumpcloudUserId: string, o
 
 async function postAddUserToGroup(groupId: string, jumpcloudUserId: string): Promise<boolean> {
   return postUserGroupMemberOp(groupId, jumpcloudUserId, 'add');
+}
+
+/** Remove o utilizador JumpCloud de um usergroup (POST members com `op: 'remove'`). Retorna o mesmo boolean que `postUserGroupMemberOp`. */
+export async function removeUserFromGroup(jumpcloudUserId: string, groupId: string): Promise<boolean> {
+  return postUserGroupMemberOp(groupId, jumpcloudUserId, 'remove');
 }
 
 /**
@@ -202,9 +200,8 @@ export async function addUserToExtraordinaryToolGroups(
   const added: string[] = [];
   const failed: string[] = [];
 
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    console.warn('[JumpCloud KBS] JUMPCLOUD_API_KEY ausente; grupos KBS não atualizados.');
+  if (!hasJumpCloudCredentials()) {
+    console.warn('[JumpCloud KBS] Credenciais JumpCloud ausentes; grupos KBS não atualizados.');
     return { added, failed };
   }
 

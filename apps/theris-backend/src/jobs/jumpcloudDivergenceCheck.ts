@@ -5,6 +5,7 @@
 import cron from 'node-cron';
 import { PrismaClient } from '@prisma/client';
 import { getSlackApp } from '../services/slackService';
+import { hasJumpCloudCredentials, jumpcloudFetch } from '../services/jumpcloudAuth';
 
 const prisma = new PrismaClient();
 
@@ -20,8 +21,7 @@ type JcEmployment = { jobTitle: string; department: string; company: string };
 
 /** GET systemusers com filter por e-mail; tenta fields= para reduzir payload. */
 async function fetchJumpCloudEmployment(email: string): Promise<JcEmployment | null> {
-  const apiKey = process.env.JUMPCLOUD_API_KEY?.trim();
-  if (!apiKey) return null;
+  if (!hasJumpCloudCredentials()) return null;
 
   const encodedEmail = encodeURIComponent(email);
   const fieldsParam = encodeURIComponent('jobTitle,department,company');
@@ -32,9 +32,8 @@ async function fetchJumpCloudEmployment(email: string): Promise<JcEmployment | n
 
   for (const url of urls) {
     try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { 'x-api-key': apiKey }
+      const res = await jumpcloudFetch(url, {
+        method: 'GET'
       });
       if (!res.ok) continue;
       const data = await res.json();
@@ -122,8 +121,8 @@ async function processBatch(
 }
 
 export async function runJumpCloudDivergenceCheck(): Promise<void> {
-  if (!process.env.JUMPCLOUD_API_KEY?.trim()) {
-    console.warn('[JumpCloud Divergence] JUMPCLOUD_API_KEY ausente; verificação ignorada.');
+  if (!hasJumpCloudCredentials()) {
+    console.warn('[JumpCloud Divergence] Credenciais JumpCloud ausentes; verificação ignorada.');
     return;
   }
 
