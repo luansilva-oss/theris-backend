@@ -3,7 +3,11 @@ import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { v2 as cloudinary } from 'cloudinary';
 import { sendSlackNotification } from '../services/slackService';
-import { syncUserToJumpCloud, provisionUserOnJumpCloud } from '../services/jumpcloudSyncService';
+import {
+  syncUserToJumpCloud,
+  provisionUserOnJumpCloud,
+  tryBindJumpCloudKbsGroupAfterOnboarding
+} from '../services/jumpcloudSyncService';
 import { bindUserToGoogleWorkspaceDirectory } from '../services/jumpcloudService';
 import { mapTherisUnitNameToJumpCloudCompany } from '../config/jumpcloud';
 import { hasProfile } from '../middleware/auth';
@@ -418,11 +422,15 @@ async function runOnboardingAutomation(
 
   // d) Colaborador (User): upsert — roleId, departmentId, unitId, jobTitle, isActive
   let user = collaboratorEmail
-    ? await prisma.user.findUnique({ where: { email: collaboratorEmail } })
+    ? await prisma.user.findUnique({
+        where: { email: collaboratorEmail },
+        include: { role: true }
+      })
     : null;
   if (!user && collaboratorName) {
     user = await prisma.user.findFirst({
-      where: { isActive: true, name: { equals: collaboratorName, mode: 'insensitive' } }
+      where: { isActive: true, name: { equals: collaboratorName, mode: 'insensitive' } },
+      include: { role: true }
     });
   }
 
@@ -496,7 +504,8 @@ async function runOnboardingAutomation(
       roleId: role.id,
       isActive: true,
       ...(managerIdCreate ? { managerId: managerIdCreate } : {})
-    }
+    },
+    include: { role: true }
   });
   try {
     const { propagateLeaderOnRoleChange } = await import('../services/leadershipPropagationService');
@@ -2112,15 +2121,21 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
                 jumpCloudSi = { outcome: 'manual_check' };
               }
             }
-            // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
-            // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
+            // Employment + ap_*; em seguida POST members no usergroup KBS (Role.code) para não depender do review dos grupos dinâmicos
             // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY (mapTherisUnitNameToJumpCloudCompany) para correspondência exata
-            syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
-              console.error(
-                request.type === 'HIRING' ? '[HIRING] Falha no sync JumpCloud pós-criação:' : '[JumpCloud Sync] Erro:',
-                err
+            void syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId)
+              .then(() =>
+                tryBindJumpCloudKbsGroupAfterOnboarding({
+                  userEmail: onboardingResult.userEmail,
+                  roleId: onboardingResult.roleId
+                })
               )
-            );
+              .catch((err) =>
+                console.error(
+                  request.type === 'HIRING' ? '[HIRING] Falha no sync/KBS JumpCloud pós-criação:' : '[JumpCloud Sync] Erro:',
+                  err
+                )
+              );
             try {
               await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);
             } catch (syncErr) {
@@ -2799,15 +2814,21 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
                 jumpCloudSi = { outcome: 'manual_check' };
               }
             }
-            // KBS groups são dinâmicos no JumpCloud (Department + Job Title + Company + Manager)
-            // Não gerenciar membros KBS manualmente — syncUserToJumpCloud() é suficiente
+            // Employment + ap_*; em seguida POST members no usergroup KBS (Role.code)
             // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY (mapTherisUnitNameToJumpCloudCompany) para correspondência exata
-            syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId).catch((err) =>
-              console.error(
-                existing.type === 'HIRING' ? '[HIRING] Falha no sync JumpCloud pós-criação:' : '[JumpCloud Sync] Erro:',
-                err
+            void syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId)
+              .then(() =>
+                tryBindJumpCloudKbsGroupAfterOnboarding({
+                  userEmail: onboardingResult.userEmail,
+                  roleId: onboardingResult.roleId
+                })
               )
-            );
+              .catch((err) =>
+                console.error(
+                  existing.type === 'HIRING' ? '[HIRING] Falha no sync/KBS JumpCloud pós-criação:' : '[JumpCloud Sync] Erro:',
+                  err
+                )
+              );
             try {
               await syncAccessFromRole(onboardingResult.userId, onboardingResult.roleId);
             } catch (syncErr) {
@@ -3571,9 +3592,13 @@ async function executeHiringSiSideEffects(
             }
           } catch (_) {}
         }
-        // Aguarda propagação no JumpCloud antes de sincronizar grupos ap_*
+        // Aguarda propagação no JumpCloud antes de sincronizar grupos ap_* e usergroup KBS
         await new Promise((resolve) => setTimeout(resolve, 3000));
         await syncUserToJumpCloud(onboardingResult.userEmail, onboardingResult.roleId);
+        await tryBindJumpCloudKbsGroupAfterOnboarding({
+          userEmail: onboardingResult.userEmail,
+          roleId: onboardingResult.roleId
+        });
         if (jumpCloudSi?.outcome === 'created' && jumpCloudSi.jumpcloudId) {
           void bindUserToGoogleWorkspaceDirectory(jumpCloudSi.jumpcloudId).catch((e) =>
             console.error('[HIRING] Falha ao vincular Google Workspace Directory:', e)

@@ -80,6 +80,36 @@ export async function getSystemUserIdByEmail(email: string): Promise<string | nu
 }
 
 /**
+ * Adiciona um usuário a um usergroup JumpCloud (POST /api/v2/usergroups/{groupId}/members).
+ * Lança em caso de falha HTTP (ex.: onboarding KBS — o caller faz catch e notifica SI).
+ */
+export async function addUserToGroup(jumpcloudUserId: string, groupId: string): Promise<void> {
+  const apiKey = JUMPCLOUD_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error('[JumpCloud] JUMPCLOUD_API_KEY não configurada.');
+  }
+  const uid = (jumpcloudUserId || '').trim();
+  const gid = (groupId || '').trim();
+  if (!uid || !gid) {
+    throw new Error('[JumpCloud] addUserToGroup: userId ou groupId vazio.');
+  }
+  const url = `${JUMPCLOUD_API_V2}/usergroups/${gid}/members`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'x-api-key': apiKey
+    },
+    body: JSON.stringify({ op: 'add', type: 'user', id: uid })
+  });
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => '');
+    throw new Error(`Falha ao adicionar usuário ${uid} ao grupo ${gid}: ${res.status} - ${errorText}`);
+  }
+}
+
+/**
  * Adiciona um usuário a um grupo VPN (POST /api/v2/usergroups/{groupId}/members).
  */
 export async function addUserToVpnGroup(groupId: string, jumpcloudUserId: string): Promise<boolean> {
@@ -88,20 +118,7 @@ export async function addUserToVpnGroup(groupId: string, jumpcloudUserId: string
     return false;
   }
   try {
-    const url = `${JUMPCLOUD_API_V2}/usergroups/${groupId}/members`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': JUMPCLOUD_API_KEY
-      },
-      body: JSON.stringify({ op: 'add', type: 'user', id: jumpcloudUserId })
-    });
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error('[VPN] Falha ao inserir no JumpCloud:', { status: res.status, body: errText });
-      return false;
-    }
+    await addUserToGroup(jumpcloudUserId, groupId);
     return true;
   } catch (e) {
     console.error('[VPN] Falha ao inserir no JumpCloud:', e);

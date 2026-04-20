@@ -1,6 +1,8 @@
 /**
  * Adiciona o usuário JumpCloud apenas a user groups cujo toolCode começa com `ap_` (Acesso Extraordinário).
- * Grupos KBS dinâmicos (Company + Department + Job Title + Manager) são geridos pelo JumpCloud — não usar POST members para eles.
+ * Grupos KBS com critério dinâmico + "administrator review" no JumpCloud não aplicam o add automático via
+ * critérios até o review; no onboarding o Theris faz POST members no usergroup KBS (nome prefixado pelo
+ * `Role.code`) para vincular imediatamente — ver `tryBindJumpCloudKbsGroupAfterOnboarding` em jumpcloudSyncService.
  */
 import { PrismaClient } from '@prisma/client';
 import { getSystemUserIdByEmail } from './jumpcloudService';
@@ -16,6 +18,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 export type JcUserGroup = { id?: string; _id?: string; name?: string };
 
 let userGroupsCache: { data: JcUserGroup[]; fetchedAt: number } | null = null;
+
+/** Cache KBS code (ex.: KBS-RA-2) → JumpCloud usergroup _id (além do cache paginado de `fetchAllJumpCloudUserGroups`). */
+const kbsCodeToGroupIdCache = new Map<string, string>();
 
 function getApiKey(): string | null {
   return process.env.JUMPCLOUD_API_KEY?.trim() || null;
@@ -69,6 +74,31 @@ export async function fetchAllJumpCloudUserGroups(): Promise<JcUserGroup[]> {
     return userGroupsCache?.data ?? [];
   }
   return all;
+}
+
+/**
+ * Resolve o `_id` do usergroup JumpCloud cujo nome começa exatamente pelo código KBS do cargo
+ * (ex.: `KBS-RA-2` ou `KBS-RA-2 (Analista de RevOps)`).
+ */
+export async function findGroupIdByKbsCode(kbsCode: string): Promise<string | null> {
+  const code = (kbsCode || '').trim();
+  if (!code) return null;
+  const cached = kbsCodeToGroupIdCache.get(code);
+  if (cached) return cached;
+
+  const groups = await fetchAllJumpCloudUserGroups();
+  const exactMatch = groups.find((g) => {
+    const name = (g.name || '').trim();
+    return name === code || name.startsWith(`${code} `) || name.startsWith(`${code}(`);
+  });
+  if (!exactMatch) {
+    return null;
+  }
+  const idRaw = exactMatch._id ?? exactMatch.id;
+  if (idRaw == null) return null;
+  const id = String(idRaw);
+  kbsCodeToGroupIdCache.set(code, id);
+  return id;
 }
 
 /** Match case-insensitive (ex.: Theris ap_* vs JumpCloud Ap_*). */

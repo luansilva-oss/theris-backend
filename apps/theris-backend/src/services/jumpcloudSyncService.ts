@@ -8,12 +8,110 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { mapTherisUnitNameToJumpCloudCompany } from '../config/jumpcloud';
-import { getSystemUserIdByEmail } from './jumpcloudService';
-import { addUserToExtraordinaryToolGroups } from './jumpcloudGroupSyncService';
+import { getSystemUserIdByEmail, addUserToGroup } from './jumpcloudService';
+import { addUserToExtraordinaryToolGroups, findGroupIdByKbsCode } from './jumpcloudGroupSyncService';
 
 const prisma = new PrismaClient();
 
 const SYSTEM_USERS_URL = 'https://console.jumpcloud.com/api/systemusers';
+
+/** `Role.code` esperado para usergroups KBS no JumpCloud (ex.: KBS-RA-2). */
+const KBS_ROLE_CODE_RE = /^KBS-[A-Z]{2}-\d+$/i;
+
+async function notifySiSlackJumpCloudKbsIssue(text: string): Promise<void> {
+  const channelId = process.env.SLACK_SI_CHANNEL_ID?.trim();
+  if (!channelId) return;
+  try {
+    const { getSlackApp } = await import('./slackService');
+    const app = getSlackApp();
+    if (!app?.client) return;
+    await app.client.chat.postMessage({ channel: channelId, text, mrkdwn: true });
+  } catch (e) {
+    console.error('[Onboarding KBS] Falha ao notificar SI no Slack:', e);
+  }
+}
+
+/**
+ * Pós-onboarding: adiciona o usuário ao usergroup KBS no JumpCloud (nome do grupo = prefixo de `Role.code`),
+ * contornando o atraso do "administrator review" dos grupos dinâmicos.
+ * Não lança; falhas apenas log + aviso no canal SI (Slack).
+ */
+export async function tryBindJumpCloudKbsGroupAfterOnboarding(params: {
+  userEmail: string;
+  roleId: string;
+}): Promise<void> {
+  const email = (params.userEmail || '').trim();
+  const roleId = (params.roleId || '').trim();
+  if (!email || !roleId) return;
+
+  let cargo = '';
+  let dept = '';
+  try {
+    const role = await prisma.role.findUnique({
+      where: { id: roleId },
+      select: { code: true, name: true, department: { select: { name: true } } }
+    });
+    cargo = (role?.name || '').trim();
+    dept = (role?.department?.name || '').trim();
+    const kbsCode = (role?.code || '').trim();
+
+    if (!kbsCode || !KBS_ROLE_CODE_RE.test(kbsCode)) {
+      console.warn(
+        `[Onboarding] KBS não encontrado para cargo=${cargo} depto=${dept} — usuário ${email} sem grupo KBS (role.code ausente ou inválido).`
+      );
+      await notifySiSlackJumpCloudKbsIssue(
+        `⚠️ *Onboarding JumpCloud — KBS*\n` +
+          `Sem \`role.code\` KBS válido para vincular usergroup no JumpCloud.\n` +
+          `• E-mail: \`${email}\`\n` +
+          `• Cargo: ${cargo || '—'}\n` +
+          `• Depto: ${dept || '—'}\n` +
+          `_Ação:_ vincular ao grupo KBS correto manualmente no JumpCloud.`
+      );
+      return;
+    }
+
+    const jumpcloudUserId = await getSystemUserIdByEmail(email);
+    if (!jumpcloudUserId) {
+      console.warn(`[Onboarding] JumpCloud: usuário ${email} sem ID JC — grupo KBS ${kbsCode} não vinculado.`);
+      await notifySiSlackJumpCloudKbsIssue(
+        `⚠️ *Onboarding JumpCloud — KBS*\n` +
+          `Usuário sem ID no JumpCloud (não encontrado por e-mail).\n` +
+          `• E-mail: \`${email}\`\n` +
+          `• KBS esperado: \`${kbsCode}\`\n` +
+          `_Ação:_ após existir no JC, vincular ao usergroup \`${kbsCode}\` manualmente.`
+      );
+      return;
+    }
+
+    const groupId = await findGroupIdByKbsCode(kbsCode);
+    if (!groupId) {
+      console.error(
+        `[Onboarding] Grupo ${kbsCode} não existe no JumpCloud — usuário ${email} sem grupo KBS explícito.`
+      );
+      await notifySiSlackJumpCloudKbsIssue(
+        `⚠️ *Onboarding JumpCloud — KBS*\n` +
+          `Usergroup com prefixo \`${kbsCode}\` não encontrado na API JumpCloud.\n` +
+          `• E-mail: \`${email}\`\n` +
+          `_Ação:_ criar/alinhar o grupo ou vincular manualmente.`
+      );
+      return;
+    }
+
+    await addUserToGroup(jumpcloudUserId, groupId);
+    console.info(`[Onboarding] Usuário ${email} adicionado ao grupo ${kbsCode} (${groupId}).`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[Onboarding] Falha ao vincular ${email} ao KBS no JumpCloud: ${msg}`);
+    await notifySiSlackJumpCloudKbsIssue(
+      `⚠️ *Onboarding JumpCloud — KBS*\n` +
+        `Falha ao adicionar o usuário ao usergroup KBS (POST members).\n` +
+        `• E-mail: \`${email}\`\n` +
+        `• Cargo: ${cargo || '—'} / Depto: ${dept || '—'}\n` +
+        `• Erro: ${msg}\n` +
+        `_Ação:_ vincular ao grupo KBS manualmente no JumpCloud.`
+    );
+  }
+}
 
 function parseSystemUsersList(data: unknown): { email?: string; _id?: string; id?: string }[] {
   if (Array.isArray(data)) return data as { email?: string; _id?: string; id?: string }[];
