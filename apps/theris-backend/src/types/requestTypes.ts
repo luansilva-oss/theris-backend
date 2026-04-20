@@ -1,0 +1,50 @@
+/**
+ * Constantes de tipo/status de Request (Theris).
+ * O Prisma usa `String`; estes valores alinham o código e reduzem typos.
+ */
+export const REQUEST_TYPES = {
+  HIRING: 'HIRING',
+  FIRING: 'FIRING',
+  CHANGE_ROLE: 'CHANGE_ROLE',
+  ACCESS_TOOL_EXTRA: 'ACCESS_TOOL_EXTRA',
+  ACCESS_TOOL: 'ACCESS_TOOL',
+  ACESSO_FERRAMENTA: 'ACESSO_FERRAMENTA',
+  EXTRAORDINARIO: 'EXTRAORDINARIO',
+  VPN_ACCESS: 'VPN_ACCESS',
+  INFRA: 'INFRA',
+  INFRA_SUPPORT: 'INFRA_SUPPORT',
+  ROOT_ACCESS: 'ROOT_ACCESS',
+  DEPUTY_DESIGNATION: 'DEPUTY_DESIGNATION',
+  ACCESS_CHANGE: 'ACCESS_CHANGE',
+  ADMISSAO: 'ADMISSAO',
+  DEMISSAO: 'DEMISSAO',
+  PROMOCAO: 'PROMOCAO'
+} as const;
+
+export type RequestType = (typeof REQUEST_TYPES)[keyof typeof REQUEST_TYPES];
+
+/** Status usados no fluxo SI (Slack) e no painel — conjunto não exaustivo. */
+export const REQUEST_STATUSES = {
+  PENDING_SI: 'PENDING_SI',
+  PENDING_OWNER: 'PENDING_OWNER',
+  PENDENTE_SI: 'PENDENTE_SI',
+  PENDENTE_GESTOR: 'PENDENTE_GESTOR',
+  APROVADO: 'APROVADO',
+  REJECTED: 'REJECTED',
+  REPROVADO: 'REPROVADO',
+  RESOLVED: 'RESOLVED',
+  RESOLVIDO: 'RESOLVIDO',
+  EXPIRED: 'EXPIRED',
+  FAILED: 'FAILED'
+} as const;
+
+export type RequestStatus = (typeof REQUEST_STATUSES)[keyof typeof REQUEST_STATUSES];
+
+export const INFRA_REQUEST_SUBTYPES = {
+  HARDWARE: 'HARDWARE',
+  SOFTWARE_PROBLEM: 'SOFTWARE_PROBLEM',
+  NETWORK: 'NETWORK',
+  OTHER: 'OTHER'
+} as const;
+
+export type InfraRequestSubtype = (typeof INFRA_REQUEST_SUBTYPES)[keyof typeof INFRA_REQUEST_SUBTYPES];

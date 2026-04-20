@@ -2,6 +2,18 @@ import { App, LogLevel, ExpressReceiver } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 import { PrismaClient } from '@prisma/client';
 import { isInfraTicketType } from '../lib/infraTicket';
+import { INFRA_REQUEST_SUBTYPES, REQUEST_TYPES } from '../types/requestTypes';
+import type { InfraRequestSubtype } from '../types/requestTypes';
+import type { RootAccessDetails, TipoTTLUnidade, TipoUrgencia } from '../types/rootAccess';
+import {
+  JUSTIFICATIVA_MIN_CHARS,
+  TTL_MAX_SEGUNDOS,
+  TTL_UNIDADE_PARA_SEGUNDOS,
+  isTipoEmpresa,
+  isTipoOS,
+  isTipoTTLUnidade,
+  isTipoUrgencia
+} from '../types/rootAccess';
 import { getStaticLevelOptionsForToolName } from '../lib/catalogStaticToolLevels';
 import {
   registerPessoasModalCascadeHandlers,
@@ -280,70 +292,275 @@ slackApp.command('/theris', async ({ ack, body, client }) => {
 });
 
 // ============================================================
-// 1.1 COMANDO /infra (NOVO)
+// /infra — hub (views.open) + formulários (views.push), paridade com /pessoas
 // ============================================================
+
+const INFRA_SUBTYPE_LABELS: Record<InfraRequestSubtype, string> = {
+  HARDWARE: '💻 Hardware',
+  SOFTWARE_PROBLEM: '🛠️ Problemas no PC',
+  NETWORK: '🌐 Internet / Rede / VPN',
+  OTHER: '❓ Outros Assuntos'
+};
+
+function buildInfraSubmitView(tipo: InfraRequestSubtype): Record<string, unknown> {
+  return {
+    type: 'modal',
+    callback_id: 'submit_infra',
+    private_metadata: JSON.stringify({ tipo }),
+    title: { type: 'plain_text', text: 'Suporte de Infra' },
+    submit: { type: 'plain_text', text: 'Enviar Pedido' },
+    close: { type: 'plain_text', text: 'Cancelar' },
+    blocks: [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*Tipo:* ${INFRA_SUBTYPE_LABELS[tipo]}` }
+      },
+      { type: 'divider' },
+      {
+        type: 'input',
+        block_id: 'blk_infra_desc',
+        label: { type: 'plain_text', text: 'Descrição Detalhada' },
+        element: {
+          type: 'plain_text_input',
+          multiline: true,
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Ex: Meu mouse parou de funcionar / Preciso de um segundo monitor.' }
+        }
+      },
+      {
+        type: 'input',
+        block_id: 'blk_infra_urgency',
+        label: { type: 'plain_text', text: 'Urgência' },
+        element: {
+          type: 'static_select',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Selecione...' },
+          options: [
+            { text: { type: 'plain_text', text: '🟢 Baixa (Não impede o trabalho)' }, value: 'LOW' },
+            { text: { type: 'plain_text', text: '🟡 Média (Incomoda mas consigo trabalhar)' }, value: 'MEDIUM' },
+            { text: { type: 'plain_text', text: '🟠 Alta (Prejudica muito a produtividade)' }, value: 'HIGH' },
+            { text: { type: 'plain_text', text: '🔴 Crítica (Estou parado/Não consigo trabalhar)' }, value: 'CRITICAL' }
+          ]
+        }
+      }
+    ]
+  };
+}
+
+function buildInfraRootSubmitView(): Record<string, unknown> {
+  return {
+    type: 'modal',
+    callback_id: 'submit_infra_root',
+    title: { type: 'plain_text', text: 'Acesso Root' },
+    submit: { type: 'plain_text', text: 'Enviar Pedido' },
+    close: { type: 'plain_text', text: 'Cancelar' },
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text:
+            '🔐 *Solicitação de Acesso Root (sudo)*\n' +
+            'Este acesso permite uso de sudo temporário no seu device.\n' +
+            '⏱️ Máximo: *15 dias*. Para períodos maiores, seu gestor precisa contatar o time de SI justificando.'
+        }
+      },
+      { type: 'divider' },
+      {
+        type: 'input',
+        block_id: 'blk_root_empresa',
+        label: { type: 'plain_text', text: 'Empresa' },
+        element: {
+          type: 'static_select',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Selecione...' },
+          options: [
+            { text: { type: 'plain_text', text: '3C Plus' }, value: 'PLUS' },
+            { text: { type: 'plain_text', text: 'Instituto 3C' }, value: 'INS' },
+            { text: { type: 'plain_text', text: 'Evolux' }, value: 'EVO' }
+          ]
+        }
+      },
+      {
+        type: 'input',
+        block_id: 'blk_root_os',
+        label: { type: 'plain_text', text: 'Sistema Operacional' },
+        element: {
+          type: 'static_select',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Selecione...' },
+          options: [
+            { text: { type: 'plain_text', text: 'Linux' }, value: 'LIN' },
+            { text: { type: 'plain_text', text: 'Windows' }, value: 'WIN' },
+            { text: { type: 'plain_text', text: 'macOS' }, value: 'MAC' }
+          ]
+        }
+      },
+      {
+        type: 'input',
+        block_id: 'blk_root_patrimonio',
+        label: { type: 'plain_text', text: 'Patrimônio' },
+        element: {
+          type: 'plain_text_input',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Ex: 0060' }
+        }
+      },
+      {
+        type: 'input',
+        block_id: 'blk_root_hostname_custom',
+        optional: true,
+        label: { type: 'plain_text', text: 'Hostname customizado (opcional)' },
+        hint: {
+          type: 'plain_text',
+          text: 'Se preenchido, Empresa/SO/Patrimônio são ignorados. Padrão: 3C-{empresa}-{SO}-{patrimônio}.'
+        },
+        element: {
+          type: 'plain_text_input',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Ex: MacBook-Pro.local' }
+        }
+      },
+      {
+        type: 'input',
+        block_id: 'blk_root_ttl_qtd',
+        label: { type: 'plain_text', text: 'Duração — Quantidade' },
+        element: {
+          type: 'plain_text_input',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Ex: 4' }
+        }
+      },
+      {
+        type: 'input',
+        block_id: 'blk_root_ttl_unidade',
+        label: { type: 'plain_text', text: 'Duração — Unidade' },
+        element: {
+          type: 'static_select',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Selecione...' },
+          options: [
+            { text: { type: 'plain_text', text: 'Minutos' }, value: 'MINUTOS' },
+            { text: { type: 'plain_text', text: 'Horas' }, value: 'HORAS' },
+            { text: { type: 'plain_text', text: 'Dias' }, value: 'DIAS' }
+          ]
+        }
+      },
+      {
+        type: 'input',
+        block_id: 'blk_root_justificativa',
+        label: { type: 'plain_text', text: 'Justificativa (mínimo 20 caracteres)' },
+        element: {
+          type: 'plain_text_input',
+          multiline: true,
+          action_id: 'inp',
+          placeholder: {
+            type: 'plain_text',
+            text: 'Ex: Preciso instalar dependência Python (sudo apt install python3-dev) para desenvolvimento do projeto X...'
+          }
+        }
+      },
+      {
+        type: 'input',
+        block_id: 'blk_root_urgencia',
+        label: { type: 'plain_text', text: 'Urgência' },
+        element: {
+          type: 'static_select',
+          action_id: 'inp',
+          placeholder: { type: 'plain_text', text: 'Selecione...' },
+          options: [
+            { text: { type: 'plain_text', text: '🟢 Baixa' }, value: 'LOW' },
+            { text: { type: 'plain_text', text: '🟡 Média' }, value: 'MEDIUM' },
+            { text: { type: 'plain_text', text: '🟠 Alta' }, value: 'HIGH' },
+            { text: { type: 'plain_text', text: '🔴 Crítica' }, value: 'CRITICAL' }
+          ]
+        }
+      }
+    ]
+  };
+}
+
 slackApp.command('/infra', async ({ ack, body, client }) => {
   await ack();
   try {
     await openModalSafely(client, body.trigger_id, {
-        type: 'modal',
-        callback_id: 'submit_infra',
-        title: { type: 'plain_text', text: 'Suporte de Infra' },
-        submit: { type: 'plain_text', text: 'Enviar Pedido' },
-        close: { type: 'plain_text', text: 'Cancelar' },
-        blocks: [
-          {
-            type: 'section',
-            text: { type: 'mrkdwn', text: '🚀 *Solicitação de Hardware ou Suporte de TI*\nDescreva o que você precisa abaixo.' }
-          },
-          { type: 'divider' },
-          {
-            type: 'input',
-            block_id: 'blk_infra_type',
-            label: { type: 'plain_text', text: 'Tipo de Solicitação' },
-            element: {
-              type: 'static_select',
-              action_id: 'inp',
-              placeholder: { type: 'plain_text', text: 'Selecione...' },
-              options: [
-                { text: { type: 'plain_text', text: '💻 Hardware (Monitor, Teclado, Mouse, etc)' }, value: 'HARDWARE' },
-                { text: { type: 'plain_text', text: '🛠️ Problema no PC (Lento, Travando, Bug)' }, value: 'SOFTWARE_PROBLEM' },
-                { text: { type: 'plain_text', text: '🌐 Internet / Rede / VPN' }, value: 'NETWORK' },
-                { text: { type: 'plain_text', text: '❓ Outros Suportes' }, value: 'OTHER' }
-              ]
+      type: 'modal',
+      callback_id: 'theris_infra_modal',
+      title: { type: 'plain_text', text: 'Suporte de Infra' },
+      close: { type: 'plain_text', text: 'Fechar' },
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: '🛠️ *Suporte de Infra*\nO que você precisa?' }
+        },
+        { type: 'divider' },
+        {
+          type: 'actions',
+          block_id: 'blk_infra_menu',
+          elements: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '💻 Hardware', emoji: true },
+              action_id: 'btn_infra_hardware',
+              value: INFRA_REQUEST_SUBTYPES.HARDWARE
+            },
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '🛠️ Problemas no PC', emoji: true },
+              action_id: 'btn_infra_software',
+              value: INFRA_REQUEST_SUBTYPES.SOFTWARE_PROBLEM
+            },
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '🔐 Acesso Root', emoji: true },
+              action_id: 'btn_infra_root',
+              value: 'ROOT_ACCESS',
+              style: 'primary'
+            },
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '🌐 Internet / Rede / VPN', emoji: true },
+              action_id: 'btn_infra_network',
+              value: INFRA_REQUEST_SUBTYPES.NETWORK
+            },
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '❓ Outros Assuntos', emoji: true },
+              action_id: 'btn_infra_other',
+              value: INFRA_REQUEST_SUBTYPES.OTHER
             }
-          },
-          {
-            type: 'input',
-            block_id: 'blk_infra_desc',
-            label: { type: 'plain_text', text: 'Descrição Detalhada' },
-            element: {
-              type: 'plain_text_input',
-              multiline: true,
-              action_id: 'inp',
-              placeholder: { type: 'plain_text', text: 'Ex: Meu mouse parou de funcionar / Preciso de um segundo monitor.' }
-            }
-          },
-          {
-            type: 'input',
-            block_id: 'blk_infra_urgency',
-            label: { type: 'plain_text', text: 'Urgência' },
-            element: {
-              type: 'static_select',
-              action_id: 'inp',
-              placeholder: { type: 'plain_text', text: 'Selecione...' },
-              options: [
-                { text: { type: 'plain_text', text: '🟢 Baixa (Não impede o trabalho)' }, value: 'LOW' },
-                { text: { type: 'plain_text', text: '🟡 Média (Incomoda mas consigo trabalhar)' }, value: 'MEDIUM' },
-                { text: { type: 'plain_text', text: '🟠 Alta (Prejudica muito a produtividade)' }, value: 'HIGH' },
-                { text: { type: 'plain_text', text: '🔴 Crítica (Estou parado/Não consigo trabalhar)' }, value: 'CRITICAL' }
-              ]
-            }
-          }
-        ]
+          ]
+        }
+      ]
     }, body);
   } catch (error) {
-    console.error('❌ Erro /infra:', error);
+    console.error('❌ Erro /infra menu:', error);
+  }
+});
+
+function buildInfraSubtypePushHandler(tipo: InfraRequestSubtype) {
+  return async ({ ack, body, client }: { ack: () => Promise<void>; body: unknown; client: WebClient }) => {
+    await ack();
+    const b = body as { trigger_id?: string };
+    try {
+      await pushModalSafely(client, b.trigger_id as string, buildInfraSubmitView(tipo), b);
+    } catch (error) {
+      console.error(`❌ Erro abrindo modal infra (${tipo}):`, error);
+    }
+  };
+}
+
+slackApp.action('btn_infra_hardware', buildInfraSubtypePushHandler(INFRA_REQUEST_SUBTYPES.HARDWARE));
+slackApp.action('btn_infra_software', buildInfraSubtypePushHandler(INFRA_REQUEST_SUBTYPES.SOFTWARE_PROBLEM));
+slackApp.action('btn_infra_network', buildInfraSubtypePushHandler(INFRA_REQUEST_SUBTYPES.NETWORK));
+slackApp.action('btn_infra_other', buildInfraSubtypePushHandler(INFRA_REQUEST_SUBTYPES.OTHER));
+
+slackApp.action('btn_infra_root', async ({ ack, body, client }) => {
+  await ack();
+  try {
+    await pushModalSafely(client, (body as { trigger_id?: string }).trigger_id as string, buildInfraRootSubmitView(), body);
+  } catch (error) {
+    console.error('❌ Erro abrindo modal ROOT_ACCESS:', error);
   }
 });
 
@@ -1543,6 +1760,20 @@ slackApp.action({ action_id: /^aex_si_(approve|reject)_v2$/, block_id: 'aex_si_d
   const isApprove = action?.action_id === 'aex_si_approve_v2';
   const { handleSiDualApprovalSlackAction } = await import('./siSlackApprovalService');
   await handleSiDualApprovalSlackAction({ client, body: b, isApprove, respond });
+});
+
+// Acesso Root: action_ids dedicados (block_id distinto de AEX) — mesmo value approve_{id} / reject_{id}
+slackApp.action({ action_id: /^root_si_(approve|reject)_v1$/, block_id: 'root_si_decision' }, async ({ ack, body, client, respond }) => {
+  const b = body as { type?: string; actions?: { action_id?: string }[] };
+  if (b.type !== 'block_actions') {
+    await ack();
+    return;
+  }
+  await ack();
+  const action = b.actions?.[0];
+  const isApprove = action?.action_id === 'root_si_approve_v1';
+  const { handleSiDualApprovalSlackAction } = await import('./siSlackApprovalService');
+  await handleSiDualApprovalSlackAction({ client, body: b as any, isApprove, respond });
 });
 
 // ============================================================
@@ -2908,39 +3139,242 @@ slackApp.view('submit_deputy', async ({ ack, body, view, client }) => {
   await saveRequest(body, client, 'DEPUTY_DESIGNATION', details, v.blk_reason.inp.value!, `✅ Indicação de *${name}* como seu Substituto (Deputy) enviada para aprovação do time de S.I.`);
 });
 
+const INFRA_SUBMIT_SUBTYPES: readonly InfraRequestSubtype[] = [
+  INFRA_REQUEST_SUBTYPES.HARDWARE,
+  INFRA_REQUEST_SUBTYPES.SOFTWARE_PROBLEM,
+  INFRA_REQUEST_SUBTYPES.NETWORK,
+  INFRA_REQUEST_SUBTYPES.OTHER
+];
+
+function isInfraSubmitSubtype(v: unknown): v is InfraRequestSubtype {
+  return typeof v === 'string' && (INFRA_SUBMIT_SUBTYPES as readonly string[]).includes(v);
+}
+
 slackApp.view('submit_infra', async ({ ack, body, view, client }) => {
-  await ack();
   const userId = body.user?.id;
   console.log('[Chamado] submit_infra: view_submission recebido', { userId, callback_id: view?.callback_id });
+
+  let tipo: InfraRequestSubtype | null = null;
+  try {
+    const metadata = JSON.parse(view.private_metadata || '{}') as { tipo?: unknown };
+    if (isInfraSubmitSubtype(metadata.tipo)) tipo = metadata.tipo;
+  } catch (e) {
+    console.error('[submit_infra] private_metadata inválido:', e);
+  }
+
+  if (!tipo) {
+    await ack({
+      response_action: 'errors',
+      errors: {
+        blk_infra_desc:
+          'Erro interno: tipo não identificado. Feche o modal e abra /infra novamente.'
+      }
+    });
+    return;
+  }
+
   const v = view.state?.values ?? {};
-  const typeOpt = v.blk_infra_type?.inp?.selected_option;
   const urgencyOpt = v.blk_infra_urgency?.inp?.selected_option;
-  const type = typeOpt?.value ?? '';
-  const typeLabel = typeOpt?.text?.text ?? type;
+  const typeLabel = INFRA_SUBTYPE_LABELS[tipo];
   const desc = v.blk_infra_desc?.inp?.value ?? '';
   const urgency = urgencyOpt?.value ?? '';
   const urgencyLabel = urgencyOpt?.text?.text ?? urgency;
 
   const details = {
     info: `Suporte de Infra: ${typeLabel}`,
-    requestType: type,
+    requestType: tipo,
     requestTypeLabel: typeLabel,
     description: desc,
     urgency,
     urgencyLabel
   };
 
+  await ack();
+
   try {
-    await saveRequest(body, client, 'INFRA_SUPPORT', details, `Urgência: ${urgencyLabel}\n${desc}`, `✅ Sua solicitação de infraestrutura foi enviada com sucesso ao time de suporte.`);
+    await saveRequest(
+      body,
+      client,
+      'INFRA_SUPPORT',
+      details,
+      `Urgência: ${urgencyLabel}\n${desc}`,
+      `✅ Sua solicitação de infraestrutura foi enviada com sucesso ao time de suporte.`
+    );
   } catch (err) {
     console.error('[Chamado] submit_infra: erro ao salvar solicitação', err);
     try {
       if (userId) {
-        await sendDmToSlackUser(client, userId, '❌ Não foi possível criar o chamado no painel. O time de SI foi notificado. Tente novamente ou abra o chamado pelo painel Theris.');
+        await sendDmToSlackUser(
+          client,
+          userId,
+          '❌ Não foi possível criar o chamado no painel. O time de SI foi notificado. Tente novamente ou abra o chamado pelo painel Theris.'
+        );
       }
     } catch (dmErr) {
       console.error('[Chamado] submit_infra: falha ao enviar DM de erro', dmErr);
     }
+  }
+});
+
+slackApp.view('submit_infra_root', async ({ ack, body, view, client }) => {
+  const values = view.state.values;
+  const empresaRaw = values.blk_root_empresa?.inp?.selected_option?.value;
+  const osRaw = values.blk_root_os?.inp?.selected_option?.value;
+  const patrimonio = values.blk_root_patrimonio?.inp?.value?.trim() ?? '';
+  const hostnameCustom = values.blk_root_hostname_custom?.inp?.value?.trim() ?? '';
+  const ttlQtdRaw = values.blk_root_ttl_qtd?.inp?.value?.trim() ?? '';
+  const ttlUnidadeRaw = values.blk_root_ttl_unidade?.inp?.selected_option?.value;
+  const justificativa = values.blk_root_justificativa?.inp?.value?.trim() ?? '';
+  const urgenciaRaw = values.blk_root_urgencia?.inp?.selected_option?.value;
+
+  const errors: Record<string, string> = {};
+  const usouHostnameCustom = hostnameCustom.length > 0;
+
+  if (!usouHostnameCustom) {
+    if (!empresaRaw) errors.blk_root_empresa = 'Selecione a empresa';
+    else if (!isTipoEmpresa(empresaRaw)) errors.blk_root_empresa = 'Empresa inválida';
+    if (!osRaw) errors.blk_root_os = 'Selecione o sistema operacional';
+    else if (!isTipoOS(osRaw)) errors.blk_root_os = 'Sistema operacional inválido';
+    if (!patrimonio) errors.blk_root_patrimonio = 'Informe o patrimônio';
+    else if (!/^\d+$/.test(patrimonio)) errors.blk_root_patrimonio = 'Patrimônio deve conter apenas números';
+  }
+
+  let qtd = 0;
+  if (!ttlQtdRaw) {
+    errors.blk_root_ttl_qtd = 'Informe a quantidade';
+  } else {
+    qtd = Number(ttlQtdRaw);
+    if (!Number.isFinite(qtd) || qtd <= 0 || !Number.isInteger(qtd)) {
+      errors.blk_root_ttl_qtd = 'Quantidade deve ser um número inteiro positivo';
+    }
+  }
+
+  if (!ttlUnidadeRaw) {
+    errors.blk_root_ttl_unidade = 'Selecione a unidade';
+  } else if (!isTipoTTLUnidade(ttlUnidadeRaw)) {
+    errors.blk_root_ttl_unidade = 'Unidade inválida';
+  }
+
+  let ttlSegundos = 0;
+  if (!errors.blk_root_ttl_qtd && !errors.blk_root_ttl_unidade && ttlUnidadeRaw && isTipoTTLUnidade(ttlUnidadeRaw)) {
+    ttlSegundos = qtd * TTL_UNIDADE_PARA_SEGUNDOS[ttlUnidadeRaw];
+    if (ttlSegundos > TTL_MAX_SEGUNDOS) {
+      errors.blk_root_ttl_qtd =
+        'O teto máximo é 15 dias. Para períodos maiores, seu gestor precisa contatar o time de SI justificando.';
+    }
+  }
+
+  if (!justificativa || justificativa.length < JUSTIFICATIVA_MIN_CHARS) {
+    errors.blk_root_justificativa = `Justificativa deve ter no mínimo ${JUSTIFICATIVA_MIN_CHARS} caracteres descrevendo o motivo`;
+  }
+
+  if (!urgenciaRaw) {
+    errors.blk_root_urgencia = 'Selecione a urgência';
+  } else if (!isTipoUrgencia(urgenciaRaw)) {
+    errors.blk_root_urgencia = 'Urgência inválida';
+  }
+
+  if (Object.keys(errors).length > 0) {
+    await ack({ response_action: 'errors', errors });
+    return;
+  }
+
+  await ack();
+
+  const slackId = body.user.id;
+  let requesterId: string | null = null;
+  try {
+    const info = await client.users.info({ user: slackId });
+    const email = info.user?.profile?.email;
+    if (email) {
+      const userDb = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+      if (userDb) requesterId = userDb.id;
+    }
+  } catch (e) {
+    console.error('[submit_infra_root] lookup requester:', e);
+  }
+
+  if (!requesterId) {
+    await sendDmToSlackUser(
+      client,
+      slackId,
+      '❌ Não encontramos seu usuário no Theris pelo e-mail do Slack. Cadastre-se no painel ou alinhe o e-mail com o RH/SI.'
+    );
+    return;
+  }
+
+  const empresa = empresaRaw && isTipoEmpresa(empresaRaw) ? empresaRaw : null;
+  const os = osRaw && isTipoOS(osRaw) ? osRaw : null;
+  const ttlUnidade = ttlUnidadeRaw as TipoTTLUnidade;
+  const urgencia = urgenciaRaw as TipoUrgencia;
+
+  let hostname: string;
+  if (usouHostnameCustom) {
+    hostname = hostnameCustom;
+  } else {
+    hostname = `3C-${empresa}-${os}-${patrimonio}`;
+  }
+
+  const expiryAtHipotetico = new Date(Date.now() + ttlSegundos * 1000).toISOString();
+
+  const details: RootAccessDetails = {
+    subtipo: REQUEST_TYPES.ROOT_ACCESS,
+    hostname,
+    empresa: usouHostnameCustom ? null : empresa,
+    os: usouHostnameCustom ? null : os,
+    patrimonio: usouHostnameCustom ? null : patrimonio,
+    hostnameCustom: usouHostnameCustom ? hostnameCustom : null,
+    ttlQuantidade: qtd,
+    ttlUnidade,
+    ttlSegundos,
+    expiryAt: expiryAtHipotetico,
+    urgencia,
+    jumpcloudDeviceId: null,
+    jumpcloudUserId: null,
+    jumpcloudAccessRequestId: null,
+    appliedAt: null,
+    statusJc: null
+  };
+
+  try {
+    // PENDING_SI (inglês): alinha com handleSiDualApprovalSlackAction (HIRING/FIRING/AEX).
+    // Débito técnico: parte do código ainda usa PENDENTE_SI em outros fluxos.
+    const created = await prisma.request.create({
+      data: {
+        requesterId,
+        type: REQUEST_TYPES.ROOT_ACCESS,
+        status: 'PENDING_SI',
+        justification: justificativa,
+        details: JSON.stringify(details),
+        currentApproverRole: 'SI',
+        approverId: null,
+        assigneeId: null,
+        isExtraordinary: false
+      }
+    });
+
+    const request = await prisma.request.findUnique({
+      where: { id: created.id },
+      include: { requester: { select: { name: true, email: true } } }
+    });
+    if (!request) throw new Error('Request recém-criado não encontrado');
+
+    const { detectActiveRootAccessOverlap, sendSiTeamRootAccessDms } = await import('./siSlackApprovalService');
+    const activeSudoWarning = await detectActiveRootAccessOverlap(requesterId, hostname, created.id);
+    await sendSiTeamRootAccessDms({ client, request, activeSudoWarning });
+
+    await client.chat.postMessage({
+      channel: slackId,
+      text:
+        '✅ Pedido de *Acesso Root* enviado ao time de SI. Você receberá uma DM quando houver decisão.'
+    });
+  } catch (err) {
+    console.error('[submit_infra_root] erro ao criar/notificar:', err);
+    await sendDmToSlackUser(
+      client,
+      slackId,
+      '❌ Não foi possível registrar o pedido de Acesso Root. Tente novamente ou contate o SI.'
+    );
   }
 });
 
@@ -3305,7 +3739,7 @@ Caso precise de acesso permanente, entre em contato com o time de Segurança da 
 
 const ACCESS_TYPES = ['ACCESS_CHANGE', 'ACCESS_TOOL_EXTRA', 'ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'];
 const PEOPLE_TYPES = ['CHANGE_ROLE', 'HIRING', 'FIRING', 'DEPUTY_DESIGNATION', 'ADMISSAO', 'DEMISSAO', 'PROMOCAO'];
-const INFRA_TYPES = ['INFRA_SUPPORT', 'INFRA'];
+const INFRA_TYPES = ['INFRA_SUPPORT', 'INFRA', 'ROOT_ACCESS'];
 
 const TYPE_LABELS: Record<string, string> = {
   ACCESS_TOOL: 'Kit Padrão / Nova Ferramenta',
@@ -3320,7 +3754,8 @@ const TYPE_LABELS: Record<string, string> = {
   DEMISSAO: 'Desligamento',
   PROMOCAO: 'Promoção',
   INFRA_SUPPORT: 'Suporte Infra / TI',
-  INFRA: 'Suporte Infra / TI'
+  INFRA: 'Suporte Infra / TI',
+  ROOT_ACCESS: 'Acesso Root (sudo)'
 };
 
 function buildNotificationSummary(requestType: string, detailsJson?: string | null): { category: string; typeLabel: string; detailsText: string } {
@@ -3344,6 +3779,11 @@ function buildNotificationSummary(requestType: string, detailsJson?: string | nu
     if (d.requestTypeLabel || d.requestType) parts.push(`Tipo: ${d.requestTypeLabel || d.requestType}`);
     if (d.urgencyLabel || d.urgency) parts.push(`Urgência: ${d.urgencyLabel || d.urgency}`);
     if (d.description) parts.push(`Descrição: ${(d.description as string).slice(0, 150)}${(d.description as string).length > 150 ? '…' : ''}`);
+  } else if (requestType === 'ROOT_ACCESS') {
+    const host = typeof d.hostname === 'string' ? d.hostname : '—';
+    parts.push(`Device: ${host}`);
+    if (d.ttlQuantidade != null && d.ttlUnidade) parts.push(`TTL: ${String(d.ttlQuantidade)} ${String(d.ttlUnidade)}`);
+    if (d.urgencia) parts.push(`Urgência: ${String(d.urgencia)}`);
   } else if (PEOPLE_TYPES.includes(requestType) && requestType !== 'DEPUTY_DESIGNATION') {
     const collab = (d.collaboratorName as string) || (d.info as string)?.toString().replace(/^[^:]+:\s*/, '') || '—';
     parts.push(`Colaborador: ${collab}`);
