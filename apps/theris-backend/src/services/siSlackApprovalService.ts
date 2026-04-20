@@ -1,6 +1,6 @@
 /**
  * Aprovação do time de SI via Slack (AEX, Onboarding, Offboarding, Acesso Root).
- * Mantém ts das DMs em Request.siSlackMessageTs para chat.update após decisão.
+ * DMs SI: `siSlackMessageTs` [{ userId, ts }]. ROOT_ACCESS também persiste `siSlackRootChannelTs` (ts no canal SI).
  */
 import type { WebClient } from '@slack/web-api';
 import type { Request } from '@prisma/client';
@@ -374,7 +374,10 @@ export function rootAccessSiBlocks(request: Request & { requester?: { name: stri
   return blocks;
 }
 
-/** Canal SI + DMs ao time (Luan/Vladimir/Allan) com Block Kit; `siSlackMessageTs` guarda só as DMs (chat.update entre SI). */
+/**
+ * Canal SI + DMs ao time (Luan/Vladimir/Allan) com Block Kit.
+ * `siSlackRootChannelTs` = ts no canal SI; `siSlackMessageTs` = DMs (chat.update após decisão).
+ */
 export async function sendSiTeamRootAccessDms(params: {
   client: WebClient;
   request: Request & { requester?: { name: string | null } | null };
@@ -385,13 +388,15 @@ export async function sendSiTeamRootAccessDms(params: {
   const channelId = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
   const dmLine = `🔐 Acesso Root — #${request.id.slice(0, 8)}`;
 
+  let channelTs: string | undefined;
   if (channelId) {
     try {
-      await client.chat.postMessage({
+      const pm = await client.chat.postMessage({
         channel: channelId,
         text: dmLine,
         blocks: blocks as never
       });
+      channelTs = pm.ts ?? undefined;
     } catch (e) {
       console.error('[ROOT_ACCESS] Falha ao postar no canal SI:', e);
     }
@@ -407,10 +412,14 @@ export async function sendSiTeamRootAccessDms(params: {
       console.error('[ROOT_ACCESS] Falha DM SI para', uid, e);
     }
   }
-  if (refs.length > 0) {
+
+  const data: { siSlackRootChannelTs?: string; siSlackMessageTs?: object[] } = {};
+  if (channelTs) data.siSlackRootChannelTs = channelTs;
+  if (refs.length > 0) data.siSlackMessageTs = refs as unknown as object[];
+  if (Object.keys(data).length > 0) {
     await prisma.request.update({
       where: { id: request.id },
-      data: { siSlackMessageTs: refs as unknown as object[] }
+      data
     });
   }
 }
@@ -472,20 +481,6 @@ export async function approveRootAccessViaSlack(
     console.error('[ROOT_ACCESS] Falha ao notificar solicitante (aprovar):', e);
   }
 
-  try {
-    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('./slackService');
-    const app = getSlackApp();
-    if (app?.client) {
-      const nm = therisApproverId
-        ? await prisma.user.findUnique({ where: { id: therisApproverId }, select: { name: true } })
-        : null;
-      await postSlackAcessosChannel(
-        app.client,
-        `✅ Acesso Root aprovado pelo SI · #${requestId.slice(0, 8)} · ${hostname} · ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`
-      );
-    }
-  } catch (_) {}
-
   return 'ok';
 }
 
@@ -538,20 +533,6 @@ export async function rejectRootAccessViaSlack(
     console.error('[ROOT_ACCESS] Falha ao notificar solicitante (reprovar):', e);
   }
 
-  try {
-    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('./slackService');
-    const app = getSlackApp();
-    if (app?.client) {
-      const nm = therisApproverId
-        ? await prisma.user.findUnique({ where: { id: therisApproverId }, select: { name: true } })
-        : null;
-      await postSlackAcessosChannel(
-        app.client,
-        `❌ Acesso Root reprovado pelo SI · #${requestId.slice(0, 8)} · ${hostname} · ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`
-      );
-    }
-  } catch (_) {}
-
   return 'ok';
 }
 
@@ -595,6 +576,66 @@ export async function updateActorSiDmConfirmed(
 function parseSiRefs(raw: unknown): SiDmRef[] {
   if (!raw || !Array.isArray(raw)) return [];
   return raw.filter((x: any) => x && typeof x.userId === 'string' && typeof x.ts === 'string') as SiDmRef[];
+}
+
+function formatSiDecisionTimestampBrt(d?: Date | null): string {
+  const x = d && !Number.isNaN(d.getTime()) ? d : new Date();
+  return x.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
+
+/** Remove botões: atualiza post no canal SI (`siSlackRootChannelTs`) + cada DM em `siSlackMessageTs`. */
+async function finalizeRootAccessSiInteractiveSurfaces(
+  client: WebClient,
+  requestId: string,
+  opts: { approved: boolean; actorSlackId: string }
+): Promise<void> {
+  const row = await prisma.request.findUnique({
+    where: { id: requestId },
+    select: { siSlackRootChannelTs: true, siSlackMessageTs: true, details: true, siApprovedAt: true }
+  });
+  if (!row) return;
+
+  const details = parseRootAccessDetails(row.details);
+  const hostname = details?.hostname ?? '—';
+  const ttlLine = details != null ? `${details.ttlQuantidade} ${details.ttlUnidade.toLowerCase()}` : '—';
+  const when = formatSiDecisionTimestampBrt(row.siApprovedAt);
+
+  const emoji = opts.approved ? '✅' : '❌';
+  const title = opts.approved ? 'Acesso Root aprovado' : 'Acesso Root reprovado';
+  const verb = opts.approved ? 'Aprovado' : 'Reprovado';
+  const mrkdwn =
+    `${emoji} *${title}*\n` +
+    `*${verb} por* <@${opts.actorSlackId}> *em* ${when}\n` +
+    `*Device:* \`${hostname}\`\n` +
+    `*TTL (solicitado):* ${ttlLine}`;
+  const plain = `${emoji} ${title} — ${verb} em ${when} · ${hostname}`;
+  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }];
+
+  const siCh = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+  if (siCh && row.siSlackRootChannelTs) {
+    try {
+      await client.chat.update({
+        channel: siCh,
+        ts: row.siSlackRootChannelTs,
+        text: plain,
+        blocks: blocks as any
+      });
+    } catch (e) {
+      console.error('[ROOT_ACCESS] chat.update canal SI (final):', e);
+    }
+  }
+
+  for (const r of parseSiRefs(row.siSlackMessageTs as unknown)) {
+    await chatUpdateDmMessage(client, r.userId, r.ts, plain, blocks);
+  }
 }
 
 export async function handleSiDualApprovalSlackAction(params: {
@@ -764,16 +805,9 @@ export async function handleSiDualApprovalSlackAction(params: {
         return;
       }
       if (r !== 'ok') return;
-      await updateActorSiDmConfirmed(
-        params.client,
-        actorSlackId,
-        actorTs,
-        `✅ Você aprovou o Acesso Root #${requestId.slice(0, 8)}.`
-      );
-      await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
+      await finalizeRootAccessSiInteractiveSurfaces(params.client, requestId, {
         approved: true,
-        deciderName,
-        kind: 'root'
+        actorSlackId
       });
     }
   } else {
@@ -850,16 +884,9 @@ export async function handleSiDualApprovalSlackAction(params: {
         return;
       }
       if (r !== 'ok') return;
-      await updateActorSiDmConfirmed(
-        params.client,
-        actorSlackId,
-        actorTs,
-        `❌ Você reprovou o Acesso Root #${requestId.slice(0, 8)}.`
-      );
-      await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
+      await finalizeRootAccessSiInteractiveSurfaces(params.client, requestId, {
         approved: false,
-        deciderName,
-        kind: 'root'
+        actorSlackId
       });
     }
   }

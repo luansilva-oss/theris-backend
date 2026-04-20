@@ -1343,7 +1343,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
     console.log('[Chamado] Tentando enviar notificação SI (novo ticket) para chamado:', newRequest.id, 'tipo:', newRequest.type);
     try {
-      if (safeType !== 'FIRING') {
+      if (safeType !== 'FIRING' && safeType !== 'ROOT_ACCESS') {
         const { notificarSINovoTicket } = await import('../services/slackService');
         await notificarSINovoTicket({
           id: newRequest.id,

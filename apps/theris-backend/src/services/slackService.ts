@@ -4226,6 +4226,13 @@ export type TicketForSINotification = {
 export async function notificarSINovoTicket(ticket: TicketForSINotification): Promise<void> {
   console.log('[Chamado] Tentando enviar notificação SI (novo ticket) para chamado:', ticket.id, 'tipo:', ticket.type);
 
+  if (ticket.type === REQUEST_TYPES.ROOT_ACCESS) {
+    console.log(
+      '[Chamado] notificarSINovoTicket: ignorando ROOT_ACCESS (fluxo dedicado: canal SI + DMs via sendSiTeamRootAccessDms; não usar SLACK_GRUPO_SEGURANCA_CHANNEL_ID).'
+    );
+    return;
+  }
+
   const channelId = process.env.SLACK_SI_CHANNEL_ID || '';
   if (!channelId) {
     console.error('[Chamado] notificarSINovoTicket: SLACK_SI_CHANNEL_ID não definido');

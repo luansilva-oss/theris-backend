@@ -271,6 +271,8 @@ model Request {
   onboardingManagerEmail String?
   /// DMs do SI com botões Aprovar/Recusar — [{ "userId": "U…", "ts": "…" }] para chat.update após decisão.
   siSlackMessageTs       Json?
+  /// ROOT_ACCESS: `ts` da mensagem com botões postada em SLACK_SI_CHANNEL_ID (chat.update após decisão).
+  siSlackRootChannelTs   String?
   jumpcloudCreatedAt     DateTime?
   googleCreatedAt        DateTime?
   /// Lembrete único: data de ação (Slack workspace) atingida — cron onboarding.
