@@ -16,6 +16,11 @@ import {
   rejectFiringViaSlack,
   rejectHiringViaSlack
 } from '../controllers/solicitacaoController';
+import {
+  createSudoAccessRequest,
+  revokeAccessRequest,
+  validateUserDeviceLink
+} from './jumpcloudAccessRequestService';
 
 export type SiDmRef = { userId: string; ts: string };
 
@@ -277,13 +282,14 @@ function parseRootAccessDetails(detailsJson: string | null): RootAccessDetails |
 }
 
 /**
- * B2 (substituir no PR2): avisa SI se já existe ROOT_ACCESS aprovado no mesmo hostname
- * com expiry futuro para o mesmo solicitante.
+ * B2: avisa SI se já existe ROOT_ACCESS aprovado no mesmo device (hostname + JumpCloud system id)
+ * com expiração futura para o mesmo solicitante.
  */
 export async function detectActiveRootAccessOverlap(
   requesterId: string,
   hostname: string,
-  excludeRequestId: string
+  excludeRequestId: string,
+  jumpcloudDeviceId?: string | null
 ): Promise<string | null> {
   const candidates = await prisma.request.findMany({
     where: {
@@ -300,12 +306,15 @@ export async function detectActiveRootAccessOverlap(
     const d = parseRootAccessDetails(row.details);
     if (!d) continue;
     if (d.hostname !== hostname) continue;
-    if (new Date(d.expiryAt).getTime() <= now) continue;
+    const expMs = new Date(d.expiryAt).getTime();
+    if (!Number.isFinite(expMs) || expMs <= now) continue;
+    if (d.statusJc === 'EXPIRED' || d.statusJc === 'FAILED') continue;
+    if (jumpcloudDeviceId && d.jumpcloudDeviceId && d.jumpcloudDeviceId !== jumpcloudDeviceId) continue;
     return (
       `⚠️ *Sobreposição detectada*\n` +
       `Este colaborador já tem acesso root ativo em \`${d.hostname}\` até *${formatRootAccessExpiryBrt(d.expiryAt)}*. ` +
       `Aprovar vai *substituir* o acesso atual pelo novo TTL de *${d.ttlQuantidade} ${d.ttlUnidade.toLowerCase()}* ` +
-      `(_TODO(PR2):_ revogação efetiva no JumpCloud).`
+      `(revoga o access request JumpCloud anterior após criar o novo).`
     );
   }
   return null;
@@ -424,16 +433,194 @@ export async function sendSiTeamRootAccessDms(params: {
   }
 }
 
+type PriorActiveSudoRow = {
+  id: string;
+  details: RootAccessDetails;
+  jumpcloudAccessRequestId: string;
+};
+
+async function findPriorActiveSudo(
+  requesterId: string,
+  jumpcloudDeviceId: string,
+  excludeRequestId: string
+): Promise<PriorActiveSudoRow | null> {
+  const rows = await prisma.request.findMany({
+    where: {
+      type: REQUEST_TYPES.ROOT_ACCESS,
+      status: { in: ['APROVADO', 'APPROVED'] },
+      requesterId,
+      id: { not: excludeRequestId }
+    },
+    select: { id: true, details: true }
+  });
+  const now = Date.now();
+  for (const row of rows) {
+    const d = parseRootAccessDetails(row.details);
+    if (!d) continue;
+    if (d.jumpcloudDeviceId !== jumpcloudDeviceId) continue;
+    if (d.statusJc !== 'APPLIED') continue;
+    const jid = d.jumpcloudAccessRequestId?.trim();
+    if (!jid) continue;
+    const expMs = new Date(d.expiryAt).getTime();
+    if (!Number.isFinite(expMs) || expMs <= now) continue;
+    return { id: row.id, details: d, jumpcloudAccessRequestId: jid };
+  }
+  return null;
+}
+
+async function markRootAccessJumpCloudFailed(
+  requestId: string,
+  base: RootAccessDetails,
+  errorMessage: string
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const updated: RootAccessDetails = {
+    ...base,
+    statusJc: 'FAILED',
+    lastError: errorMessage.slice(0, 2000),
+    lastErrorAt: nowIso
+  };
+  await prisma.request.update({
+    where: { id: requestId },
+    data: { details: JSON.stringify(updated), updatedAt: new Date() }
+  });
+}
+
+async function postSiRootAccessAlert(text: string): Promise<void> {
+  try {
+    const { getSlackApp } = await import('./slackService');
+    const app = getSlackApp();
+    const ch = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+    if (app?.client && ch) {
+      await app.client.chat.postMessage({ channel: ch, text });
+    }
+  } catch (e) {
+    console.error('[ROOT_ACCESS] Falha ao postar alerta SI:', e);
+  }
+}
+
+async function notifySiPriorRevokeFailure(params: {
+  requesterName: string | null | undefined;
+  hostname: string;
+  priorRequestId: string;
+  priorAccessRequestId: string;
+  error: string;
+  httpStatus: number;
+}): Promise<void> {
+  const jcUrl = 'https://console.jumpcloud.com/';
+  const isServer = params.httpStatus >= 500;
+  const logFn = isServer ? console.error.bind(console) : console.warn.bind(console);
+  logFn('[ROOT_ACCESS] Revoke access request falhou:', params.httpStatus, params.error.slice(0, 300));
+  const msg =
+    `⚠️ *ROOT_ACCESS — revogação manual necessária*\n` +
+    `O acesso root *anterior* de *${params.requesterName ?? 'colaborador'}* em \`${params.hostname}\` ` +
+    `não foi revogado automaticamente no JumpCloud.\n` +
+    `*Request Theris (anterior):* \`${params.priorRequestId.slice(0, 8)}…\`\n` +
+    `*Access request ID:* \`${params.priorAccessRequestId}\`\n` +
+    `*HTTP:* ${params.httpStatus}\n` +
+    `*Erro:* \`${params.error.replace(/`/g, "'").slice(0, 500)}\`\n` +
+    `Revogue manualmente em ${jcUrl}`;
+  await postSiRootAccessAlert(msg);
+}
+
+export type ApproveRootAccessResult =
+  | 'ok'
+  | 'race'
+  | 'bad_status'
+  | 'revalidation_failed'
+  | 'jc_create_failed';
+
 export async function approveRootAccessViaSlack(
   requestId: string,
   actorSlackId: string,
-  therisApproverId: string | null
-): Promise<'ok' | 'race' | 'bad_status'> {
+  therisApproverId: string | null,
+  deciderDisplayName: string
+): Promise<ApproveRootAccessResult> {
   const req = await prisma.request.findUnique({
     where: { id: requestId },
     include: { requester: { select: { id: true, name: true, email: true } } }
   });
   if (!req || req.status !== 'PENDING_SI' || req.type !== REQUEST_TYPES.ROOT_ACCESS) return 'bad_status';
+
+  const details0 = parseRootAccessDetails(req.details);
+  if (!details0) return 'bad_status';
+
+  const jcUser = details0.jumpcloudUserId?.trim() ?? '';
+  const jcDevice = details0.jumpcloudDeviceId?.trim() ?? '';
+  const hostname = details0.hostname ?? 'seu device';
+
+  if (!jcUser || !jcDevice) {
+    const cntMissing = await prisma.request.updateMany({
+      where: { id: requestId, status: 'PENDING_SI', siApprovedBy: null, type: REQUEST_TYPES.ROOT_ACCESS },
+      data: {
+        status: 'REJECTED',
+        siApprovedBy: actorSlackId,
+        siApprovedAt: new Date(),
+        approverId: therisApproverId,
+        ...(therisApproverId ? { assigneeId: therisApproverId } : {}),
+        adminNote: 'Rejeição automática — IDs JumpCloud ausentes no pedido (dados inconsistentes).',
+        updatedAt: new Date()
+      }
+    });
+    if (cntMissing.count === 0) return 'race';
+    try {
+      const { getSlackApp, sendDmToSlackUser } = await import('./slackService');
+      const app = getSlackApp();
+      if (app?.client && req.requester?.email) {
+        const lu = await app.client.users.lookupByEmail({ email: req.requester.email });
+        const sid = lu.user?.id;
+        if (sid) {
+          await sendDmToSlackUser(
+            app.client,
+            sid,
+            `❌ *Falha ao aplicar acesso no JumpCloud*\n\n` +
+              `O pedido de acesso root em \`${hostname}\` não pôde ser processado porque faltam dados de integração. Contate SI.`
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[ROOT_ACCESS] DM ao solicitante (IDs ausentes):', e);
+    }
+    return 'revalidation_failed';
+  }
+
+  const reval = await validateUserDeviceLink(jcUser, jcDevice);
+  if (reval.ok === false) {
+    const note = `Rejeição automática — revalidação JumpCloud: ${reval.error} ${reval.details ?? ''}`.slice(0, 900);
+    const cntR = await prisma.request.updateMany({
+      where: { id: requestId, status: 'PENDING_SI', siApprovedBy: null, type: REQUEST_TYPES.ROOT_ACCESS },
+      data: {
+        status: 'REJECTED',
+        siApprovedBy: actorSlackId,
+        siApprovedAt: new Date(),
+        approverId: therisApproverId,
+        ...(therisApproverId ? { assigneeId: therisApproverId } : {}),
+        adminNote: note,
+        updatedAt: new Date()
+      }
+    });
+    if (cntR.count === 0) return 'race';
+    try {
+      const { getSlackApp, sendDmToSlackUser } = await import('./slackService');
+      const app = getSlackApp();
+      if (app?.client && req.requester?.email) {
+        const lu = await app.client.users.lookupByEmail({ email: req.requester.email });
+        const sid = lu.user?.id;
+        if (sid) {
+          await sendDmToSlackUser(
+            app.client,
+            sid,
+            `❌ *Falha ao aplicar acesso no JumpCloud*\n\n` +
+              `O vínculo entre você e o device \`${hostname}\` no JumpCloud mudou desde o envio do pedido. ` +
+              `O chamado foi encerrado automaticamente. Contate SI se precisar de ajuda.`
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[ROOT_ACCESS] DM ao solicitante (revalidação):', e);
+    }
+    return 'revalidation_failed';
+  }
 
   const cnt = await prisma.request.updateMany({
     where: { id: requestId, status: 'PENDING_SI', siApprovedBy: null, type: REQUEST_TYPES.ROOT_ACCESS },
@@ -449,13 +636,109 @@ export async function approveRootAccessViaSlack(
   });
   if (cnt.count === 0) return 'race';
 
-  // TODO(PR2): revogar sudo anterior no mesmo device (POST .../revoke) e POST /api/v2/accessrequests com
-  // additionalAttributes.sudo = { enabled: true, withoutPassword: false }; persistir jumpcloudAccessRequestId em details.
-  console.info(`[ROOT_ACCESS] TODO(PR2): chamar JumpCloud API para request ${requestId}`);
+  const expiryIso = new Date(Date.now() + details0.ttlSegundos * 1000).toISOString();
+  const prior =
+    req.requesterId != null
+      ? await findPriorActiveSudo(req.requesterId, jcDevice, requestId)
+      : null;
 
-  const details = parseRootAccessDetails(req.details);
-  const hostname = details?.hostname ?? 'seu device';
+  const createResult = await createSudoAccessRequest({
+    jumpcloudUserId: jcUser,
+    jumpcloudDeviceId: jcDevice,
+    expiryIso,
+    justification: (req.justification ?? '').trim() || 'ROOT_ACCESS'
+  });
 
+  if (createResult.ok === false) {
+    await markRootAccessJumpCloudFailed(
+      requestId,
+      details0,
+      `POST /accessrequests: ${createResult.error} (HTTP ${createResult.status})`
+    );
+    await postSiRootAccessAlert(
+      `⚠️ *ROOT_ACCESS — falha ao criar no JumpCloud*\n` +
+        `*Chamado:* #${requestId.slice(0, 8)}\n` +
+        `*Device:* \`${hostname}\`\n` +
+        `*HTTP:* ${createResult.status}\n` +
+        `\`${createResult.error.replace(/`/g, "'").slice(0, 500)}\``
+    );
+    try {
+      const { getSlackApp, sendDmToSlackUser } = await import('./slackService');
+      const app = getSlackApp();
+      if (app?.client && req.requester?.email) {
+        const lu = await app.client.users.lookupByEmail({ email: req.requester.email });
+        const sid = lu.user?.id;
+        if (sid) {
+          await sendDmToSlackUser(
+            app.client,
+            sid,
+            `❌ *Falha ao aplicar acesso no JumpCloud*\n\n` +
+              `Não foi possível aplicar sudo em \`${hostname}\`. Contate SI e informe o chamado #${requestId.slice(0, 8)}.`
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[ROOT_ACCESS] DM ao solicitante (create falhou):', e);
+    }
+    return 'jc_create_failed';
+  }
+
+  if (prior) {
+    const revokeResult = await revokeAccessRequest(prior.jumpcloudAccessRequestId);
+    if (revokeResult.ok === true) {
+      const priorDetails: RootAccessDetails = {
+        ...prior.details,
+        statusJc: 'EXPIRED',
+        lastError: null,
+        lastErrorAt: null
+      };
+      await prisma.request.update({
+        where: { id: prior.id },
+        data: { details: JSON.stringify(priorDetails), updatedAt: new Date() }
+      });
+      if (revokeResult.alreadyGone) {
+        console.info(`[ROOT_ACCESS] Revoke prior ${prior.jumpcloudAccessRequestId}: já não aplicável`);
+      }
+    } else if (revokeResult.ok === false) {
+      await notifySiPriorRevokeFailure({
+        requesterName: req.requester?.name,
+        hostname,
+        priorRequestId: prior.id,
+        priorAccessRequestId: prior.jumpcloudAccessRequestId,
+        error: revokeResult.error,
+        httpStatus: revokeResult.status
+      });
+      const priorDetails: RootAccessDetails = {
+        ...prior.details,
+        statusJc: 'EXPIRED',
+        lastError: `Revogação automática falhou (HTTP ${revokeResult.status}): ${revokeResult.error}`.slice(0, 2000),
+        lastErrorAt: new Date().toISOString()
+      };
+      await prisma.request.update({
+        where: { id: prior.id },
+        data: { details: JSON.stringify(priorDetails), updatedAt: new Date() }
+      });
+    }
+  }
+
+  const updatedDetails: RootAccessDetails = {
+    ...details0,
+    jumpcloudAccessRequestId: createResult.accessRequestId,
+    appliedAt: new Date().toISOString(),
+    statusJc: 'APPLIED',
+    expiryAt: expiryIso,
+    previousJumpcloudAccessRequestId: prior?.jumpcloudAccessRequestId ?? null,
+    rawAccessRequestResponse: createResult.rawResponse,
+    lastError: null,
+    lastErrorAt: null
+  };
+
+  await prisma.request.update({
+    where: { id: requestId },
+    data: { details: JSON.stringify(updatedDetails), updatedAt: new Date() }
+  });
+
+  const expBrt = formatRootAccessExpiryBrt(expiryIso);
   try {
     const { getSlackApp, sendDmToSlackUser } = await import('./slackService');
     const app = getSlackApp();
@@ -467,10 +750,11 @@ export async function approveRootAccessViaSlack(
           await sendDmToSlackUser(
             app.client,
             sid,
-            `✅ *Acesso Root aprovado*\n\n` +
-              `Seu pedido de acesso root em \`${hostname}\` foi aprovado pelo time de SI.\n\n` +
-              `⏳ *Integração com JumpCloud em desenvolvimento.* Por enquanto, contacte o time de SI para aplicar no device manualmente se precisar de urgência. ` +
-              `Isto será automatizado em breve (PR2).`
+            `✅ *Acesso Root aplicado*\n\n` +
+              `Seu acesso root em \`${hostname}\` foi aprovado por *${deciderDisplayName}* e aplicado no JumpCloud.\n\n` +
+              `⏰ *Expira em:* ${expBrt} (horário de Brasília)\n` +
+              `⏱️ Pode levar até ~10 minutos para refletir no seu device.\n\n` +
+              `Se precisar de mais tempo após expirar, abra um novo chamado com *\\/infra* → *Acesso Root*.`
           );
         }
       } catch (e) {
@@ -591,11 +875,17 @@ function formatSiDecisionTimestampBrt(d?: Date | null): string {
   });
 }
 
+export type RootAccessSiFinalizeKind =
+  | { kind: 'reject' }
+  | { kind: 'approve_applied'; expiryIso: string }
+  | { kind: 'approve_jc_failed'; failureSummary: string }
+  | { kind: 'revalidate_rejected' };
+
 /** Remove botões: atualiza post no canal SI (`siSlackRootChannelTs`) + cada DM em `siSlackMessageTs`. */
 async function finalizeRootAccessSiInteractiveSurfaces(
   client: WebClient,
   requestId: string,
-  opts: { approved: boolean; actorSlackId: string }
+  opts: { actorSlackId: string } & RootAccessSiFinalizeKind
 ): Promise<void> {
   const row = await prisma.request.findUnique({
     where: { id: requestId },
@@ -608,15 +898,53 @@ async function finalizeRootAccessSiInteractiveSurfaces(
   const ttlLine = details != null ? `${details.ttlQuantidade} ${details.ttlUnidade.toLowerCase()}` : '—';
   const when = formatSiDecisionTimestampBrt(row.siApprovedAt);
 
-  const emoji = opts.approved ? '✅' : '❌';
-  const title = opts.approved ? 'Acesso Root aprovado' : 'Acesso Root reprovado';
-  const verb = opts.approved ? 'Aprovado' : 'Reprovado';
-  const mrkdwn =
-    `${emoji} *${title}*\n` +
-    `*${verb} por* <@${opts.actorSlackId}> *em* ${when}\n` +
-    `*Device:* \`${hostname}\`\n` +
-    `*TTL (solicitado):* ${ttlLine}`;
-  const plain = `${emoji} ${title} — ${verb} em ${when} · ${hostname}`;
+  let emoji: string;
+  let title: string;
+  let mrkdwn: string;
+  let plain: string;
+
+  if (opts.kind === 'reject') {
+    emoji = '❌';
+    title = 'Acesso Root reprovado';
+    mrkdwn =
+      `${emoji} *${title}*\n` +
+      `*Reprovado por* <@${opts.actorSlackId}> *em* ${when}\n` +
+      `*Device:* \`${hostname}\`\n` +
+      `*TTL (solicitado):* ${ttlLine}`;
+    plain = `${emoji} ${title} — Reprovado em ${when} · ${hostname}`;
+  } else if (opts.kind === 'revalidate_rejected') {
+    emoji = '⚠️';
+    title = 'Acesso Root — revalidação JumpCloud falhou';
+    mrkdwn =
+      `${emoji} *${title}*\n` +
+      `*Registrado por* <@${opts.actorSlackId}> *em* ${when}\n` +
+      `*Device:* \`${hostname}\`\n` +
+      `O pedido foi *rejeitado automaticamente* porque o vínculo usuário/device no JumpCloud não coincide mais com o envio original.`;
+    plain = `${emoji} ${title} — ${when} · ${hostname}`;
+  } else if (opts.kind === 'approve_jc_failed') {
+    emoji = '⚠️';
+    title = 'Acesso Root — falha ao aplicar no JumpCloud';
+    mrkdwn =
+      `${emoji} *${title}*\n` +
+      `*Aprovado por* <@${opts.actorSlackId}> *em* ${when}\n` +
+      `*Device:* \`${hostname}\`\n` +
+      `*TTL (solicitado):* ${ttlLine}\n` +
+      `*Detalhe:* ${opts.failureSummary}\n` +
+      `_Ação manual necessária no JumpCloud._`;
+    plain = `${emoji} ${title} — ${when} · ${hostname}`;
+  } else {
+    emoji = '✅';
+    title = 'Acesso Root aplicado';
+    const expBrt = formatRootAccessExpiryBrt(opts.expiryIso);
+    mrkdwn =
+      `${emoji} *${title}*\n` +
+      `*Aplicado por* <@${opts.actorSlackId}> *em* ${when}\n` +
+      `*Device:* \`${hostname}\`\n` +
+      `*TTL (solicitado):* ${ttlLine}\n` +
+      `*Expira em:* ${expBrt} (BRT)`;
+    plain = `${emoji} ${title} — ${when} · ${hostname} · expira ${expBrt}`;
+  }
+
   const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }];
 
   const siCh = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
@@ -626,7 +954,7 @@ async function finalizeRootAccessSiInteractiveSurfaces(
         channel: siCh,
         ts: row.siSlackRootChannelTs,
         text: plain,
-        blocks: blocks as any
+        blocks: blocks as never
       });
     } catch (e) {
       console.error('[ROOT_ACCESS] chat.update canal SI (final):', e);
@@ -795,7 +1123,7 @@ export async function handleSiDualApprovalSlackAction(params: {
         kind: 'firing'
       });
     } else if (isRootAccess) {
-      const r = await approveRootAccessViaSlack(requestId, actorSlackId, therisApproverId);
+      const r = await approveRootAccessViaSlack(requestId, actorSlackId, therisApproverId, deciderName);
       if (r === 'bad_status') return;
       if (r === 'race') {
         await params.respond?.({
@@ -804,10 +1132,73 @@ export async function handleSiDualApprovalSlackAction(params: {
         });
         return;
       }
+      if (r === 'revalidation_failed') {
+        await finalizeRootAccessSiInteractiveSurfaces(params.client, requestId, {
+          kind: 'revalidate_rejected',
+          actorSlackId
+        });
+        await updateActorSiDmConfirmed(
+          params.client,
+          actorSlackId,
+          actorTs,
+          `⚠️ Chamado #${requestId.slice(0, 8)} encerrado automaticamente (JumpCloud).`
+        );
+        await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
+          approved: false,
+          deciderName,
+          kind: 'root'
+        });
+        await params.respond?.({
+          response_type: 'ephemeral',
+          text: 'O pedido foi encerrado automaticamente (validação JumpCloud). O solicitante foi notificado.'
+        });
+        return;
+      }
+      if (r === 'jc_create_failed') {
+        await finalizeRootAccessSiInteractiveSurfaces(params.client, requestId, {
+          kind: 'approve_jc_failed',
+          actorSlackId,
+          failureSummary: 'Falha ao criar access request no JumpCloud (ver detalhes no Theris).'
+        });
+        await updateActorSiDmConfirmed(
+          params.client,
+          actorSlackId,
+          actorTs,
+          `⚠️ Aprovação registrada, mas a aplicação no JumpCloud falhou. O solicitante e o canal SI foram alertados.`
+        );
+        await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
+          approved: true,
+          deciderName,
+          kind: 'root'
+        });
+        await params.respond?.({
+          response_type: 'ephemeral',
+          text: 'Aprovação registrada, mas o JumpCloud retornou erro ao aplicar sudo. Verifique o canal SI.'
+        });
+        return;
+      }
       if (r !== 'ok') return;
+      const rowAfter = await prisma.request.findUnique({
+        where: { id: requestId },
+        select: { details: true }
+      });
+      const dAfter = parseRootAccessDetails(rowAfter?.details ?? null);
+      const expiryIso = dAfter?.expiryAt ?? '';
       await finalizeRootAccessSiInteractiveSurfaces(params.client, requestId, {
+        kind: 'approve_applied',
+        actorSlackId,
+        expiryIso
+      });
+      await updateActorSiDmConfirmed(
+        params.client,
+        actorSlackId,
+        actorTs,
+        `✅ Você aprovou o Acesso Root #${requestId.slice(0, 8)}. JumpCloud: aplicado.`
+      );
+      await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
         approved: true,
-        actorSlackId
+        deciderName,
+        kind: 'root'
       });
     }
   } else {
@@ -885,7 +1276,7 @@ export async function handleSiDualApprovalSlackAction(params: {
       }
       if (r !== 'ok') return;
       await finalizeRootAccessSiInteractiveSurfaces(params.client, requestId, {
-        approved: false,
+        kind: 'reject',
         actorSlackId
       });
     }

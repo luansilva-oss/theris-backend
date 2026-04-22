@@ -55,6 +55,7 @@ import { syncStructureFromUsers } from './services/structureSync'; // Import syn
 import { startPasswordReminderCron } from './jobs/passwordReminderCron';
 import { startCleanupSessionsCron } from './crons/cleanupSessions';
 import { startReviewAccessCron } from './crons/reviewAccessCron';
+import { startJumpCloudRootAccessExpiryCron } from './crons/jumpcloudRootAccessExpiryCron';
 import { startJumpCloudPasswordCron } from './crons/jumpcloudPasswordCron';
 import { startJumpCloudPasswordExpiryCron } from './crons/jumpcloudPasswordExpiryCron';
 import { startOnboardingSlackActionDateCron } from './crons/onboardingSlackActionDateCron';
@@ -120,6 +121,7 @@ startCleanupSessionsCron();
 startReviewAccessCron();
 // Cron: JumpCloud Password Manager (eventos view/copy), a cada 5 min
 startJumpCloudPasswordCron();
+startJumpCloudRootAccessExpiryCron();
 // Cron: JumpCloud senha expirando em 7 dias, 1x/dia às 08:00 (Brasília)
 startJumpCloudPasswordExpiryCron();
 // Cron: lembrete data de ação Slack (onboarding HIRING aprovado), diário 08:30 BRT

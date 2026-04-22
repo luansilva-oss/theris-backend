@@ -55,6 +55,16 @@ export type RootAccessDetails = {
   jumpcloudAccessRequestId: string | null;
   appliedAt: string | null;
   statusJc: 'APPLIED' | 'FAILED' | 'EXPIRED' | null;
+
+  /** PR2: ID do access request antigo revogado (auditoria sobreposição B2) */
+  previousJumpcloudAccessRequestId?: string | null;
+
+  /** PR2: último erro JC (diagnóstico) */
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+
+  /** PR2: response bruta do POST create (debug temporário) */
+  rawAccessRequestResponse?: unknown;
 };
 
 export function isTipoEmpresa(s: string): s is TipoEmpresa {

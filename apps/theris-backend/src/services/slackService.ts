@@ -15,6 +15,9 @@ import {
   isTipoUrgencia
 } from '../types/rootAccess';
 import { getStaticLevelOptionsForToolName } from '../lib/catalogStaticToolLevels';
+import { hasJumpCloudCredentials } from './jumpcloudAuth';
+import { getSystemUserIdByEmail } from './jumpcloudService';
+import { findDeviceByHostname, validateUserDeviceLink } from './jumpcloudAccessRequestService';
 import {
   registerPessoasModalCascadeHandlers,
   buildMoveDeptModalBlocks,
@@ -410,7 +413,7 @@ function buildInfraRootSubmitView(): Record<string, unknown> {
         type: 'input',
         block_id: 'blk_root_hostname_custom',
         optional: true,
-        label: { type: 'plain_text', text: 'Hostname customizado (opcional)' },
+        label: { type: 'plain_text', text: 'Hostname customizado' },
         hint: {
           type: 'plain_text',
           text: 'Se preenchido, Empresa/SO/Patrimônio são ignorados. Padrão: 3C-{empresa}-{SO}-{patrimônio}.'
@@ -3279,28 +3282,19 @@ slackApp.view('submit_infra_root', async ({ ack, body, view, client }) => {
     return;
   }
 
-  await ack();
-
   const slackId = body.user.id;
   let requesterId: string | null = null;
+  let requesterEmail: string | null = null;
   try {
     const info = await client.users.info({ user: slackId });
-    const email = info.user?.profile?.email;
+    const email = info.user?.profile?.email?.trim();
     if (email) {
+      requesterEmail = email;
       const userDb = await prisma.user.findUnique({ where: { email }, select: { id: true } });
       if (userDb) requesterId = userDb.id;
     }
   } catch (e) {
     console.error('[submit_infra_root] lookup requester:', e);
-  }
-
-  if (!requesterId) {
-    await sendDmToSlackUser(
-      client,
-      slackId,
-      '❌ Não encontramos seu usuário no Theris pelo e-mail do Slack. Cadastre-se no painel ou alinhe o e-mail com o RH/SI.'
-    );
-    return;
   }
 
   const empresa = empresaRaw && isTipoEmpresa(empresaRaw) ? empresaRaw : null;
@@ -3313,6 +3307,73 @@ slackApp.view('submit_infra_root', async ({ ack, body, view, client }) => {
     hostname = hostnameCustom;
   } else {
     hostname = `3C-${empresa}-${os}-${patrimonio}`;
+  }
+
+  const jcErrors: Record<string, string> = {};
+  let jumpcloudUserId: string | null = null;
+  let jumpcloudDeviceId: string | null = null;
+
+  if (!requesterEmail) {
+    jcErrors.blk_root_justificativa = 'Não foi possível ler o e-mail do seu perfil Slack. Contate SI.';
+  } else if (!hasJumpCloudCredentials()) {
+    jcErrors.blk_root_justificativa =
+      'Integração JumpCloud indisponível neste ambiente. Contate o time de SI.';
+  } else {
+    const jcUid = await getSystemUserIdByEmail(requesterEmail);
+    if (!jcUid) {
+      jcErrors.blk_root_justificativa = 'Seu usuário não está vinculado ao JumpCloud. Contate SI.';
+    } else {
+      jumpcloudUserId = jcUid;
+      const deviceRes = await findDeviceByHostname(hostname);
+      if (deviceRes.ok === false) {
+        if (deviceRes.error === 'NOT_FOUND') {
+          const msg = `Device \`${hostname}\` não encontrado no JumpCloud. Confira o patrimônio ou use hostname customizado.`;
+          jcErrors[usouHostnameCustom ? 'blk_root_hostname_custom' : 'blk_root_patrimonio'] = msg;
+        } else if (deviceRes.error === 'MULTIPLE') {
+          jcErrors.blk_root_hostname_custom = `Múltiplos devices com hostname \`${hostname}\`. Use hostname customizado ou contate SI.`;
+        } else {
+          jcErrors.blk_root_justificativa = 'Erro ao validar device, tente novamente em instantes.';
+        }
+      } else if (!deviceRes.active) {
+        const msg = `Device \`${hostname}\` está desativado no JumpCloud.`;
+        jcErrors[usouHostnameCustom ? 'blk_root_hostname_custom' : 'blk_root_patrimonio'] = msg;
+      } else {
+        jumpcloudDeviceId = deviceRes.deviceId;
+        const linkRes = await validateUserDeviceLink(jumpcloudUserId, jumpcloudDeviceId);
+        if (linkRes.ok === false) {
+          if (linkRes.error === 'NOT_LINKED') {
+            jcErrors.blk_root_justificativa = `Você não tem \`${hostname}\` associado ao seu usuário. Contate SI.`;
+          } else {
+            jcErrors.blk_root_justificativa = 'Erro ao validar device, tente novamente em instantes.';
+          }
+        }
+      }
+    }
+  }
+
+  if (Object.keys(jcErrors).length > 0) {
+    await ack({ response_action: 'errors', errors: jcErrors });
+    return;
+  }
+
+  await ack();
+
+  if (!requesterId) {
+    await sendDmToSlackUser(
+      client,
+      slackId,
+      '❌ Não encontramos seu usuário no Theris pelo e-mail do Slack. Cadastre-se no painel ou alinhe o e-mail com o RH/SI.'
+    );
+    return;
+  }
+
+  if (!jumpcloudUserId || !jumpcloudDeviceId) {
+    await sendDmToSlackUser(
+      client,
+      slackId,
+      '❌ Validação JumpCloud inconsistente. Tente novamente ou contate o SI.'
+    );
+    return;
   }
 
   const expiryAtHipotetico = new Date(Date.now() + ttlSegundos * 1000).toISOString();
@@ -3329,8 +3390,8 @@ slackApp.view('submit_infra_root', async ({ ack, body, view, client }) => {
     ttlSegundos,
     expiryAt: expiryAtHipotetico,
     urgencia,
-    jumpcloudDeviceId: null,
-    jumpcloudUserId: null,
+    jumpcloudDeviceId,
+    jumpcloudUserId,
     jumpcloudAccessRequestId: null,
     appliedAt: null,
     statusJc: null
@@ -3360,7 +3421,12 @@ slackApp.view('submit_infra_root', async ({ ack, body, view, client }) => {
     if (!request) throw new Error('Request recém-criado não encontrado');
 
     const { detectActiveRootAccessOverlap, sendSiTeamRootAccessDms } = await import('./siSlackApprovalService');
-    const activeSudoWarning = await detectActiveRootAccessOverlap(requesterId, hostname, created.id);
+    const activeSudoWarning = await detectActiveRootAccessOverlap(
+      requesterId,
+      hostname,
+      created.id,
+      jumpcloudDeviceId
+    );
     await sendSiTeamRootAccessDms({ client, request, activeSudoWarning });
 
     await client.chat.postMessage({
