@@ -403,6 +403,7 @@ function buildInfraRootSubmitView(): Record<string, unknown> {
         type: 'input',
         block_id: 'blk_root_patrimonio',
         label: { type: 'plain_text', text: 'Patrimônio' },
+        hint: { type: 'plain_text', text: 'Apenas números. Ex: 0816' },
         element: {
           type: 'plain_text_input',
           action_id: 'inp',

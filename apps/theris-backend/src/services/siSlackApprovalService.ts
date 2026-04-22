@@ -345,7 +345,7 @@ export function rootAccessSiBlocks(request: Request & { requester?: { name: stri
           `*Solicitante:* ${requesterName}\n` +
           `*Device (hostname):* \`${hostname}\`\n` +
           `*TTL:* ${ttlLine}\n` +
-          `*Expira em (hipotético pós-aprovação):* ${expiryLine}\n` +
+          `*Expira em:* ${expiryLine}\n` +
           `*Urgência:* ${urgLabel}\n` +
           `*Justificativa:*\n>${(request.justification || '(não informada)').replace(/\n/g, '\n> ')}`
       }
