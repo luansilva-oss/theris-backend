@@ -5,6 +5,7 @@ import { computeEffectiveStatus, formatTtlSeconds, type EffectiveStatus } from '
 import type { RootAccessDetails } from '../types/rootAccess';
 import { API_URL } from '../config';
 import type { Toast } from '../components/ToastContainer';
+import { rowMatchesRootAccessFilters, type RootAccessFilterRow } from '../lib/rootAccessReportFilters';
 
 export type RootAccessReportItem = {
   id: string;
@@ -15,6 +16,10 @@ export type RootAccessReportItem = {
   justification: string;
   requester: { id: string; name: string; email: string } | null;
   approver: { id: string; name: string; email: string } | null;
+  revokedAt?: string | null;
+  revokedBy?: { id: string; name: string; email: string } | null;
+  revokeReason?: string | null;
+  revokeTrigger?: 'CRON_EXPIRED' | 'ADMIN_EARLY' | null;
   details: RootAccessDetails | null;
 };
 
@@ -27,7 +32,9 @@ const STATUS_BADGE: Record<
   APPLIED: { label: 'Aplicado', bg: 'rgba(34, 197, 94, 0.12)', color: '#4ade80', border: 'rgba(34, 197, 94, 0.35)' },
   REJECTED: { label: 'Reprovado', bg: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: 'rgba(239, 68, 68, 0.35)' },
   FAILED: { label: 'Falha JC', bg: 'rgba(220, 38, 38, 0.15)', color: '#fca5a5', border: 'rgba(220, 38, 38, 0.4)' },
-  EXPIRED: { label: 'Expirado', bg: 'rgba(113, 113, 122, 0.2)', color: '#a1a1aa', border: '#3f3f46' }
+  EXPIRED: { label: 'Expirado', bg: 'rgba(113, 113, 122, 0.2)', color: '#a1a1aa', border: '#3f3f46' },
+  REVOKED_EARLY: { label: 'Revogado (admin)', bg: 'rgba(249, 115, 22, 0.15)', color: '#fb923c', border: 'rgba(249, 115, 22, 0.4)' },
+  REVOKED_EXPIRED: { label: 'Revogado (expirado)', bg: 'rgba(82, 82, 91, 0.35)', color: '#d4d4d8', border: '#52525b' }
 };
 
 function StatusBadge({ status }: { status: EffectiveStatus }) {
@@ -55,12 +62,33 @@ function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: stri
 type Props = {
   currentUserId: string;
   showToast: (message: string, type?: Toast['type']) => void;
+  systemProfile: string;
 };
 
-export default function InfraReport({ currentUserId, showToast }: Props) {
+function itemToFilterRow(item: RootAccessReportItem): RootAccessFilterRow {
+  return {
+    id: item.id,
+    createdAt: item.createdAt,
+    status: item.status,
+    requesterId: item.requester?.id ?? null,
+    requester: item.requester,
+    details: item.details ? JSON.stringify(item.details) : null,
+    revokedAt: item.revokedAt ?? null,
+    revokeTrigger: item.revokeTrigger ?? null
+  };
+}
+
+function localDayToIso(dateStr: string, end: boolean): string {
+  const [y, mo, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, mo - 1, d, end ? 23 : 0, end ? 59 : 0, end ? 59 : 0, end ? 999 : 0);
+  return dt.toISOString();
+}
+
+export default function InfraReport({ currentUserId, showToast, systemProfile }: Props) {
   const navigate = useNavigate();
   const [items, setItems] = useState<RootAccessReportItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -95,29 +123,14 @@ export default function InfraReport({ currentUserId, showToast }: Props) {
   }, [currentUserId]);
 
   const filtered = useMemo(() => {
-    return items.filter((item) => {
-      if (searchTerm) {
-        const q = searchTerm.toLowerCase();
-        const matchesRequester =
-          item.requester?.name?.toLowerCase().includes(q) || item.requester?.email?.toLowerCase().includes(q);
-        const matchesHostname = item.details?.hostname?.toLowerCase().includes(q);
-        const matchesId = item.id.toLowerCase().includes(q);
-        if (!matchesRequester && !matchesHostname && !matchesId) return false;
-      }
-      if (startDate) {
-        if (new Date(item.createdAt) < new Date(startDate)) return false;
-      }
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        if (new Date(item.createdAt) > end) return false;
-      }
-      if (statusFilter !== 'ALL') {
-        const effective = computeEffectiveStatus(item.status, item.details?.statusJc);
-        if (effective !== statusFilter) return false;
-      }
-      return true;
-    });
+    return items.filter((item) =>
+      rowMatchesRootAccessFilters(itemToFilterRow(item), {
+        searchTerm,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        statusFilter
+      })
+    );
   }, [items, searchTerm, startDate, endDate, statusFilter]);
 
   const metrics = useMemo(() => {
@@ -125,8 +138,8 @@ export default function InfraReport({ currentUserId, showToast }: Props) {
     const avgTtlSeconds =
       total === 0 ? 0 : filtered.reduce((acc, item) => acc + (item.details?.ttlSegundos ?? 0), 0) / total;
     const approvedCount = filtered.filter((item) => {
-      const s = computeEffectiveStatus(item.status, item.details?.statusJc);
-      return s === 'APPLIED' || s === 'APROVADO' || s === 'EXPIRED';
+      const s = computeEffectiveStatus(item.status, item.details?.statusJc, item.revokeTrigger ?? undefined);
+      return s === 'APPLIED' || s === 'APROVADO' || s === 'EXPIRED' || s === 'REVOKED_EXPIRED' || s === 'REVOKED_EARLY';
     }).length;
     const approvalRate = total === 0 ? 0 : approvedCount / total;
     const overlapsCount = filtered.filter((item) => item.details?.previousJumpcloudAccessRequestId != null).length;
@@ -147,6 +160,57 @@ export default function InfraReport({ currentUserId, showToast }: Props) {
     setStatusFilter('ALL');
   }
 
+  async function handleExportCsv() {
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(systemProfile)) return;
+    if (!startDate || !endDate) {
+      showToast('Selecione as datas De e Até para exportar.', 'warning');
+      return;
+    }
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('type', 'ROOT_ACCESS');
+      params.set('from', localDayToIso(startDate, false));
+      params.set('to', localDayToIso(endDate, true));
+      if (statusFilter !== 'ALL') params.set('status', statusFilter);
+      const q = searchTerm.trim();
+      if (q) params.set('searchTerm', q);
+      const res = await fetch(`${API_URL}/api/requests/export?${params}`, { headers: { 'x-user-id': currentUserId } });
+      if (res.status === 403) {
+        showToast('Sem permissão para exportar.', 'error');
+        return;
+      }
+      if (!res.ok) {
+        let msg = 'Falha no export';
+        try {
+          const err = (await res.json()) as { error?: string };
+          if (err?.error) msg = err.error;
+        } catch {
+          /* ignore */
+        }
+        showToast(msg, 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition');
+      const fn = cd?.match(/filename="([^"]+)"/)?.[1] ?? 'infra-export.csv';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fn;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Export concluído.', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Erro ao exportar.', 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const canExport = ['ADMIN', 'SUPER_ADMIN'].includes(systemProfile);
+
   return (
     <div className="fade-in" style={{ padding: '0 24px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
@@ -159,11 +223,24 @@ export default function InfraReport({ currentUserId, showToast }: Props) {
         <button
           type="button"
           className="btn-secondary"
-          disabled
-          title="Em breve"
-          style={{ opacity: 0.55, cursor: 'not-allowed', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+          disabled={!canExport || exporting || !startDate || !endDate}
+          title={
+            !canExport
+              ? 'Apenas administradores podem exportar'
+              : !startDate || !endDate
+                ? 'Selecione De e Até para exportar'
+                : 'Baixar CSV com os mesmos filtros da tabela'
+          }
+          onClick={() => void handleExportCsv()}
+          style={{
+            opacity: !canExport || !startDate || !endDate ? 0.55 : 1,
+            cursor: !canExport || !startDate || !endDate || exporting ? 'not-allowed' : 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8
+          }}
         >
-          <Download size={16} /> Baixar Relatório
+          <Download size={16} /> {exporting ? 'Exportando…' : 'Baixar Relatório'}
         </button>
       </div>
 
@@ -201,6 +278,8 @@ export default function InfraReport({ currentUserId, showToast }: Props) {
           <option value="REJECTED">Reprovado</option>
           <option value="FAILED">Falha JC</option>
           <option value="EXPIRED">Expirado</option>
+          <option value="REVOKED_EARLY">Revogado (admin)</option>
+          <option value="REVOKED_EXPIRED">Revogado (expirado)</option>
         </select>
         <button type="button" className="btn-text" onClick={handleClearFilters}>
           Limpar filtros
@@ -239,7 +318,7 @@ export default function InfraReport({ currentUserId, showToast }: Props) {
               )}
               {!loading &&
                 filtered.map((item) => {
-                  const effective = computeEffectiveStatus(item.status, item.details?.statusJc);
+                  const effective = computeEffectiveStatus(item.status, item.details?.statusJc, item.revokeTrigger ?? undefined);
                   return (
                     <tr key={item.id} style={{ borderBottom: '1px solid #27272a', color: '#e4e4e7' }}>
                       <td style={{ padding: '12px 16px' }} title={item.id}>

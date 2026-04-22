@@ -6,25 +6,9 @@ import cron from 'node-cron';
 import { prisma } from '../lib/prisma';
 import type { RootAccessDetails } from '../types/rootAccess';
 import { REQUEST_TYPES } from '../types/requestTypes';
-import { getSlackApp, sendDmToSlackUser } from '../services/slackService';
+import { revokeAccessRequest } from '../services/accessRequestRevoke';
 
 const CRON_SCHEDULE = '*/5 * * * *';
-
-function formatExpiryBrt(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch {
-    return iso;
-  }
-}
 
 function parseDetails(raw: string | null): RootAccessDetails | null {
   if (!raw) return null;
@@ -53,40 +37,13 @@ async function processExpiredRootAccess(): Promise<void> {
     const expMs = new Date(details.expiryAt).getTime();
     if (!Number.isFinite(expMs) || expMs > nowMs) continue;
 
-    const updatedDetails: RootAccessDetails = {
-      ...details,
-      statusJc: 'EXPIRED'
-    };
-
-    await prisma.request.update({
-      where: { id: req.id },
-      data: { details: JSON.stringify(updatedDetails), updatedAt: new Date() }
-    });
-
-    const email = req.requester?.email?.trim();
-    if (email) {
-      try {
-        const app = getSlackApp();
-        if (app?.client) {
-          const lu = await app.client.users.lookupByEmail({ email });
-          const sid = lu.user?.id;
-          if (sid) {
-            const when = formatExpiryBrt(details.expiryAt);
-            await sendDmToSlackUser(
-              app.client,
-              sid,
-              `⌛ *Acesso Root expirado*\n\n` +
-                `Seu acesso root em \`${details.hostname}\` expirou em *${when}* (horário de Brasília).\n\n` +
-                `Se precisar de mais tempo, abra um novo chamado com *\\/infra* → *Acesso Root*.`
-            );
-          }
-        }
-      } catch (e) {
-        console.error(`[Cron ROOT_ACCESS expiry] DM falhou para ${email}:`, e);
-      }
+    const r = await revokeAccessRequest({ requestId: req.id, trigger: 'CRON_EXPIRED' });
+    if (r.ok === false) {
+      console.warn(`[Cron ROOT_ACCESS expiry] Revogação não aplicada ${req.id}:`, r.error);
+      continue;
     }
 
-    console.info(`[Cron ROOT_ACCESS expiry] Request ${req.id} marcado como EXPIRED`);
+    console.info(`[Cron ROOT_ACCESS expiry] Request ${req.id} revogado (JumpCloud + Theris)`);
   }
 }
 

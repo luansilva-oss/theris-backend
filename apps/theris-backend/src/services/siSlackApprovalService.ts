@@ -994,6 +994,55 @@ async function finalizeRootAccessSiInteractiveSurfaces(
   }
 }
 
+/** Atualiza post no canal SI + DMs SI após revogação no JumpCloud (sem alterar o Prisma — o caller limpa `siSlack*`). */
+export async function finalizeRootAccessSlackMessagesForRevoke(opts: {
+  siSlackRootChannelTs: string | null | undefined;
+  siSlackMessageTs: unknown;
+  hostname: string;
+  trigger: 'CRON_EXPIRED' | 'ADMIN_EARLY';
+  reason?: string | null;
+  actorLabel: string;
+}): Promise<void> {
+  const { getSlackApp } = await import('./slackService');
+  const app = getSlackApp();
+  if (!app?.client) return;
+  const client = app.client;
+  const triggerLine =
+    opts.trigger === 'ADMIN_EARLY'
+      ? `*Revogação:* antecipada (${opts.actorLabel}).`
+      : `*Revogação:* expiração atingida (automático).`;
+  const reasonLine = opts.reason?.trim() ? `*Motivo registrado:* ${opts.reason.trim()}\n` : '';
+  const emoji = '🔕';
+  const title = 'Acesso Root encerrado';
+  const mrkdwn =
+    `${emoji} *${title}*\n` +
+    `${triggerLine}\n` +
+    reasonLine +
+    `*Device:* \`${opts.hostname}\`\n` +
+    `_O sudo temporário foi revogado no JumpCloud._`;
+  const plain = `${emoji} ${title} — ${opts.hostname}`;
+
+  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }];
+
+  const siCh = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+  if (siCh && opts.siSlackRootChannelTs) {
+    try {
+      await client.chat.update({
+        channel: siCh,
+        ts: opts.siSlackRootChannelTs,
+        text: plain,
+        blocks: blocks as never
+      });
+    } catch (e) {
+      console.error('[ROOT_ACCESS] chat.update canal SI (revoke):', e);
+    }
+  }
+
+  for (const r of parseSiRefs(opts.siSlackMessageTs as unknown)) {
+    await chatUpdateDmMessage(client, r.userId, r.ts, plain, blocks);
+  }
+}
+
 export async function handleSiDualApprovalSlackAction(params: {
   client: WebClient;
   body: { user?: { id?: string; username?: string }; message?: { ts?: string }; actions?: { action_id?: string; value?: string }[] };

@@ -25,6 +25,9 @@ function isAuthExempt(req: Request): boolean {
  * - Demais: exige x-user-id, valida sessão (checkSessionTimeout), carrega usuário e anexa em req.authUser.
  * - Se x-user-id não for enviado ou sessão inválida → 401.
  * - Se usuário não existir no banco → 403 (não confiar cegamente no header).
+ *
+ * O header `x-user-id` sozinho é forjável pelo cliente; a identidade confiável após este middleware é
+ * `req.authUser` (validada contra o banco + sessão). Rate limits e regras de negócio devem usar `authUser.id`.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (isAuthExempt(req)) return next();

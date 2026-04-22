@@ -17,9 +17,11 @@ import {
   createAttachment,
   exportRequestsCsv,
   patchRequestAssignee,
-  patchRequestInbox
+  patchRequestInbox,
+  confirmJcSuspension
 } from './controllers/solicitacaoController';
 import { getRootAccessReport, getRootAccessDetail } from './controllers/rootAccessReportController';
+import { postRevokeRootAccessRequest, getRootAccessExportCsv } from './controllers/rootAccessOpsController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import {
   getTools,
@@ -63,6 +65,8 @@ import { startOnboardingSlackActionDateCron } from './crons/onboardingSlackActio
 import { startJumpCloudDivergenceCron } from './jobs/jumpcloudDivergenceCheck';
 import { startValidateAexToolSyncCron } from './jobs/validateAexToolSync';
 import { startExpireExtraordinaryAccessCron } from './jobs/expireExtraordinaryAccess';
+import { startMonthlyJcOffboardingReconciliationCron } from './jobs/monthlyJcOffboardingReconciliation';
+import { startDailyOwnersLeaverNotificationsCron } from './jobs/dailyOwnersLeaverNotifications';
 import { startRecertifyExtraordinaryAccessCron } from './jobs/recertifyExtraordinaryAccess';
 import webhookRouter from './routes/webhooks';
 import { requireServiceToken } from './middleware/requireServiceToken';
@@ -135,6 +139,10 @@ startValidateAexToolSyncCron();
 startRecertifyExtraordinaryAccessCron();
 // Cron: expiração automática de AEX (Theris + JumpCloud), diariamente às 08:00 (Brasília)
 startExpireExtraordinaryAccessCron();
+// Cron: reconciliação mensal Theris (inativos) × JumpCloud (conta ativa), dia 1 às 09:00 BRT
+startMonthlyJcOffboardingReconciliationCron();
+// Cron: notificação Owners (Leaver) agendada, diariamente às 17:00 BRT
+startDailyOwnersLeaverNotificationsCron();
 
 // --- CORS ---
 app.use(cors({
@@ -205,6 +213,31 @@ app.get('/api/health', (_req: Request, res: Response) => res.json({ ok: true }))
 // ============================================================
 // Valida x-user-id + sessão; anexa req.authUser (id, systemProfile). Não confiar em x-user-id sem sessão válida.
 app.use('/api', requireAuth);
+
+// Rate limits que dependem da identidade autenticada: DEVEM vir depois de requireAuth (chave = req.authUser.id, não o header).
+const rootAccessRevokeUserLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: 'Limite de revogações por hora atingido.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const uid = req.authUser?.id;
+    return uid ? `revoke-root:${uid}` : ipKeyGenerator(req.ip ?? req.socket?.remoteAddress ?? '127.0.0.1');
+  }
+});
+
+const rootAccessExportUserLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: 'Muitos exports. Aguarde um minuto.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const uid = req.authUser?.id;
+    return uid ? `export-root:${uid}` : ipKeyGenerator(req.ip ?? req.socket?.remoteAddress ?? '127.0.0.1');
+  }
+});
 
 // ============================================================
 // --- ROTAS ADMINISTRATIVAS ---
@@ -296,6 +329,9 @@ app.post('/api/webhooks/convenia', handleConveniaWebhook);
 // --- WORKFLOW (SOLICITAÇÕES) ---
 // ============================================================
 app.get('/api/requests/export/csv', exportRequestsCsv);
+app.get('/api/requests/export', rootAccessExportUserLimiter, getRootAccessExportCsv);
+app.post('/api/requests/:id/revoke', rootAccessRevokeUserLimiter, postRevokeRootAccessRequest);
+app.post('/api/requests/:id/confirm-jc-suspension', confirmJcSuspension);
 app.get('/api/solicitacoes', getSolicitacoes);
 app.get('/api/root-access', getRootAccessReport);
 app.get('/api/root-access/:id', getRootAccessDetail);

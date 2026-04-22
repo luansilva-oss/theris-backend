@@ -8,6 +8,11 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+enum RevokeTrigger {
+  CRON_EXPIRED
+  ADMIN_EARLY
+}
+
 // Hierarquia: Unit -> Department -> Role
 model Unit {
   id          String       @id @default(uuid())
@@ -93,7 +98,10 @@ model User {
   // Solicitações
   requests      Request[] @relation("Requester") // Quem pediu
   approvals     Request[] @relation("Approver")  // Quem aprovou
+  revokedRequests Request[] @relation("RequestRevoker") // ROOT_ACCESS revogado antecipadamente (admin)
   assignedTickets Request[] @relation("TicketAssignee") // Chamados atribuídos (Service Desk)
+  /// Leaver (FIRING): confirmações manuais de suspensão JumpCloud pós-revogação pelos Owners
+  jcSuspensionsConfirmed Request[] @relation("JcSuspensionConfirmer")
   requestComments RequestComment[]
   requestAttachments RequestAttachment[]
 
@@ -273,10 +281,26 @@ model Request {
   siSlackMessageTs       Json?
   /// ROOT_ACCESS: `ts` da mensagem com botões postada em SLACK_SI_CHANNEL_ID (chat.update após decisão).
   siSlackRootChannelTs   String?
+
+  /// ROOT_ACCESS: revogação antecipada (admin) ou após expiração + revoke no JumpCloud (cron).
+  revokedAt       DateTime?
+  revokedById     String?
+  revokedBy       User?          @relation("RequestRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
+  revokeReason    String?
+  revokeTrigger   RevokeTrigger?
+
   jumpcloudCreatedAt     DateTime?
   googleCreatedAt        DateTime?
   /// Lembrete único: data de ação (Slack workspace) atingida — cron onboarding.
   slackActionDateNotifiedAt DateTime?
+
+  /// Leaver (FIRING): SI confirmou suspensão manual da conta no JumpCloud após ACESSOS_REVOGADOS_OWNER
+  jcSuspensionConfirmedAt   DateTime?
+  jcSuspensionConfirmedById String?
+  jcSuspensionConfirmedBy   User?     @relation("JcSuspensionConfirmer", fields: [jcSuspensionConfirmedById], references: [id], onDelete: SetNull)
+
+  /// Leaver: `notificarOwnersDesligamento` efetivamente disparado (null = aguardando cron 17h BRT no último dia).
+  ownersNotifiedAt DateTime?
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

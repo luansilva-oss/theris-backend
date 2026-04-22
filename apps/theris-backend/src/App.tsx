@@ -4,7 +4,7 @@ import {
   ArrowLeft, Shield, CheckCircle, XCircle, Clock, Crown,
   Lock, Layers, ChevronDown, ChevronRight,
   Users, Building, Briefcase, // Ícone para Gestão de Pessoas
-  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare,   Filter, X, Download, Monitor
+  Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare,   Filter, X, Download, Monitor, AlertTriangle
 } from 'lucide-react';
 import { useGoogleLogin } from '@react-oauth/google';
 import './App.css';
@@ -151,6 +151,9 @@ interface Request {
   inboxDepartment?: { id: string; name: string } | null;
   inboxRole?: { id: string; name: string; departmentId: string } | null;
   isExtraordinary?: boolean;
+  jcSuspensionConfirmedAt?: string | null;
+  jcSuspensionConfirmedBy?: { id: string; name: string; email?: string } | null;
+  ownersNotifiedAt?: string | null;
 }
 
 interface KBUFerramenta {
@@ -622,6 +625,8 @@ export default function App() {
   const [modalAction, setModalAction] = useState<'aprovar' | 'reprovar' | 'pendente'>('aprovar');
   const [modalTargetId, setModalTargetId] = useState<string | null>(null);
   const [showCancelChamadoModal, setShowCancelChamadoModal] = useState(false);
+  const [showJcSuspensionConfirmModal, setShowJcSuspensionConfirmModal] = useState(false);
+  const [jcSuspensionSubmitting, setJcSuspensionSubmitting] = useState(false);
 
   // EDIT MODAL
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -991,6 +996,31 @@ export default function App() {
       setChamadoDetail(null);
     }
     setChamadoDetailLoading(false);
+  };
+
+  const submitJcSuspensionConfirm = async () => {
+    if (!selectedChamadoId || !currentUser?.id) return;
+    setJcSuspensionSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/requests/${selectedChamadoId}/confirm-jc-suspension`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
+        credentials: 'include'
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast((err as { error?: string }).error || 'Não foi possível confirmar.', 'error');
+        return;
+      }
+      const updated = await res.json();
+      setChamadoDetail(updated);
+      setShowJcSuspensionConfirmModal(false);
+      showToast('Suspensão no JumpCloud registrada.', 'success');
+    } catch {
+      showToast('Erro ao confirmar.', 'error');
+    } finally {
+      setJcSuspensionSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -3257,9 +3287,14 @@ export default function App() {
             const m = pathname.match(/^\/infra-report\/([^/]+)$/);
             const detailId = m ? m[1] : null;
             return detailId ? (
-              <InfraReportDetail currentUserId={currentUser.id} requestId={detailId} />
+              <InfraReportDetail
+                currentUserId={currentUser.id}
+                requestId={detailId}
+                systemProfile={systemProfile}
+                showToast={showToast}
+              />
             ) : (
-              <InfraReport currentUserId={currentUser.id} showToast={showToast} />
+              <InfraReport currentUserId={currentUser.id} showToast={showToast} systemProfile={systemProfile} />
             );
           })()}
 
@@ -3497,6 +3532,180 @@ export default function App() {
                           <div style={{ color: '#e4e4e7' }}>{chamadoDetail.requester?.name}</div>
                           <div style={{ fontSize: 12, color: '#a1a1aa' }}>{chamadoDetail.requester?.email}</div>
                         </div>
+                        {chamadoDetail.type === 'FIRING' && (() => {
+                          let d: Record<string, unknown> = {};
+                          try {
+                            d = typeof chamadoDetail.details === 'string' ? JSON.parse(chamadoDetail.details || '{}') : (chamadoDetail.details || {}) as Record<string, unknown>;
+                          } catch { d = {}; }
+                          const rev = Array.isArray(d.revocationConfirmations) ? (d.revocationConfirmations as { toolName?: string; ownerName?: string; confirmedAt?: string }[]) : [];
+                          const lastDayFormatted = chamadoDetail.actionDate
+                            ? new Date(chamadoDetail.actionDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' })
+                            : '—';
+                          let targetName = '—';
+                          try {
+                            targetName = String(d.collaboratorName || d.info || '').replace(/^[^:]+:\s*/, '') || '—';
+                          } catch { /* noop */ }
+                          const showJcCard =
+                            chamadoDetail.status === 'ACESSOS_REVOGADOS_OWNER' &&
+                            !chamadoDetail.jcSuspensionConfirmedAt;
+                          const jcDone = Boolean(chamadoDetail.jcSuspensionConfirmedAt);
+                          const brtParts = new Intl.DateTimeFormat('en-CA', {
+                            timeZone: 'America/Sao_Paulo',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit'
+                          }).formatToParts(new Date());
+                          const todayYmdUi = `${brtParts.find((p) => p.type === 'year')?.value}-${brtParts.find((p) => p.type === 'month')?.value}-${brtParts.find((p) => p.type === 'day')?.value}`;
+                          const brtHourStr = new Intl.DateTimeFormat('en-GB', {
+                            timeZone: 'America/Sao_Paulo',
+                            hour: '2-digit',
+                            hour12: false
+                          })
+                            .formatToParts(new Date())
+                            .find((p) => p.type === 'hour')?.value;
+                          const brtHourUi = brtHourStr != null ? parseInt(brtHourStr, 10) : 0;
+                          const rawLastFromDetails = (typeof d.lastDay === 'string' ? d.lastDay : '') || (typeof d.actionDate === 'string' ? d.actionDate : '');
+                          const lastYmdFromDetails = (rawLastFromDetails.trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? '') || null;
+                          const lastYmdFromAction = chamadoDetail.actionDate
+                            ? new Date(chamadoDetail.actionDate).toISOString().slice(0, 10)
+                            : null;
+                          const lastDayYmdForUi = lastYmdFromDetails || lastYmdFromAction;
+                          const isFutureOwnersSchedule =
+                            Boolean(lastDayYmdForUi) &&
+                            (lastDayYmdForUi! > todayYmdUi ||
+                              (lastDayYmdForUi === todayYmdUi && brtHourUi < 17));
+                          const showScheduledOwnersCard =
+                            (chamadoDetail.status === 'APROVADO' || chamadoDetail.status === 'APPROVED') &&
+                            !chamadoDetail.ownersNotifiedAt &&
+                            isFutureOwnersSchedule;
+                          const scheduledOwnersDisplayDay = lastDayYmdForUi
+                            ? new Date(`${lastDayYmdForUi}T12:00:00-03:00`).toLocaleDateString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                timeZone: 'America/Sao_Paulo'
+                              })
+                            : '—';
+                          return (
+                            <>
+                              {showScheduledOwnersCard && (
+                                <div
+                                  className="card-base"
+                                  style={{
+                                    padding: 20,
+                                    border: '1px solid rgba(59, 130, 246, 0.45)',
+                                    background: 'rgba(59, 130, 246, 0.08)'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                                    <Clock size={22} color="#60a5fa" style={{ flexShrink: 0, marginTop: 2 }} />
+                                    <div>
+                                      <div style={{ fontWeight: 700, color: '#bfdbfe', fontSize: 14, marginBottom: 6 }}>
+                                        Notificação aos Owners agendada
+                                      </div>
+                                      <div style={{ fontSize: 13, color: '#e4e4e7', lineHeight: 1.5 }}>
+                                        Os Owners serão notificados em <strong>{scheduledOwnersDisplayDay} às 17h</strong> para iniciar a
+                                        revogação dos acessos.
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              {rev.length > 0 && (
+                                <div className="card-base" style={{ padding: 20, border: '1px solid #3f3f46' }}>
+                                  <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 10 }}>Confirmações de revogação (Owners)</div>
+                                  <ul style={{ margin: 0, paddingLeft: 18, color: '#e4e4e7', fontSize: 13 }}>
+                                    {rev.map((c, i) => (
+                                      <li key={i} style={{ marginBottom: 8 }}>
+                                        <strong>{c.toolName || 'Ferramenta'}</strong>
+                                        {c.ownerName ? <span style={{ color: '#a1a1aa' }}> · {c.ownerName}</span> : null}
+                                        {c.confirmedAt ? (
+                                          <div style={{ fontSize: 11, color: '#71717a', marginTop: 2 }}>
+                                            {new Date(c.confirmedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+                                          </div>
+                                        ) : null}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {showJcCard && (
+                                <div
+                                  className="card-base"
+                                  style={{
+                                    padding: 20,
+                                    border: '1px solid rgba(245, 158, 11, 0.45)',
+                                    background: 'rgba(245, 158, 11, 0.08)',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                                    <AlertTriangle size={22} color="#fbbf24" style={{ flexShrink: 0, marginTop: 2 }} />
+                                    <div>
+                                      <div style={{ fontWeight: 700, color: '#fef3c7', fontSize: 14, marginBottom: 6 }}>
+                                        Próximo passo — Suspensão manual no JumpCloud
+                                      </div>
+                                      <div style={{ fontSize: 13, color: '#e4e4e7', lineHeight: 1.5 }}>
+                                        Todos os Owners confirmaram a revogação dos acessos. Resta suspender a conta do colaborador no JumpCloud manualmente,{' '}
+                                        <strong>a partir das 18h do último dia útil ({lastDayFormatted})</strong>.
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                                    <button
+                                      type="button"
+                                      className="btn-mini"
+                                      style={{ width: '100%', marginTop: 8, background: '#d97706', color: '#fff', fontWeight: 600 }}
+                                      onClick={() => setShowJcSuspensionConfirmModal(true)}
+                                    >
+                                      Confirmar suspensão no JumpCloud
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              {chamadoDetail.status === 'ACESSOS_REVOGADOS_OWNER' && jcDone && (
+                                <div
+                                  className="card-base"
+                                  style={{
+                                    padding: 20,
+                                    border: '1px solid rgba(34, 197, 94, 0.45)',
+                                    background: 'rgba(34, 197, 94, 0.08)',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                                    <CheckCircle size={22} color="#4ade80" style={{ flexShrink: 0, marginTop: 2 }} />
+                                    <div>
+                                      <div style={{ fontWeight: 700, color: '#bbf7d0', fontSize: 14, marginBottom: 6 }}>Suspensão no JumpCloud confirmada</div>
+                                      <div style={{ fontSize: 13, color: '#e4e4e7' }}>
+                                        Por {chamadoDetail.jcSuspensionConfirmedBy?.name ?? '—'} em{' '}
+                                        {chamadoDetail.jcSuspensionConfirmedAt
+                                          ? new Date(chamadoDetail.jcSuspensionConfirmedAt).toLocaleString('pt-BR', {
+                                              timeZone: 'America/Sao_Paulo',
+                                              day: '2-digit',
+                                              month: '2-digit',
+                                              year: 'numeric',
+                                              hour: '2-digit',
+                                              minute: '2-digit',
+                                            })
+                                          : '—'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              <CustomConfirmModal
+                                isOpen={showJcSuspensionConfirmModal}
+                                onClose={() => !jcSuspensionSubmitting && setShowJcSuspensionConfirmModal(false)}
+                                onConfirm={() => {
+                                  void submitJcSuspensionConfirm();
+                                }}
+                                title="Confirmar suspensão no JumpCloud"
+                                message={`Confirma que a conta de ${targetName} foi suspensa manualmente no JumpCloud?`}
+                                confirmLabel={jcSuspensionSubmitting ? 'Enviando…' : 'Confirmar'}
+                                cancelLabel="Cancelar"
+                              />
+                            </>
+                          );
+                        })()}
                         {INFRA_REQUEST_TYPES.includes(chamadoDetail.type) && (
                           <div className="card-base" style={{ padding: 20 }}>
                             <div style={{ fontSize: 11, color: '#71717a', textTransform: 'uppercase', marginBottom: 8 }}>Inbox responsável</div>

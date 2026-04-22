@@ -120,7 +120,7 @@ async function tryHiringJumpCloudProvisionForEmail(userEmail: string): Promise<H
 
 /**
  * Automação: ao aprovar um chamado de desligamento, desvincula o colaborador alvo da estrutura (soft-delete)
- * e notifica os Owners das ferramentas (KBS do cargo) para revogação imediata, com botão de confirmação.
+ * e notifica os Owners das ferramentas (KBS do cargo) para revogação nas ferramentas, com botão de confirmação.
  * O alvo é identificado por: details.targetUserId | details.collaboratorId | details.collaboratorEmail | details.collaboratorName (busca por nome).
  */
 async function runOffboardingAutomation(
@@ -247,16 +247,6 @@ async function runOffboardingAutomation(
     });
   }
 
-  void import('../services/jumpcloudSyncService')
-    .then((m) =>
-      m.suspendUserOnJumpCloud(targetUser.email).then(() => {
-        slack.firePostSlackAcessosChannel(
-          `🔧 Usuário suspenso no JumpCloud · ${targetUser.name} · #${requestId.slice(0, 8)}`
-        );
-      })
-    )
-    .catch((err) => console.error('[OFFBOARDING] Falha fire-and-forget suspensão JC:', err));
-
   void import('../services/googleWorkspaceService')
     .then(({ suspendGoogleWorkspaceUserFireAndForget }) => {
       suspendGoogleWorkspaceUserFireAndForget({
@@ -272,6 +262,44 @@ async function runOffboardingAutomation(
       });
     })
     .catch((err) => console.error('[OFFBOARDING] Google offboard (não bloqueia):', err));
+
+  const actionDateStr = actionDate instanceof Date ? actionDate.toISOString().slice(0, 10) : (typeof actionDate === 'string' ? actionDate : null);
+  const { extractLeaverScheduleDayYyyyMmDdFromDetails, shouldNotifyOwnersNow } = await import('../utils/leaverOwnerNotificationSchedule');
+  const lastDayYmd = extractLeaverScheduleDayYyyyMmDdFromDetails(details, actionDate);
+  const notifyNow = shouldNotifyOwnersNow(lastDayYmd);
+
+  if (!notifyNow && kitItems.length > 0) {
+    try {
+      const mergedDetails = {
+        ...details,
+        leaverOwnerNotifySnapshot: {
+          kitItems,
+          departmentName,
+          unitName,
+          jobTitle,
+          collaboratorName: targetUser.name
+        }
+      };
+      await prisma.request.update({
+        where: { id: requestId },
+        data: { details: JSON.stringify(mergedDetails) }
+      });
+      details = mergedDetails;
+      const { registrarMudanca } = await import('../lib/auditLog');
+      const { formatDateOnlyBrt } = await import('../services/slackService');
+      const lastDayFormatted = formatDateOnlyBrt(lastDayYmd);
+      await registrarMudanca({
+        tipo: 'LEAVER_OWNERS_NOTIFICATION_SCHEDULED',
+        entidadeTipo: 'Request',
+        entidadeId: requestId,
+        descricao: 'Notificação aos Owners do desligamento agendada para 17h BRT no último dia.',
+        dadosDepois: { scheduledFor: `${lastDayFormatted} 17:00 BRT` },
+        autorId: authorId ?? undefined
+      });
+    } catch (schedLogErr) {
+      console.error('[Automação] Desligamento: falha ao persistir snapshot / agendamento Owners (não bloqueia):', schedLogErr);
+    }
+  }
 
   await prisma.user.update({
     where: { id: targetUser.id },
@@ -294,10 +322,15 @@ async function runOffboardingAutomation(
 
   console.log(`[Automação] Usuário ${targetUser.name} (${targetUser.id}) desligado com sucesso após aprovação do chamado ${requestId}.`);
 
-  const actionDateStr = actionDate instanceof Date ? actionDate.toISOString().slice(0, 10) : (typeof actionDate === 'string' ? actionDate : null);
   try {
     if (kitItems.length > 0) {
-      await slack.notificarOwnersDesligamento(requestId, targetUser.name, jobTitle, departmentName, unitName, kitItems, actionDateStr);
+      if (notifyNow) {
+        await slack.notificarOwnersDesligamento(requestId, targetUser.name, jobTitle, departmentName, unitName, kitItems, actionDateStr);
+        await prisma.request.update({
+          where: { id: requestId },
+          data: { ownersNotifiedAt: new Date() }
+        });
+      }
     }
     void slack.postDesligamentoSiResumoKbsEAex({
       requestId,
@@ -309,6 +342,16 @@ async function runOffboardingAutomation(
       kitItems,
       aexLines: aexSiLines
     }).catch((siErr) => console.error('[Automação] Desligamento: resumo SI (não bloqueia):', siErr));
+    void slack
+      .notifySiTeamDesligamentoAprovadoDms({
+        collaboratorName: targetUser.name,
+        jobTitle,
+        departmentName,
+        actionDate: actionDateStr,
+        notifyNow,
+        scheduleDayYyyyMmDd: lastDayYmd
+      })
+      .catch((dmErr) => console.error('[Automação] Desligamento: DMs SI (não bloqueia):', dmErr));
   } catch (notifErr) {
     console.error('[Automação] Desligamento: falha ao notificar owners / SI (não bloqueia):', notifErr);
   }
@@ -2402,6 +2445,17 @@ export const getSolicitacaoById = async (req: Request, res: Response) => {
         assignee: { select: { id: true, name: true, email: true, jobTitle: true } },
         inboxDepartment: { select: { id: true, name: true } },
         inboxRole: { select: { id: true, name: true, departmentId: true } },
+        jcSuspensionConfirmedBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            jobTitle: true,
+            systemProfile: true,
+            departmentRef: { select: { id: true, name: true } },
+            unitRef: { select: { id: true, name: true } }
+          }
+        },
         comments: { orderBy: { createdAt: 'asc' }, include: { author: { select: { id: true, name: true, email: true } } } },
         attachments: { orderBy: { createdAt: 'asc' }, include: { uploadedBy: { select: { id: true, name: true } } } }
       }
@@ -4027,3 +4081,130 @@ export async function rejectHiringViaSlack(
 
   return 'ok';
 }
+
+const JC_SUSPENSION_CONFIRMER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  jobTitle: true,
+  systemProfile: true,
+  departmentRef: { select: { id: true, name: true } },
+  unitRef: { select: { id: true, name: true } }
+} as const;
+
+/** POST /api/requests/:id/confirm-jc-suspension — SI confirma suspensão manual no JumpCloud (Leaver FIRING). */
+export const confirmJcSuspension = async (req: Request, res: Response) => {
+  if (!hasProfile(req, ['ADMIN', 'SUPER_ADMIN'])) {
+    return res.status(403).json({ error: 'Apenas ADMIN ou SUPER_ADMIN pode confirmar a suspensão no JumpCloud.' });
+  }
+  const authUser = (req as Request & { authUser?: { id: string; systemProfile: string } }).authUser;
+  if (!authUser?.id) return res.status(401).json({ error: 'Não autenticado.' });
+
+  const { id } = req.params;
+  try {
+    const actorRow = await prisma.user.findUnique({ where: { id: authUser.id }, select: { name: true } });
+    const actorName = actorRow?.name || 'SI';
+
+    const request = await prisma.request.findUnique({ where: { id } });
+    if (!request) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+    if (request.type !== 'FIRING') {
+      return res.status(400).json({ error: 'Confirmação de JumpCloud só se aplica a chamados de desligamento (FIRING).' });
+    }
+    if (request.status !== 'ACESSOS_REVOGADOS_OWNER') {
+      return res.status(400).json({ error: 'Status inválido para esta confirmação.' });
+    }
+    if (request.jcSuspensionConfirmedAt) {
+      return res.status(409).json({ error: 'Suspensão no JumpCloud já foi confirmada.' });
+    }
+
+    let details: Record<string, unknown> = {};
+    try {
+      details = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
+    } catch {
+      details = {};
+    }
+    const d = details as Record<string, string | undefined>;
+    let targetUser: { id: string; name: string; email: string } | null = null;
+    const targetUserId = d.targetUserId || d.collaboratorId;
+    if (targetUserId) {
+      const u = await prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: { id: true, name: true, email: true }
+      });
+      if (u) targetUser = u;
+    }
+    if (!targetUser && d.collaboratorEmail) {
+      const u = await prisma.user.findUnique({
+        where: { email: d.collaboratorEmail.trim() },
+        select: { id: true, name: true, email: true }
+      });
+      if (u) targetUser = u;
+    }
+    if (!targetUser && d.collaboratorName) {
+      const u = await prisma.user.findFirst({
+        where: { name: { equals: String(d.collaboratorName).trim(), mode: 'insensitive' } },
+        select: { id: true, name: true, email: true },
+        orderBy: { updatedAt: 'desc' }
+      });
+      if (u) targetUser = u;
+    }
+    if (!targetUser) {
+      return res.status(400).json({ error: 'Não foi possível identificar o colaborador do desligamento nos detalhes do chamado.' });
+    }
+
+    const now = new Date();
+    await prisma.request.update({
+      where: { id },
+      data: {
+        jcSuspensionConfirmedAt: now,
+        jcSuspensionConfirmedById: authUser.id
+      }
+    });
+
+    const { registrarMudanca } = await import('../lib/auditLog');
+    const { notifyJcSuspensionManualConfirmedSlack, formatDateOnlyBrt, formatTimestampBrt } = await import('../services/slackService');
+    const lastDayFormatted = formatDateOnlyBrt(
+      request.actionDate ? request.actionDate.toISOString().slice(0, 10) : null
+    );
+
+    await registrarMudanca({
+      tipo: 'JC_SUSPENSION_CONFIRMED',
+      entidadeTipo: 'Request',
+      entidadeId: id,
+      descricao: `Suspensão manual no JumpCloud confirmada para ${targetUser.name}`,
+      dadosAntes: { jcSuspensionConfirmedAt: null },
+      dadosDepois: {
+        jcSuspensionConfirmedAt: now.toISOString(),
+        jcSuspensionConfirmedBy: actorName
+      },
+      autorId: authUser.id
+    });
+
+    void notifyJcSuspensionManualConfirmedSlack({
+      targetUserName: targetUser.name,
+      targetUserEmail: targetUser.email,
+      lastDayFormatted,
+      confirmedByName: actorName,
+      confirmedAtFormatted: formatTimestampBrt(now)
+    }).catch((e) => console.error('[confirmJcSuspension] Slack:', e));
+
+    const updated = await prisma.request.findUnique({
+      where: { id },
+      include: {
+        requester: { select: { id: true, name: true, email: true, departmentRef: { select: { id: true, name: true } } } },
+        approver: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, name: true, email: true, jobTitle: true } },
+        inboxDepartment: { select: { id: true, name: true } },
+        inboxRole: { select: { id: true, name: true, departmentId: true } },
+        jcSuspensionConfirmedBy: { select: JC_SUSPENSION_CONFIRMER_SELECT },
+        comments: { orderBy: { createdAt: 'asc' }, include: { author: { select: { id: true, name: true, email: true } } } },
+        attachments: { orderBy: { createdAt: 'asc' }, include: { uploadedBy: { select: { id: true, name: true } } } }
+      }
+    });
+
+    return res.json(updated);
+  } catch (e) {
+    console.error('[confirmJcSuspension]', e);
+    return res.status(500).json({ error: 'Erro ao confirmar suspensão no JumpCloud.' });
+  }
+};

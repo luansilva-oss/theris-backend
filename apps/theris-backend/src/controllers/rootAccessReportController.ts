@@ -50,7 +50,8 @@ export async function getRootAccessReport(req: Request, res: Response): Promise<
       where: whereClause,
       include: {
         requester: { select: requesterSelect },
-        approver: { select: approverSelect }
+        approver: { select: approverSelect },
+        revokedBy: { select: approverSelect }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -66,6 +67,10 @@ export async function getRootAccessReport(req: Request, res: Response): Promise<
         justification: row.justification ?? '',
         requester: row.requester,
         approver: row.approver,
+        revokedAt: row.revokedAt,
+        revokedBy: row.revokedBy,
+        revokeReason: row.revokeReason,
+        revokeTrigger: row.revokeTrigger,
         details: sanitizeDetails(details)
       };
     });
@@ -95,7 +100,8 @@ export async function getRootAccessDetail(req: Request, res: Response): Promise<
       where: { id },
       include: {
         requester: { select: requesterSelect },
-        approver: { select: approverSelect }
+        approver: { select: approverSelect },
+        revokedBy: { select: approverSelect }
       }
     });
 
@@ -129,6 +135,10 @@ export async function getRootAccessDetail(req: Request, res: Response): Promise<
       justification: request.justification ?? '',
       requester: request.requester,
       approver: request.approver,
+      revokedAt: request.revokedAt,
+      revokedBy: request.revokedBy,
+      revokeReason: request.revokeReason,
+      revokeTrigger: request.revokeTrigger,
       details: sanitizeDetails(details)
     });
   } catch (e) {

@@ -4009,6 +4009,112 @@ export function formatTimestampBrt(d: Date = new Date()): string {
   });
 }
 
+/** Data DD/MM/YYYY em BRT (ex.: último dia útil / desligamento nos avisos Slack). */
+export function formatDateOnlyBrt(input: string | Date | null | undefined): string {
+  if (!input) {
+    return new Date().toLocaleDateString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  }
+  const d =
+    typeof input === 'string'
+      ? new Date(input.length <= 10 ? `${input}T12:00:00-03:00` : input)
+      : input;
+  if (Number.isNaN(d.getTime())) {
+    return new Date().toLocaleDateString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  }
+  return d.toLocaleDateString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+}
+
+/**
+ * DMs ao SI (Luan/Vladimir/Allan) após desligamento aprovado e automação Theris:
+ * Owners notificados; JumpCloud será manual após último dia útil.
+ */
+export async function notifySiTeamDesligamentoAprovadoDms(params: {
+  collaboratorName: string;
+  jobTitle: string;
+  departmentName: string;
+  actionDate: string | null;
+  /** true = Owners já notificados na aprovação; false = agendado para 17h BRT no último dia. */
+  notifyNow?: boolean;
+  /** YYYY-MM-DD do último dia (para texto de agendamento). */
+  scheduleDayYyyyMmDd?: string | null;
+}): Promise<void> {
+  if (!slackApp?.client || SI_MEMBERS.length === 0) return;
+  const client = slackApp.client;
+  const lastDayFormatted = formatDateOnlyBrt(params.actionDate);
+  const notifyNow = params.notifyNow ?? true;
+  const scheduledDayDisplay = formatDateOnlyBrt(params.scheduleDayYyyyMmDd ?? params.actionDate);
+  const ownersLine = notifyNow
+    ? `Os Owners foram notificados para revogar os acessos nas ferramentas.\n`
+    : `Os Owners serão notificados em *${scheduledDayDisplay}* às 17h para revogar os acessos nas ferramentas.\n`;
+  const text =
+    `✅ *Desligamento aprovado*\n` +
+    `*Colaborador:* ${params.collaboratorName}\n` +
+    `*Cargo:* ${params.jobTitle ?? '—'}\n` +
+    `*Departamento:* ${params.departmentName ?? '—'}\n` +
+    `*Último dia:* ${lastDayFormatted}\n\n` +
+    ownersLine +
+    `⚠️ Lembrete: suspensão da conta no JumpCloud será feita manualmente pelo SI ao final do último dia útil.`;
+  for (const uid of SI_MEMBERS) {
+    try {
+      await client.chat.postMessage({ channel: uid, text, mrkdwn: true });
+    } catch (e) {
+      console.error('[notifySiTeamDesligamentoAprovadoDms] DM falhou:', uid, e);
+    }
+  }
+}
+
+/** Após SI confirmar suspensão manual no JumpCloud (Leaver). DMs SI + canal SLACK_ACESSOS_CHANNEL_ID. */
+export async function notifyJcSuspensionManualConfirmedSlack(params: {
+  targetUserName: string;
+  targetUserEmail: string;
+  lastDayFormatted: string;
+  confirmedByName: string;
+  confirmedAtFormatted: string;
+}): Promise<void> {
+  if (!slackApp?.client) return;
+  const client = slackApp.client;
+  const text =
+    `✅ *Suspensão manual no JumpCloud confirmada*\n` +
+    `*Colaborador:* ${params.targetUserName}\n` +
+    `*Email:* ${params.targetUserEmail}\n` +
+    `*Último dia:* ${params.lastDayFormatted}\n` +
+    `*Confirmado por:* ${params.confirmedByName}\n` +
+    `*Confirmado em:* ${params.confirmedAtFormatted}\n\n` +
+    `Fluxo Leaver finalizado. Auditoria registrada.`;
+  const blocks: unknown[] = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text
+      }
+    }
+  ];
+  for (const uid of SI_MEMBERS) {
+    try {
+      await client.chat.postMessage({ channel: uid, text, blocks: blocks as any, mrkdwn: true });
+    } catch (e) {
+      console.error('[notifyJcSuspensionManualConfirmedSlack] DM:', e);
+    }
+  }
+  await postSlackAcessosChannel(client, text, blocks);
+}
+
 /** Canal de auditoria de acessos/onboarding (SLACK_ACESSOS_CHANNEL_ID). */
 export async function postSlackAcessosChannel(
   client: WebClient,
@@ -5291,7 +5397,7 @@ export async function postDesligamentoSiResumoKbsEAex(params: {
 
 /**
  * Notifica cada Owner das ferramentas do colaborador desligado (KBS do cargo anterior).
- * Envia DM com mensagem "🚨 Desligamento — Revogação Imediata de Acesso" e botão "✅ Acesso Revogado" (leaver_access_done).
+ * DM com Block Kit + botão "✅ Acesso Revogado" (leaver_access_done).
  * Chamar após runOffboardingAutomation (que já desvinculou o usuário); passar kitItems do cargo antes do update.
  */
 export async function notificarOwnersDesligamento(
@@ -5305,7 +5411,7 @@ export async function notificarOwnersDesligamento(
 ): Promise<void> {
   if (!slackApp?.client || kitItems.length === 0) return;
   const client = slackApp.client;
-  const dataDesligamento = actionDate || new Date().toISOString().slice(0, 10);
+  const lastDayFormatted = formatDateOnlyBrt(actionDate || new Date().toISOString().slice(0, 10));
   const linkChamado = `${FRONTEND_URL}/tickets?id=${requestId}`;
 
   for (const item of kitItems) {
@@ -5331,12 +5437,11 @@ export async function notificarOwnersDesligamento(
         console.warn(`[notificarOwnersDesligamento] Owner não encontrado no Slack para ${item.toolName}.`);
         continue;
       }
-      const nivelAnterior = item.accessLevelDesc || '—';
       const payload = JSON.stringify({ requestId, toolId: tool.id });
       const blocks: any[] = [
         {
           type: 'header',
-          text: { type: 'plain_text', text: '🚨 Desligamento — Revogação Imediata de Acesso', emoji: true }
+          text: { type: 'plain_text', text: '🚨 Desligamento — Revogação de Acesso', emoji: true }
         },
         {
           type: 'section',
@@ -5346,10 +5451,19 @@ export async function notificarOwnersDesligamento(
               `Um colaborador foi desligado e possui acesso ativo na sua ferramenta.\n\n` +
               `*Colaborador:* ${colaboradorName}\n` +
               `*Cargo:* ${jobTitle} — ${departmentName} — ${unitName}\n` +
-              `*Data de desligamento:* ${dataDesligamento}\n\n` +
-              `🛠 *Ferramenta sob sua responsabilidade:* *${tool.name}* — Acesso a ser revogado imediatamente\n\n` +
-              `⚠️ Por favor, revogue o acesso o quanto antes.\n` +
+              `*Data de desligamento:* ${lastDayFormatted}\n\n` +
+              `🛠 *Ferramenta sob sua responsabilidade:* *${tool.name}* — Acesso a ser revogado\n\n` +
+              `⚠️ Por favor, revogue o acesso conforme o cronograma abaixo.\n` +
               `_Após remover o usuário da ferramenta, clique no botão abaixo para confirmar._`
+          }
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text:
+              `⚠️ *Atenção:* A revogação deve ser executada *somente a partir das 18h do dia ${lastDayFormatted}*. ` +
+              `Executar antes pode interromper integrações ativas e prejudicar o encerramento de tarefas do colaborador.`
           }
         },
         {

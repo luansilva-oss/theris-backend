@@ -8,12 +8,19 @@ export type EffectiveStatus =
   | 'APPLIED'
   | 'REJECTED'
   | 'FAILED'
-  | 'EXPIRED';
+  | 'EXPIRED'
+  | 'REVOKED_EARLY'
+  | 'REVOKED_EXPIRED';
 
 export function computeEffectiveStatus(
   requestStatus: string,
-  detailsStatusJc: string | null | undefined
+  detailsStatusJc: string | null | undefined,
+  revokeTrigger?: 'CRON_EXPIRED' | 'ADMIN_EARLY' | null
 ): EffectiveStatus {
+  if (requestStatus === 'REVOKED') {
+    if (revokeTrigger === 'ADMIN_EARLY') return 'REVOKED_EARLY';
+    return 'REVOKED_EXPIRED';
+  }
   if (requestStatus === 'REJECTED') return 'REJECTED';
   if (requestStatus === 'PENDING_SI') return 'PENDING_SI';
   if (detailsStatusJc === 'APPLIED') return 'APPLIED';
