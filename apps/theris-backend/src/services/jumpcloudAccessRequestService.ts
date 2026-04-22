@@ -109,10 +109,15 @@ export async function revokeAccessRequest(accessRequestId: string): Promise<Revo
   try {
     const response = await jumpcloudFetch(
       `https://console.jumpcloud.com/api/v2/accessrequests/${encodeURIComponent(id)}/revoke`,
-      { method: 'POST' }
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}'
+      }
     );
 
     if (response.ok) {
+      console.info(`[ROOT_ACCESS] Revoke sucesso: ${id}`);
       return { ok: true, alreadyGone: false };
     }
 

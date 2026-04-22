@@ -820,14 +820,30 @@ export async function rejectRootAccessViaSlack(
   return 'ok';
 }
 
+function slackApiErrorCode(err: unknown): string | undefined {
+  if (err && typeof err === 'object' && 'data' in err) {
+    const d = (err as { data?: { error?: string } }).data;
+    if (d && typeof d.error === 'string') return d.error;
+  }
+  return undefined;
+}
+
 async function chatUpdateDmMessage(client: WebClient, userId: string, ts: string, text: string, blocks?: unknown[]): Promise<void> {
   try {
     const open = await client.conversations.open({ users: userId });
     const channelId = open.channel?.id;
     if (!channelId) return;
-    await client.chat.update({ channel: channelId, ts, text, ...(blocks ? { blocks: blocks as any } : {}) });
+    try {
+      await client.chat.update({ channel: channelId, ts, text, ...(blocks ? { blocks: blocks as any } : {}) });
+    } catch (err: unknown) {
+      if (slackApiErrorCode(err) === 'message_not_found') {
+        console.warn(`[SI Slack] chat.update ignorado (DM não encontrada): ${userId} ${ts}`);
+        return;
+      }
+      console.error('[SI Slack] chat.update falhou', userId, ts, err);
+    }
   } catch (e) {
-    console.error('[SI Slack] chat.update falhou', userId, ts, e);
+    console.error('[SI Slack] chat.update / conversations.open falhou', userId, ts, e);
   }
 }
 
