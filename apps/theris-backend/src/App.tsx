@@ -38,6 +38,8 @@ import {
 } from './constants/requestStatusConfig';
 import { LoginAttempts } from './pages/LoginAttempts';
 import { ActiveSessions } from './pages/ActiveSessions';
+import InfraReport from './pages/InfraReport';
+import InfraReportDetail from './pages/InfraReportDetail';
 import LandingPage from './pages/LandingPage';
 import { useLocation, useParams, useNavigate, useSearchParams, Navigate, Routes, Route } from 'react-router-dom';
 import { ToastContainer, Toast } from './components/ToastContainer';
@@ -506,6 +508,7 @@ export default function App() {
     pathname.startsWith('/tools') ? 'TOOLS' :
     pathname === '/history' ? 'HISTORY' :
     pathname === '/audit-log' ? 'AUDIT_LOG' :
+    pathname === '/infra-report' || pathname.startsWith('/infra-report/') ? 'INFRA_REPORT' :
     pathname === '/login-attempts' ? 'LOGIN_ATTEMPTS' :
     pathname === '/active-sessions' ? 'ACTIVE_SESSIONS' :
     pathname === '/tickets' ? 'TICKETS' :
@@ -785,6 +788,12 @@ export default function App() {
   // Redirecionar não-SUPER_ADMIN que tenta acessar /active-sessions
   useEffect(() => {
     if (pathname === '/active-sessions' && systemProfile !== 'SUPER_ADMIN') {
+      navigate('/dashboard');
+    }
+  }, [pathname, systemProfile, navigate]);
+  // Relatório de Infra: apenas ADMIN / SUPER_ADMIN / VIEWER (API + menu)
+  useEffect(() => {
+    if (pathname.startsWith('/infra-report') && ['APPROVER', 'GESTOR'].includes(systemProfile)) {
       navigate('/dashboard');
     }
   }, [pathname, systemProfile, navigate]);
@@ -1824,6 +1833,9 @@ export default function App() {
                 </span>
               </div>
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => navigate('/history')}><FileText size={18} /> Relatório</div>
+              {['ADMIN', 'SUPER_ADMIN'].includes(systemProfile) && (
+                <div className={`nav-item ${activeTab === 'INFRA_REPORT' ? 'active' : ''}`} onClick={() => navigate('/infra-report')}><Shield size={18} /> Relatório de Infra</div>
+              )}
               <div className={`nav-item ${activeTab === 'AUDIT_LOG' ? 'active' : ''}`} onClick={() => { navigate('/audit-log'); setAuditLogFilters({}); }}><Clock size={18} /> Histórico</div>
               {systemProfile === 'SUPER_ADMIN' && (
                 <div className={`nav-item ${activeTab === 'LOGIN_ATTEMPTS' ? 'active' : ''}`} onClick={() => navigate('/login-attempts')}><Shield size={18} /> Tentativas de Login</div>
@@ -1836,6 +1848,7 @@ export default function App() {
             <>
               <div className={`nav-item ${activeTab === 'DASHBOARD' ? 'active' : ''}`} onClick={() => { navigate('/dashboard'); setSelectedTool(null); }}><LayoutDashboard size={18} /> Meu Painel</div>
               <div className={`nav-item ${activeTab === 'HISTORY' ? 'active' : ''}`} onClick={() => navigate('/history')}><FileText size={18} /> Relatório</div>
+              <div className={`nav-item ${activeTab === 'INFRA_REPORT' ? 'active' : ''}`} onClick={() => navigate('/infra-report')}><Shield size={18} /> Relatório de Infra</div>
               <div className={`nav-item ${activeTab === 'MY_TICKETS' ? 'active' : ''}`} onClick={() => { navigate('/my-tickets'); setSelectedChamadoId(null); setChamadoDetail(null); }}><MessageSquare size={18} /> Chamados relacionados</div>
             </>
           )}
@@ -1853,7 +1866,7 @@ export default function App() {
       {/* MAIN CANVAS */}
       <main className="main-area">
         <header className="header-bar">
-          <div className="page-title">Pagina: <span>{collaboratorId ? 'DETALHES DO COLABORADOR' : activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab === 'MY_TICKETS' ? 'CHAMADOS RELACIONADOS' : activeTab === 'AUDIT_LOG' ? 'HISTÓRICO DE MUDANÇAS' : activeTab === 'LOGIN_ATTEMPTS' ? 'TENTATIVAS DE LOGIN' : activeTab === 'ACTIVE_SESSIONS' ? 'SESSÕES ATIVAS' : activeTab}</span></div>
+          <div className="page-title">Pagina: <span>{collaboratorId ? 'DETALHES DO COLABORADOR' : activeTab === 'TOOLS' && selectedTool ? selectedTool.name : activeTab === 'PEOPLE' ? 'GESTÃO DE PESSOAS' : activeTab === 'MY_TICKETS' ? 'CHAMADOS RELACIONADOS' : activeTab === 'AUDIT_LOG' ? 'HISTÓRICO DE MUDANÇAS' : activeTab === 'INFRA_REPORT' ? 'RELATÓRIO DE INFRA' : activeTab === 'LOGIN_ATTEMPTS' ? 'TENTATIVAS DE LOGIN' : activeTab === 'ACTIVE_SESSIONS' ? 'SESSÕES ATIVAS' : activeTab}</span></div>
         </header>
 
         <div className="content-scroll">
@@ -3239,6 +3252,16 @@ export default function App() {
           {!collaboratorId && activeTab === 'ACTIVE_SESSIONS' && systemProfile === 'SUPER_ADMIN' && currentUser && (
             <ActiveSessions currentUserId={currentUser.id} showToast={showToast} />
           )}
+
+          {!collaboratorId && activeTab === 'INFRA_REPORT' && ['ADMIN', 'SUPER_ADMIN', 'VIEWER'].includes(systemProfile) && currentUser && (() => {
+            const m = pathname.match(/^\/infra-report\/([^/]+)$/);
+            const detailId = m ? m[1] : null;
+            return detailId ? (
+              <InfraReportDetail currentUserId={currentUser.id} requestId={detailId} />
+            ) : (
+              <InfraReport currentUserId={currentUser.id} showToast={showToast} />
+            );
+          })()}
 
           {/* GESTÃO DE CHAMADOS / CHAMADOS RELACIONADOS (Viewer) */}
           {!collaboratorId && (activeTab === 'TICKETS' || activeTab === 'MY_TICKETS') && (

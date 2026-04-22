@@ -893,7 +893,13 @@ function formatSiDecisionTimestampBrt(d?: Date | null): string {
 
 export type RootAccessSiFinalizeKind =
   | { kind: 'reject' }
-  | { kind: 'approve_applied'; expiryIso: string }
+  | {
+      kind: 'approve_applied';
+      expiryIso: string;
+      /** Menção Slack do solicitante (lookup por e-mail); se ausente, usa requesterNameFallback. */
+      requesterSlackId?: string | null;
+      requesterNameFallback?: string | null;
+    }
   | { kind: 'approve_jc_failed'; failureSummary: string }
   | { kind: 'revalidate_rejected' };
 
@@ -952,9 +958,15 @@ async function finalizeRootAccessSiInteractiveSurfaces(
     emoji = '✅';
     title = 'Acesso Root aplicado';
     const expBrt = formatRootAccessExpiryBrt(opts.expiryIso);
+    const reqSid = opts.requesterSlackId?.trim();
+    const solicitadoPor =
+      reqSid && reqSid.length > 0
+        ? `*Solicitado por:* <@${reqSid}>`
+        : `*Solicitado por:* ${(opts.requesterNameFallback ?? '—').trim() || '—'}`;
     mrkdwn =
       `${emoji} *${title}*\n` +
-      `*Aplicado por* <@${opts.actorSlackId}> *em* ${when}\n` +
+      `${solicitadoPor}\n` +
+      `*Aplicado por:* <@${opts.actorSlackId}> *em* ${when}\n` +
       `*Device:* \`${hostname}\`\n` +
       `*TTL (solicitado):* ${ttlLine}\n` +
       `*Expira em:* ${expBrt} (BRT)`;
@@ -1200,10 +1212,21 @@ export async function handleSiDualApprovalSlackAction(params: {
       });
       const dAfter = parseRootAccessDetails(rowAfter?.details ?? null);
       const expiryIso = dAfter?.expiryAt ?? '';
+      let requesterSlackId: string | null = null;
+      if (req.requester?.email) {
+        try {
+          const lu = await params.client.users.lookupByEmail({ email: req.requester.email });
+          requesterSlackId = lu.user?.id ?? null;
+        } catch (_) {
+          requesterSlackId = null;
+        }
+      }
       await finalizeRootAccessSiInteractiveSurfaces(params.client, requestId, {
         kind: 'approve_applied',
         actorSlackId,
-        expiryIso
+        expiryIso,
+        requesterSlackId,
+        requesterNameFallback: req.requester?.name ?? null
       });
       await updateActorSiDmConfirmed(
         params.client,

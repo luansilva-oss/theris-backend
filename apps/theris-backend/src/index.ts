@@ -19,6 +19,7 @@ import {
   patchRequestAssignee,
   patchRequestInbox
 } from './controllers/solicitacaoController';
+import { getRootAccessReport, getRootAccessDetail } from './controllers/rootAccessReportController';
 import { googleLogin, sendMfa, verifyMfa } from './controllers/authController';
 import {
   getTools,
@@ -296,6 +297,8 @@ app.post('/api/webhooks/convenia', handleConveniaWebhook);
 // ============================================================
 app.get('/api/requests/export/csv', exportRequestsCsv);
 app.get('/api/solicitacoes', getSolicitacoes);
+app.get('/api/root-access', getRootAccessReport);
+app.get('/api/root-access/:id', getRootAccessDetail);
 app.get('/api/solicitacoes/my-tickets', getMyTickets);
 app.get('/api/solicitacoes/:id', getSolicitacaoById);
 app.post('/api/solicitacoes', createSolicitacao);
