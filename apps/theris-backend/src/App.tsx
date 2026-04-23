@@ -489,12 +489,17 @@ export default function App() {
   const match = location.pathname.match(/^\/collaborators\/([^/]+)/);
   const collaboratorId = match ? match[1] : null;
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    const s = localStorage.getItem('theris_user'); return s ? JSON.parse(s) : null;
-  });
-  const [systemProfile, setSystemProfile] = useState<SystemProfile>(() => (localStorage.getItem('theris_profile') as SystemProfile) || 'VIEWER');
+  // === AUTH REFACTOR (Bloco 7a) ===
+  // States de auth NAO mais hidratados de localStorage.
+  // Recovery acontece via GET /api/auth/me no mount (useEffect mais abaixo).
+  // Em modo cookie (VITE_AUTH_MODE=cookie): cookie httpOnly persiste a sessao.
+  // Em modo legacy: lib/api.ts continua injetando x-user-id se setUserIdGetter estiver setado.
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [systemProfile, setSystemProfile] = useState<SystemProfile>('VIEWER');
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // Cobre o flash inicial enquanto /api/auth/me responde
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isMfaRequired, setIsMfaRequired] = useState(false);
 
   useEffect(() => {
@@ -807,27 +812,44 @@ export default function App() {
     else if (activeTab === 'TOOLS' && !selectedTool) localStorage.removeItem('theris_selectedToolId');
   }, [selectedTool, activeTab]);
 
-  // Session Check
+  // === AUTH REFACTOR (Bloco 7a) — recovery via /api/auth/me ===
+  // No mount, pede o user atual usando a sessao (cookie ou x-user-id legacy).
+  // Backend gerencia idle/absolute timeout via cookie; nao precisamos mais
+  // do polling de 60s que apenas checava localStorage.
   useEffect(() => {
-    const checkSession = () => {
-      const storedUser = localStorage.getItem('theris_user');
-      const sessionStart = localStorage.getItem('theris_session_start');
-      if (storedUser && sessionStart) {
-        if (Date.now() - parseInt(sessionStart) > SESSION_DURATION) {
-          showToast("Sessão expirada.", "warning"); handleLogout();
-        } else setIsLoggedIn(true);
-      } else setIsLoggedIn(false);
-    };
-    checkSession();
-    const timer = setInterval(checkSession, 60000);
-    return () => clearInterval(timer);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/me`);
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.user) {
+            setCurrentUser(data.user);
+            setSystemProfile((data.systemProfile as SystemProfile) ?? 'VIEWER');
+            setIsLoggedIn(true);
+          } else {
+            setIsLoggedIn(false);
+          }
+        } else {
+          // 401 ou outro: nao logado
+          setIsLoggedIn(false);
+        }
+      } catch {
+        if (!cancelled) setIsLoggedIn(false);
+      } finally {
+        if (!cancelled) setIsAuthLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  // Refrescar perfil do usuário (manager, etc.) para exibir no Dashboard 'Meu perfil'
+  // === AUTH REFACTOR (Bloco 7a) ===
+  // Refrescar perfil — lib/api.ts cuida de auth (cookie ou x-user-id conforme modo).
+  // Removido header x-user-id explicito (deixa o cliente decidir).
   useEffect(() => {
     if (!isLoggedIn || !currentUser?.id) return;
-    const headers: HeadersInit = { 'x-user-id': currentUser.id };
-    fetch(`${API_URL}/api/users/me`, { headers })
+    fetch(`${API_URL}/api/users/me`)
       .then((res) => res.ok ? res.json() : null)
       .then((profile) => { if (profile) setCurrentUser(profile); })
       .catch(() => {});
@@ -1400,7 +1422,31 @@ export default function App() {
     setMfaCode(clean);
   };
 
-  const handleLogout = () => { localStorage.clear(); setIsLoggedIn(false); setCurrentUser(null); navigate('/'); setSelectedTool(null); setIsMfaRequired(false); };
+  const handleLogout = async () => {
+    // === AUTH REFACTOR (Bloco 7a) ===
+    // Chama POST /api/auth/logout pra revogar sessao no backend (cookie httpOnly).
+    // Erros silenciosos: logout local sempre acontece (idempotente).
+    try {
+      // Em modo cookie, lib/api.ts injeta CSRF token automaticamente.
+      // Em modo legacy, /api/auth/logout pode retornar 401 (esperado, nao bloqueia logout local).
+      await fetch(`${API_URL}/api/auth/logout`, { method: 'POST' });
+    } catch {
+      // ignorar erro de rede; logout local sempre prossegue
+    }
+    // Limpa cache do api client (CSRF, refresh promise)
+    try {
+      const { clearApiClientCache } = await import('./lib/api');
+      clearApiClientCache();
+    } catch {
+      // ignore
+    }
+    localStorage.clear();
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    navigate('/');
+    setSelectedTool(null);
+    setIsMfaRequired(false);
+  };
 
   const handleDeleteTool = async (id: string) => {
     customConfirm({
@@ -1699,6 +1745,15 @@ export default function App() {
   // --- RENDER ---
   // Rota / fora do layout: renderiza apenas LandingPage (ou redirect). Demais rotas em renderNonLanding.
   const renderNonLanding = () => {
+    // === AUTH REFACTOR (Bloco 7a) ===
+    // Enquanto /api/auth/me nao respondeu, evita flash de tela errada.
+    if (isAuthLoading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-900">
+          <div className="text-slate-400">Carregando...</div>
+        </div>
+      );
+    }
     if (pathname === '/login' && isLoggedIn) return <Navigate to="/dashboard" replace />;
     if (pathname === '/login' && !isLoggedIn) return (
     <div className="login-wrapper">

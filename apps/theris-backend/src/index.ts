@@ -289,6 +289,43 @@ app.post('/api/auth/logout-all', logoutLimiter, requireAuthCookieOptional, doubl
 //    (sera removido no Bloco 8 quando frontend nao enviar mais x-user-id)
 app.use('/api', requireAuthCookieOptional, bridgeAuthToLegacy, requireAuth);
 
+// === AUTH REFACTOR — endpoint pra recuperar user da sessao atual ===
+// Funciona com cookie (Bloco 5+) ou x-user-id (legado, ate Bloco 8).
+app.get('/api/auth/me', async (req: Request, res: Response) => {
+  // requireAuth garantiu que req.authUser existe; retornamos dados completos do User
+  const authUser = (req as Request & { authUser?: { id: string; systemProfile: string } }).authUser;
+  if (!authUser?.id) {
+    res.status(401).json({ error: 'SESSION_MISSING' });
+    return;
+  }
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: authUser.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        jobTitle: true,
+        departmentId: true,
+        unitId: true,
+        roleId: true,
+        managerId: true,
+        systemProfile: true,
+        isActive: true,
+        manager: { select: { id: true, name: true } },
+      },
+    });
+    if (!user || !user.isActive) {
+      res.status(401).json({ error: 'USER_DISABLED' });
+      return;
+    }
+    res.json({ user, systemProfile: user.systemProfile });
+  } catch (err) {
+    console.error('[GET /api/auth/me]', err);
+    res.status(500).json({ error: 'INTERNAL_ERROR' });
+  }
+});
+
 // Rate limits que dependem da identidade autenticada: DEVEM vir depois de requireAuth (chave = req.authUser.id, não o header).
 const rootAccessRevokeUserLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
