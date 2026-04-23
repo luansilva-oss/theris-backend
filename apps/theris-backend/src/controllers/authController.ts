@@ -323,12 +323,8 @@ export const verifyMfa = async (req: Request, res: Response) => {
       data: { mfaCode: null, mfaExpiresAt: null }
     });
 
-    // Criar/atualizar sessão para timeout por inatividade
-    await prisma.session.upsert({
-      where: { userId },
-      create: { userId, lastActivity: new Date() },
-      update: { lastActivity: new Date() },
-    });
+    // TODO(auth-refactor): substituído pelo fluxo MFA→issueSessionPair no Bloco 4.
+    // Mantido como no-op até o novo endpoint /api/auth/verify-mfa-and-login estar pronto.
 
     await logLoginAttempt({ req, email: user.email, success: true, userId: user.id });
     await registrarMudanca({
