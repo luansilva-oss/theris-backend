@@ -6,7 +6,7 @@ import {
   Users, Building, Briefcase, // Ícone para Gestão de Pessoas
   Pen, PlusCircle, Edit2, Timer, Zap, ShieldCheck, RefreshCw, Activity, Trash2, Settings, Plus, MessageSquare,   Filter, X, Download, Monitor, AlertTriangle
 } from 'lucide-react';
-import { useGoogleLogin } from '@react-oauth/google';
+import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import './App.css';
 
 import { ModalObservacao } from './components/ModalObservacao';
@@ -506,6 +506,10 @@ export default function App() {
     setUserIdGetter(() => currentUser?.id);
   }, [currentUser?.id]);
   const [mfaCode, setMfaCode] = useState('');
+  // === AUTH REFACTOR (Bloco 7b) — id retornado por /google-login-challenge,
+  // usado em /verify-mfa-and-login. NAO persistir em localStorage.
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [emailHint, setEmailHint] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // activeTab derivado da URL (pathname como fonte da verdade)
@@ -1372,49 +1376,134 @@ export default function App() {
   };
 
   // Actions
-  const handleLogin = useGoogleLogin({
-    // Camada 1: restringe a conta na tela do Google (parâmetro hd / hosted domain)
-    hosted_domain: 'grupo-3c.com',
-    onSuccess: async (tokenResponse) => {
-      setIsLoading(true);
-      try {
-        const res = await fetch(`${API_URL}/api/login/google`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken: tokenResponse.access_token }) });
-        const data = await res.json();
-        if (res.ok) {
-          setCurrentUser(data.user); setSystemProfile(data.profile);
-          await fetch(`${API_URL}/api/auth/send-mfa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: data.user.id }) });
-          setIsLoading(false);
-          setIsMfaRequired(true);
-        } else {
-          showToast(data.error, "error");
-          setIsLoading(false);
-        }
-      } catch (e) {
-        showToast("Erro de conexão.", "error");
-        setIsLoading(false);
-      }
-    },
-    onError: () => setIsLoading(false)
-  });
-
-  const handleMfaVerify = async () => {
-    if (mfaCode.length < 6) return showToast("Digite o código de 6 dígitos.", "warning");
+  // === AUTH REFACTOR (Bloco 7b) ===
+  // Novo handler de login: recebe CredentialResponse do componente <GoogleLogin>.
+  // credential = id_token (JWT assinado), validado server-side com aud check
+  // (vs access_token legado que so passava por userinfo, vulneravel a confused deputy).
+  // Chama /api/auth/google-login-challenge que valida id_token, faz upsert User,
+  // cria MfaChallenge, envia email — NAO cria sessao ainda. Sessao real nasce
+  // no /api/auth/verify-mfa-and-login (handleMfaVerify abaixo).
+  const handleLogin = async (credResp: CredentialResponse) => {
+    const idToken = credResp.credential;
+    if (!idToken) {
+      showToast('Login Google sem credential — tenta novamente.', 'error');
+      return;
+    }
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/auth/verify-mfa`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: currentUser?.id, code: mfaCode }) });
+      const res = await fetch(`${API_URL}/api/auth/google-login-challenge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
       const data = await res.json();
-      if (res.ok && data.valid) {
-        localStorage.setItem('theris_user', JSON.stringify(currentUser));
-        localStorage.setItem('theris_profile', systemProfile);
-        localStorage.setItem('theris_session_start', Date.now().toString());
-        setIsLoggedIn(true); setIsMfaRequired(false);
-        navigate('/dashboard');
-        showToast("Bem-vindo de volta!", "success");
+      if (res.ok && data?.challengeId) {
+        setChallengeId(data.challengeId);
+        setEmailHint(data.emailHint ?? null);
+        setIsMfaRequired(true);
       } else {
-        showToast(data.error || "Código inválido.", "error"); setMfaCode('');
+        const errMap: Record<string, string> = {
+          GOOGLE_AUTH_FAILED: 'Token Google invalido. Tenta novamente.',
+          ACCOUNT_DISABLED: 'Sua conta esta desativada. Contate o time de SI.',
+          MFA_EMAIL_FAILED: 'Falha ao enviar codigo por email. Tenta novamente.',
+        };
+        showToast(errMap[data?.error] ?? data?.error ?? 'Falha no login.', 'error');
       }
-    } catch (e) { showToast("Erro ao verificar.", "error"); }
+    } catch (e) {
+      showToast('Erro de conexao.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLoginError = () => {
+    showToast('Falha no login Google.', 'error');
     setIsLoading(false);
+  };
+
+  const handleMfaVerify = async () => {
+    if (mfaCode.length < 6) return showToast('Digite o codigo de 6 digitos.', 'warning');
+    if (!challengeId) {
+      showToast('Sessao de login expirou. Faz login de novo.', 'error');
+      setIsMfaRequired(false);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      // === AUTH REFACTOR (Bloco 7b) ===
+      // /verify-mfa-and-login valida challenge + codigo; em sucesso cria Session
+      // + RefreshToken e seta cookies httpOnly. Retorna { user } no body.
+      // SEM localStorage.setItem — sessao agora vive em cookie httpOnly.
+      const res = await fetch(`${API_URL}/api/auth/verify-mfa-and-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // garante recebimento dos cookies setados pelo backend
+        body: JSON.stringify({ challengeId, code: mfaCode }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.user) {
+        setCurrentUser(data.user);
+        setSystemProfile((data.user.systemProfile as SystemProfile) ?? 'VIEWER');
+        setIsLoggedIn(true);
+        setIsMfaRequired(false);
+        setChallengeId(null);
+        setEmailHint(null);
+        setMfaCode('');
+        navigate('/dashboard');
+        showToast('Bem-vindo de volta!', 'success');
+      } else {
+        // Tratamento por error code
+        const errMap: Record<string, string> = {
+          MFA_CHALLENGE_INVALID: 'Codigo invalido ou expirado. Faz login de novo.',
+          MFA_EXHAUSTED: 'Muitas tentativas. Faz login de novo.',
+          MFA_INVALID_CODE: data?.attemptsLeft != null
+            ? `Codigo errado. ${data.attemptsLeft} tentativas restantes.`
+            : 'Codigo invalido.',
+          ACCOUNT_DISABLED: 'Sua conta esta desativada. Contate o time de SI.',
+        };
+        showToast(errMap[data?.error] ?? data?.error ?? 'Falha na verificacao.', 'error');
+        setMfaCode('');
+        // Em caso de challenge invalido/exhausted, volta pra login
+        if (data?.error === 'MFA_CHALLENGE_INVALID' || data?.error === 'MFA_EXHAUSTED') {
+          setIsMfaRequired(false);
+          setChallengeId(null);
+          setEmailHint(null);
+        }
+      }
+    } catch (e) {
+      showToast('Erro ao verificar.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Reenvio de codigo MFA (mesmo challengeId, novo codigo + novo email)
+  const handleResendMfa = async () => {
+    if (!challengeId) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/auth/resend-mfa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challengeId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Novo codigo enviado.', 'success');
+        setMfaCode('');
+      } else if (data?.error === 'MFA_CHALLENGE_INVALID') {
+        showToast('Sessao de login expirou. Faz login de novo.', 'error');
+        setIsMfaRequired(false);
+        setChallengeId(null);
+        setEmailHint(null);
+      } else {
+        showToast(data?.error ?? 'Falha ao reenviar.', 'error');
+      }
+    } catch {
+      showToast('Erro de conexao.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleMfaChange = (value: string) => {
@@ -1811,17 +1900,29 @@ export default function App() {
                   Configurando ambiente...
                 </div>
               ) : (
-                <button onClick={() => handleLogin()} className="btn-google">
-                  <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="Google" />
-                  Entrar com Google Workspace
-                </button>
+                <div className="google-login-wrapper">
+                  {/* === AUTH REFACTOR (Bloco 7b) ===
+                      <GoogleLogin> usa GIS (Google Identity Services) que retorna
+                      id_token (JWT assinado). Visual configuravel via theme/size/text/shape.
+                      hd nao eh suportado pelo componente — backend valida hd via verifyIdToken. */}
+                  <GoogleLogin
+                    onSuccess={handleLogin}
+                    onError={handleLoginError}
+                    theme="filled_blue"
+                    size="large"
+                    text="signin_with"
+                    shape="rectangular"
+                    width="100%"
+                  />
+                </div>
               )}
             </>
           ) : (
             <div className="mfa-container">
               <div className="mfa-icon-wrapper" style={{ margin: '0 auto 20px' }}><Lock size={32} color="#0EA5E9" /></div>
               <h2 style={{ color: 'white', margin: 0, fontSize: 20 }}>Código de Segurança</h2>
-              <p className="subtitle" style={{ marginBottom: 24 }}>Enviamos um código para <strong>{currentUser?.email}</strong>.</p>
+              <p className="subtitle" style={{ marginBottom: 24 }}>Enviamos um código para <strong>{emailHint ?? currentUser?.email ?? 'seu e-mail'}</strong>.</p>
+              {emailHint && <p className="text-xs text-slate-400 mt-1">Código enviado para {emailHint}</p>}
               <input
                 className="mfa-input-single"
                 type="text"
@@ -1834,7 +1935,21 @@ export default function App() {
                 {isLoading ? 'Verificando...' : 'Confirmar Acesso'}
               </button>
               <button
-                onClick={() => { setIsMfaRequired(false); setCurrentUser(null); setMfaCode(''); }}
+                type="button"
+                onClick={() => { void handleResendMfa(); }}
+                disabled={isLoading || !challengeId}
+                style={{ background: 'transparent', border: 'none', color: '#38BDF8', cursor: 'pointer', marginTop: 12, fontSize: 13 }}
+              >
+                Enviar novo código
+              </button>
+              <button
+                onClick={() => {
+                  setIsMfaRequired(false);
+                  setCurrentUser(null);
+                  setMfaCode('');
+                  setChallengeId(null);
+                  setEmailHint(null);
+                }}
                 style={{ background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', marginTop: 20, fontSize: 13 }}
               >
                 Voltar ao login
