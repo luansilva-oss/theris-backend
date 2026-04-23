@@ -1,40 +1,49 @@
 /**
- * Cliente de API centralizado (frontend apenas).
- * Injeta x-user-id automaticamente em requisições para a API do Theris.
+ * Cliente de API centralizado (frontend).
  *
- * Todas as chamadas fetch() no frontend usam o fetch global (patchado aqui), portanto
- * x-user-id é enviado em todas as requisições autenticadas para a nossa API quando
- * getUserId() retorna valor (definido em App quando currentUser está logado).
+ * Modo de autenticacao controlado por VITE_AUTH_MODE:
+ *   - 'legacy' (default durante refactor): injeta header x-user-id, sem credentials,
+ *      sem CSRF. Mantem compatibilidade com fluxo de login antigo (App.tsx atual).
+ *   - 'cookie': nao injeta x-user-id, envia credentials (cookies httpOnly do backend),
+ *      injeta CSRF token em mutacoes, intercepta 401 SESSION_EXPIRED_IDLE pra refresh
+ *      automatico.
  *
- * Guardas:
- * - Só injeta para same-origin ou URL da nossa API (não envia para Google, Stripe, etc.)
- * - Não altera Content-Type (preserva boundary de multipart/form-data em uploads)
- * - typeof window guard: backend (Node) não executa o patch
+ * Em producao, modo sera 'cookie'. Durante dev local, alterne via VITE_AUTH_MODE.
  *
- * x-user-id: identifica quem está logado e executou a ação (auditoria, autorização, sessão).
- * O backend usa x-requester-id como alias; enviamos x-user-id que atende ambos.
+ * Refs: refactor-auth bloco 6/16.
  */
 
 import { API_URL } from '../config';
 
+declare const __VITE_AUTH_MODE__: string | undefined;
+
+type AuthMode = 'legacy' | 'cookie';
+
+function resolveAuthMode(): AuthMode {
+  const v = (typeof __VITE_AUTH_MODE__ !== 'undefined' ? __VITE_AUTH_MODE__ : 'legacy').toLowerCase();
+  return v === 'cookie' ? 'cookie' : 'legacy';
+}
+
+const AUTH_MODE: AuthMode = resolveAuthMode();
+
 let getUserId: (() => string | undefined) | null = null;
 let onSessionExpired: (() => void) | null = null;
 
-/** Define o getter do ID do usuário logado (chamar em App quando currentUser mudar). */
+/** Setter de getter do userId (modo legacy). No-op em modo cookie. */
 export function setUserIdGetter(getter: () => string | undefined) {
   getUserId = getter;
 }
 
-/** Define callback para 401 SESSION_EXPIRED (chamar em App: limpar auth e redirecionar para /login). */
+/** Callback chamado em SESSION_EXPIRED ou refresh failure. */
 export function setSessionExpiredCallback(cb: (() => void) | null) {
   onSessionExpired = cb;
 }
 
-/** Verifica se a URL é da nossa API (não injeta headers em chamadas externas). */
+/** Verifica se URL pertence a nossa API (mesma origem ou API_URL). */
 function isTherisApiUrl(url: string): boolean {
   if (!url || typeof url !== 'string') return false;
   try {
-    if (url.startsWith('/')) return true; // same-origin relative
+    if (url.startsWith('/')) return true;
     const u = new URL(url, window.location.origin);
     if (!API_URL || !API_URL.startsWith('http')) return u.origin === window.location.origin;
     const apiOrigin = new URL(API_URL).origin;
@@ -44,26 +53,215 @@ function isTherisApiUrl(url: string): boolean {
   }
 }
 
-/** Inicializa o patch do fetch global. Chamar em main.tsx. */
+/* =============================================================
+ * CSRF token cache (modo cookie)
+ * ============================================================= */
+
+let csrfTokenCache: string | null = null;
+let csrfFetchPromise: Promise<string | null> | null = null;
+
+async function fetchCsrfToken(originalFetch: typeof fetch): Promise<string | null> {
+  if (csrfTokenCache) return csrfTokenCache;
+  if (csrfFetchPromise) return csrfFetchPromise;
+
+  csrfFetchPromise = (async () => {
+    try {
+      const url = `${API_URL || ''}/api/auth/csrf`;
+      const res = await originalFetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { csrfToken?: string };
+      csrfTokenCache = data.csrfToken ?? null;
+      return csrfTokenCache;
+    } catch {
+      return null;
+    } finally {
+      csrfFetchPromise = null;
+    }
+  })();
+
+  return csrfFetchPromise;
+}
+
+function invalidateCsrfCache() {
+  csrfTokenCache = null;
+}
+
+/* =============================================================
+ * Refresh interceptor (modo cookie) — singleflight
+ * ============================================================= */
+
+let refreshPromise: Promise<boolean> | null = null;
+
+async function attemptRefresh(originalFetch: typeof fetch): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const url = `${API_URL || ''}/api/auth/refresh`;
+      const res = await originalFetch(url, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        // Sessao rotacionada — invalida CSRF cache (token amarrado a session id)
+        invalidateCsrfCache();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+/* =============================================================
+ * Patch do fetch global
+ * ============================================================= */
+
 export function initApiClient() {
   if (typeof window === 'undefined') return;
   const originalFetch = window.fetch;
-  window.fetch = function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    const url = typeof input === 'string' ? input : input instanceof Request ? input.url : (input as URL).href;
-    const opts = init ?? {};
+
+  window.fetch = async function patchedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof Request
+          ? input.url
+          : (input as URL).href;
+    const opts: RequestInit = init ?? {};
     const headers = new Headers(opts.headers);
-    // Só injeta para nossa API; não altera Content-Type (preserva multipart boundary)
-    if (isTherisApiUrl(url)) {
+    const isApi = isTherisApiUrl(url);
+
+    if (!isApi) {
+      // Rotas externas: nao injeta nada
+      return originalFetch.call(window, input, opts);
+    }
+
+    if (AUTH_MODE === 'legacy') {
+      // === Modo legacy: injeta x-user-id, sem credentials, sem CSRF, sem refresh ===
       const userId = getUserId?.();
       if (userId) headers.set('x-user-id', userId);
-    }
-    return originalFetch.call(window, input, { ...opts, headers }).then((res) => {
-      if (res.status === 401 && isTherisApiUrl(url)) {
-        res.clone().json().then((body: { error?: string }) => {
+      const res = await originalFetch.call(window, input, { ...opts, headers });
+      if (res.status === 401) {
+        try {
+          const body = await res.clone().json();
           if (body?.error === 'SESSION_EXPIRED') onSessionExpired?.();
-        }).catch(() => {});
+        } catch {
+          // ignore
+        }
       }
       return res;
-    });
+    }
+
+    // === Modo cookie: credentials, CSRF em mutacoes, refresh interceptor ===
+
+    // Inject CSRF token em mutacoes
+    const method = (opts.method ?? 'GET').toUpperCase();
+    const isMutation = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+    const isCsrfEndpoint = url.includes('/api/auth/csrf');
+
+    if (isMutation && !isCsrfEndpoint) {
+      const csrf = await fetchCsrfToken(originalFetch as typeof fetch);
+      if (csrf) headers.set('X-CSRF-Token', csrf);
+    }
+
+    // Primeira tentativa
+    const initialReq: RequestInit = { ...opts, headers, credentials: 'include' };
+    let res = await originalFetch.call(window, input, initialReq);
+
+    // CSRF invalido: invalida cache, busca novo, tenta uma vez
+    if (res.status === 403) {
+      try {
+        const body = await res.clone().json();
+        if (body?.error === 'CSRF_INVALID' || body?.error === 'invalid csrf token') {
+          invalidateCsrfCache();
+          if (isMutation) {
+            const csrf = await fetchCsrfToken(originalFetch as typeof fetch);
+            const retryHeaders = new Headers(headers);
+            if (csrf) retryHeaders.set('X-CSRF-Token', csrf);
+            res = await originalFetch.call(window, input, {
+              ...opts,
+              headers: retryHeaders,
+              credentials: 'include',
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // 401 SESSION_EXPIRED_IDLE: tenta refresh + replay (singleflight)
+    if (res.status === 401) {
+      let body: { error?: string } = {};
+      try {
+        body = await res.clone().json();
+      } catch {
+        // ignore
+      }
+      const errorCode = body?.error ?? '';
+
+      // Codigos que disparam refresh automatico
+      if (errorCode === 'SESSION_EXPIRED_IDLE' || errorCode === 'SESSION_MISSING') {
+        const refreshed = await attemptRefresh(originalFetch as typeof fetch);
+        if (refreshed) {
+          // Replay com CSRF novo
+          const replayHeaders = new Headers(opts.headers);
+          if (isMutation && !isCsrfEndpoint) {
+            const csrf = await fetchCsrfToken(originalFetch as typeof fetch);
+            if (csrf) replayHeaders.set('X-CSRF-Token', csrf);
+          }
+          res = await originalFetch.call(window, input, {
+            ...opts,
+            headers: replayHeaders,
+            credentials: 'include',
+          });
+
+          // Se replay tambem falha 401: chama onSessionExpired
+          if (res.status === 401) {
+            onSessionExpired?.();
+          }
+          return res;
+        }
+        // Refresh falhou: forca logout
+        onSessionExpired?.();
+        return res;
+      }
+
+      // Codigos terminais: forca logout
+      if (
+        errorCode === 'SESSION_EXPIRED_ABSOLUTE' ||
+        errorCode === 'SESSION_REVOKED' ||
+        errorCode === 'SESSION_INVALID' ||
+        errorCode === 'REFRESH_REUSE_DETECTED' ||
+        errorCode === 'REFRESH_INVALID' ||
+        errorCode === 'REFRESH_MISSING' ||
+        errorCode === 'SESSION_EXPIRED' /* compat legacy */
+      ) {
+        onSessionExpired?.();
+      }
+    }
+
+    return res;
   };
+}
+
+/** Util pra App.tsx limpar cache no logout. */
+export function clearApiClientCache() {
+  csrfTokenCache = null;
+  csrfFetchPromise = null;
+  refreshPromise = null;
+}
+
+/** Retorna o modo atual (debug). */
+export function getAuthMode(): AuthMode {
+  return AUTH_MODE;
 }
