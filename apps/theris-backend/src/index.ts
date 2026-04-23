@@ -4,6 +4,8 @@ import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv';
 import path from 'path';
+import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 
 // --- IMPORTAÇÕES DOS CONTROLADORES ---
 import {
@@ -77,12 +79,45 @@ import { slackReceiver } from './services/slackService';
 import { buildToolsAndLevelsMap } from './lib/buildToolsAndLevelsMap';
 import { logJumpCloudAuthBootstrap } from './services/jumpcloudAuth';
 
+// === AUTH REFACTOR — handlers novos (Blocos 2-4) ===
+import { handleRefresh } from './auth/refresh';
+import { handleLogout, handleLogoutAll } from './auth/logout';
+import {
+  handleGoogleLoginChallenge,
+  handleResendMfa,
+  handleVerifyMfaAndLogin,
+} from './auth/loginHandlers';
+import { generateCsrfToken, doubleCsrfProtection } from './auth/csrf';
+import {
+  googleLoginLimiter,
+  refreshLimiter,
+  verifyMfaLimiter,
+  sendMfaLimiter,
+  logoutLimiter,
+} from './auth/rateLimiters';
+import { requireAuthCookieOptional, bridgeAuthToLegacy } from './auth/legacyAdapter';
+
 dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
 
 logJumpCloudAuthBootstrap();
+
+// === AUTH REFACTOR — trust proxy + security headers + cookie parser ===
+app.set('trust proxy', 1); // Render reverse proxy: lê X-Forwarded-For corretamente
+
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // CSP gerenciado caso a caso (Vite dev tem requirements diferentes); revisitar no Bloco 8
+    strictTransportSecurity: { maxAge: 63072000, includeSubDomains: true, preload: true },
+    crossOriginOpenerPolicy: { policy: 'same-origin' },
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+    referrerPolicy: { policy: 'no-referrer' },
+  }),
+);
+
+app.use(cookieParser());
 
 // --- HTTPS FORÇADO (produção: redirecionar HTTP → HTTPS) ---
 app.use((req, res, next) => {
@@ -208,11 +243,51 @@ app.post('/api/auth/send-mfa', sendMfa);
 app.post('/api/auth/verify-mfa', verifyMfa);
 app.get('/api/health', (_req: Request, res: Response) => res.json({ ok: true }));
 
+// === AUTH REFACTOR — endpoints novos (exempt do requireAuth global, propria validacao) ===
+
+// Endpoint pra obter CSRF token (frontend chama uma vez antes de mutacoes)
+app.get('/api/auth/csrf', (req: Request, res: Response) => {
+  const token = generateCsrfToken(req, res);
+  res.json({ csrfToken: token });
+});
+
+// Login novo: 3 etapas
+app.post('/api/auth/google-login-challenge', googleLoginLimiter, handleGoogleLoginChallenge);
+app.post('/api/auth/resend-mfa', sendMfaLimiter, handleResendMfa);
+app.post('/api/auth/verify-mfa-and-login', verifyMfaLimiter, handleVerifyMfaAndLogin);
+
+// Refresh: rotaciona sessao
+app.post('/api/auth/refresh', refreshLimiter, handleRefresh);
+
+// Logout: precisa de cookie valido + CSRF token (mutacao com cookie)
+app.post('/api/auth/logout', logoutLimiter, requireAuthCookieOptional, doubleCsrfProtection, (req: Request, res: Response) => {
+  // requireAuthCookieOptional populou req.authUserNew se cookie valido
+  // Se nao tem cookie, retorna 401 manualmente (logout precisa de sessao)
+  if (!req.authUserNew) {
+    res.status(401).json({ error: 'SESSION_MISSING' });
+    return;
+  }
+  return handleLogout(req, res);
+});
+
+app.post('/api/auth/logout-all', logoutLimiter, requireAuthCookieOptional, doubleCsrfProtection, (req: Request, res: Response) => {
+  if (!req.authUserNew) {
+    res.status(401).json({ error: 'SESSION_MISSING' });
+    return;
+  }
+  return handleLogoutAll(req, res);
+});
+
 // ============================================================
 // --- AUTENTICAÇÃO GLOBAL /api (exceto rotas públicas acima) ---
 // ============================================================
 // Valida x-user-id + sessão; anexa req.authUser (id, systemProfile). Não confiar em x-user-id sem sessão válida.
-app.use('/api', requireAuth);
+// === AUTH REFACTOR — chain de auth ===
+// 1. Tenta validar cookie de sessao (silencioso se ausente)
+// 2. Se cookie valido, populates req.authUserNew + sobrescreve x-user-id (bridge legacy)
+// 3. Cai no requireAuth antigo (header x-user-id) pra rotas que ainda dependem dele
+//    (sera removido no Bloco 8 quando frontend nao enviar mais x-user-id)
+app.use('/api', requireAuthCookieOptional, bridgeAuthToLegacy, requireAuth);
 
 // Rate limits que dependem da identidade autenticada: DEVEM vir depois de requireAuth (chave = req.authUser.id, não o header).
 const rootAccessRevokeUserLimiter = rateLimit({
