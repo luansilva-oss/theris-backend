@@ -43,44 +43,10 @@ export const getSessions = async (req: Request, res: Response) => {
   const caller = await prisma.user.findUnique({ where: { id: userId }, select: { systemProfile: true } });
   if (caller?.systemProfile !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Acesso negado.' });
 
-  const sessions = await prisma.session.findMany({
-    orderBy: { lastActivity: 'desc' },
-  });
-  if (sessions.length === 0) return res.json([]);
-
-  const userIds = [...new Set(sessions.map((s) => s.userId))];
-  const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      systemProfile: true,
-      departmentRef: { select: { name: true } },
-    },
-  });
-  const userMap = new Map(users.map((u) => [u.id, u]));
-  const now = Date.now();
-
-  const items = sessions.map((s) => {
-    const u = userMap.get(s.userId);
-    const createdAt = s.createdAt ? new Date(s.createdAt).getTime() : new Date(s.lastActivity).getTime();
-    const lastActivityTime = new Date(s.lastActivity).getTime();
-    return {
-      sessionId: s.id,
-      userId: s.userId,
-      userName: u?.name ?? '—',
-      userEmail: u?.email ?? '—',
-      userRole: u?.systemProfile ?? '—',
-      userDepartment: u?.departmentRef?.name ?? '—',
-      lastActivity: s.lastActivity,
-      createdAt: s.createdAt ?? s.lastActivity,
-      minutesActive: Math.floor((now - createdAt) / 60000),
-      minutesSinceActivity: Math.floor((now - lastActivityTime) / 60000),
-    };
-  });
-
-  return res.json(items);
+  // TODO(auth-refactor): re-implementar listagem de sessões ativas no Bloco 6.
+  // Lógica antiga assumia 1 sessão por user (Session.userId @unique); novo schema permite N.
+  res.json([]);
+  return;
 };
 
 /** DELETE /api/admin/sessions/:userId — revogar sessão de um usuário. */
@@ -93,10 +59,13 @@ export const revokeSession = async (req: Request, res: Response) => {
   const targetUserId = req.params.userId;
   if (!targetUserId) return res.status(400).json({ error: 'userId obrigatório.' });
 
-  const session = await prisma.session.findUnique({ where: { userId: targetUserId } });
-  if (!session) return res.status(404).json({ error: 'Sessão não encontrada.' });
-
-  await prisma.session.delete({ where: { userId: targetUserId } });
+  // TODO(auth-refactor): re-implementar com Session.userId não-unique no Bloco 6.
+  // Por ora revoga TODAS as sessões ativas do user (mais seguro: idempotente, força relogin).
+  const revoked = await prisma.session.updateMany({
+    where: { userId: targetUserId, isActive: true },
+    data: { isActive: false, revokedAt: new Date(), revokedReason: 'ADMIN_REVOKE' },
+  });
+  if (revoked.count === 0) return res.status(404).json({ error: 'Sessão não encontrada.' });
   await prisma.historicoMudanca.create({
     data: {
       tipo: 'SESSION_REVOKED',
@@ -120,16 +89,24 @@ export const revokeAllSessions = async (req: Request, res: Response) => {
   if (caller?.systemProfile !== 'SUPER_ADMIN') return res.status(403).json({ error: 'Acesso negado.' });
 
   const sessions = await prisma.session.findMany({
-    where: { userId: { not: callerId } },
+    where: { userId: { not: callerId }, isActive: true },
+    select: { userId: true },
+  });
+  const affectedUserIds = [...new Set(sessions.map((s) => s.userId))];
+
+  // TODO(auth-refactor): re-implementar com Session.userId não-unique no Bloco 6.
+  // Por ora revoga TODAS as sessões ativas dos users afetados (força relogin).
+  await prisma.session.updateMany({
+    where: { userId: { not: callerId }, isActive: true },
+    data: { isActive: false, revokedAt: new Date(), revokedReason: 'ADMIN_REVOKE' },
   });
 
-  for (const s of sessions) {
-    await prisma.session.delete({ where: { userId: s.userId } });
+  for (const uid of affectedUserIds) {
     await prisma.historicoMudanca.create({
       data: {
         tipo: 'SESSION_REVOKED',
         entidadeTipo: 'User',
-        entidadeId: s.userId,
+        entidadeId: uid,
         descricao: `Sessão revogada em lote por ${caller.name ?? 'SUPER_ADMIN'}.`,
         dadosAntes: { status: 'ATIVA' },
         dadosDepois: { status: 'REVOGADA' },

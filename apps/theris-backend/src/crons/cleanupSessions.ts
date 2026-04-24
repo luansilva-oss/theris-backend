@@ -18,8 +18,10 @@ export function cleanupOldSessions(): Promise<{ sessionsDeleted: number; loginAt
     let loginAttemptsDeleted = 0;
 
     const sessionThreshold = new Date(Date.now() - SESSION_MAX_AGE_MS);
+    // TODO(auth-refactor): cleanup completo (RefreshToken, MfaChallenge) implementado no Bloco 9.
+    // Por ora apenas remove Sessions cuja idle window já passou.
     const sessionResult = await prisma.session.deleteMany({
-      where: { lastActivity: { lt: sessionThreshold } },
+      where: { idleExpiresAt: { lt: sessionThreshold } },
     });
     sessionsDeleted = sessionResult.count;
     console.log(`[CLEANUP] ${sessionsDeleted} sessões expiradas removidas em ${timestamp}`);

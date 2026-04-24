@@ -23,100 +23,110 @@ model Unit {
 }
 
 model Department {
-  id        String   @id @default(uuid())
-  name      String
-  unitId    String?  // Opcional para permitir db push com dados existentes; seed_units recria a estrutura
-  unit      Unit?    @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  roles     Role[]
-  users     User[]   @relation("UserDepartment")
+  id            String    @id @default(uuid())
+  name          String
+  unitId        String? // Opcional para permitir db push com dados existentes; seed_units recria a estrutura
+  unit          Unit?     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  roles         Role[]
+  users         User[]    @relation("UserDepartment")
   inboxRequests Request[] @relation("RequestInbox")
 
   @@unique([unitId, name])
 }
 
 model Role {
-  id           String        @id @default(uuid())
-  name         String
-  code         String?       // Ex: KBS-BO-1 (Código do cargo no board); mesmo código pode existir em departamentos diferentes
-  departmentId String
-  department   Department    @relation(fields: [departmentId], references: [id])
-  leaderId     String?
-  leader       User?         @relation("RoleLeader", fields: [leaderId], references: [id], onDelete: SetNull)
-  kitItems     RoleKitItem[]
-  inboxRequests Request[] @relation("RequestInboxRole")
+  id            String        @id @default(uuid())
+  name          String
+  code          String? // Ex: KBS-BO-1 (Código do cargo no board); mesmo código pode existir em departamentos diferentes
+  departmentId  String
+  department    Department    @relation(fields: [departmentId], references: [id])
+  leaderId      String?
+  leader        User?         @relation("RoleLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  kitItems      RoleKitItem[]
+  inboxRequests Request[]     @relation("RequestInboxRole")
 
   @@unique([code, departmentId]) // mesmo KBS em departamentos diferentes permitido; duplicata no mesmo departamento impedida
 }
 
 model RoleKitItem {
-  id                String   @id @default(uuid())
-  roleId             String
-  role               Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  toolCode           String   // Ex: ap_CK-1
-  toolName           String   // Ex: ClickUp
-  accessLevelDesc    String?  // Nível de Acesso (Descritivo Oficial)
-  criticality        String?  // Alta, Média, Baixa
-  isCritical         Boolean  @default(true)
+  id              String  @id @default(uuid())
+  roleId          String
+  role            Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  toolCode        String // Ex: ap_CK-1
+  toolName        String // Ex: ClickUp
+  accessLevelDesc String? // Nível de Acesso (Descritivo Oficial)
+  criticality     String? // Alta, Média, Baixa
+  isCritical      Boolean @default(true)
 }
 
 model User {
-  id            String    @id @default(uuid())
-  name          String
-  email         String    @unique
+  id          String  @id @default(uuid())
+  name        String
+  email       String  @unique
   /// ID do usuário no JumpCloud (Directory); evita GET systemusers por e-mail a cada integração.
-  jumpcloudId   String?   @unique
+  jumpcloudId String? @unique
 
   // --- MUDANÇA 1: FKs para Department e Unit ---
-  jobTitle      String?   // Cargo (Ex: "SDR")
+  jobTitle      String? // Cargo (Ex: "SDR")
   departmentId  String?
   departmentRef Department? @relation("UserDepartment", fields: [departmentId], references: [id])
   unitId        String?
   unitRef       Unit?       @relation("UserUnit", fields: [unitId], references: [id])
   // ---------------------------------------------------------------
 
-  roleId        String?
+  roleId String?
   // role       Role?     @relation(fields: [roleId], references: [id]) // Comentei para evitar erros se não tiver roles
 
   // Hierarquia (Gestor)
-  managerId     String?
-  manager       User?     @relation("ManagerToSubordinate", fields: [managerId], references: [id])
-  subordinates  User[]    @relation("ManagerToSubordinate")
-  
+  managerId    String?
+  manager      User?   @relation("ManagerToSubordinate", fields: [managerId], references: [id])
+  subordinates User[]  @relation("ManagerToSubordinate")
+
   // Deputado/Substituto
-  myDeputyId    String?   @unique
-  myDeputy      User?     @relation("DeputyRelation", fields: [myDeputyId], references: [id])
-  deputyOf      User?     @relation("DeputyRelation")
+  myDeputyId String? @unique
+  myDeputy   User?   @relation("DeputyRelation", fields: [myDeputyId], references: [id])
+  deputyOf   User?   @relation("DeputyRelation")
 
   // Ferramentas
-  toolsOwned    Tool[]    @relation("ToolOwner")
-  toolsSubOwned Tool[]    @relation("ToolSubOwner")
+  toolsOwned    Tool[] @relation("ToolOwner")
+  toolsSubOwned Tool[] @relation("ToolSubOwner")
 
   // Acessos
-  accesses      Access[]
+  accesses Access[]
 
   // Solicitações
-  requests      Request[] @relation("Requester") // Quem pediu
-  approvals     Request[] @relation("Approver")  // Quem aprovou
-  revokedRequests Request[] @relation("RequestRevoker") // ROOT_ACCESS revogado antecipadamente (admin)
-  assignedTickets Request[] @relation("TicketAssignee") // Chamados atribuídos (Service Desk)
+  requests               Request[]           @relation("Requester") // Quem pediu
+  approvals              Request[]           @relation("Approver") // Quem aprovou
+  revokedRequests        Request[]           @relation("RequestRevoker") // ROOT_ACCESS revogado antecipadamente (admin)
+  assignedTickets        Request[]           @relation("TicketAssignee") // Chamados atribuídos (Service Desk)
   /// Leaver (FIRING): confirmações manuais de suspensão JumpCloud pós-revogação pelos Owners
-  jcSuspensionsConfirmed Request[] @relation("JcSuspensionConfirmer")
-  requestComments RequestComment[]
-  requestAttachments RequestAttachment[]
+  jcSuspensionsConfirmed Request[]           @relation("JcSuspensionConfirmer")
+  requestComments        RequestComment[]
+  requestAttachments     RequestAttachment[]
 
   // Perfil de Sistema (RBAC)
-  systemProfile String    @default("VIEWER")
+  systemProfile String @default("VIEWER")
 
   // Soft-delete: desligados ficam isActive = false e somem das listagens de ativos
-  isActive      Boolean   @default(true)
+  isActive Boolean @default(true)
 
   // MFA
-  mfaCode       String?   
-  mfaExpiresAt  DateTime?
+  // DEPRECATED (auth refactor): substituído por MfaChallenge.codeHash; remover em PR de cleanup
+  mfaCode      String?
+  // DEPRECATED (auth refactor): substituído por MfaChallenge.expiresAt; remover em PR de cleanup
+  mfaExpiresAt DateTime?
 
   // Lembrete de troca de senha (automação 90 dias)
   lastPasswordChangeAt DateTime? @default(now())
+
+  /// Google OIDC subject — identidade canônica imutável; preenchida no primeiro login pós-refactor
+  googleSub String? @unique
+
+  // === AUTH REFACTOR — relations novas ===
+  sessions      Session[]      @relation("UserSessions")
+  refreshTokens RefreshToken[] @relation("UserRefreshTokens")
+  mfaChallenges MfaChallenge[] @relation("UserMfaChallenges")
 
   // Auditoria: histórico de mudanças estruturais
   historicoMudancas HistoricoMudanca[] @relation("HistoricoMudancaAutor")
@@ -133,48 +143,48 @@ model User {
 
 model HistoricoMudanca {
   id           String   @id @default(uuid())
-  tipo         String   // Ex: "ROLE_DEPARTMENT_CHANGE", "USER_ROLE_CHANGE"
-  entidadeTipo String   // Ex: "Role", "User", "Department"
-  entidadeId   String   // ID do registro afetado
-  descricao    String   // Texto legível
-  dadosAntes   Json?    // Snapshot do estado anterior
-  dadosDepois  Json?    // Snapshot do estado novo
+  tipo         String // Ex: "ROLE_DEPARTMENT_CHANGE", "USER_ROLE_CHANGE"
+  entidadeTipo String // Ex: "Role", "User", "Department"
+  entidadeId   String // ID do registro afetado
+  descricao    String // Texto legível
+  dadosAntes   Json? // Snapshot do estado anterior
+  dadosDepois  Json? // Snapshot do estado novo
   autorId      String?
   autor        User?    @relation("HistoricoMudancaAutor", fields: [autorId], references: [id], onDelete: SetNull)
   createdAt    DateTime @default(now())
 }
 
 model Tool {
-  id                  String   @id @default(uuid())
-  name                String
-  acronym             String?  // Nomenclatura (ex: "JC", "AWS")
-  description         String?  // Breve descrição da ferramenta
-  
-  ownerId             String?
-  owner               User?    @relation("ToolOwner", fields: [ownerId], references: [id])
-  
-  subOwnerId          String?
-  subOwner            User?    @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
+  id          String  @id @default(uuid())
+  name        String
+  acronym     String? // Nomenclatura (ex: "JC", "AWS")
+  description String? // Breve descrição da ferramenta
 
-  accesses            Access[]
+  ownerId String?
+  owner   User?   @relation("ToolOwner", fields: [ownerId], references: [id])
+
+  subOwnerId String?
+  subOwner   User?   @relation("ToolSubOwner", fields: [subOwnerId], references: [id])
+
+  accesses Access[]
 
   // Novos campos para edição
-  toolGroupId         String?
-  toolGroup           ToolGroup? @relation(fields: [toolGroupId], references: [id])
-  
-  availableAccessLevels String[] @default(["Admin", "User", "Viewer"]) // Níveis disponíveis para esta ferramenta
+  toolGroupId String?
+  toolGroup   ToolGroup? @relation(fields: [toolGroupId], references: [id])
+
+  availableAccessLevels   String[] @default(["Admin", "User", "Viewer"]) // Níveis disponíveis para esta ferramenta
   accessLevelDescriptions Json? // Mapeamento { "Admin": "Descrição...", "User": "..." }
 
-  criticality         String?  // Nível de criticidade (Alta, Média, Baixa)
-  isCritical          Boolean  @default(false)
+  criticality String? // Nível de criticidade (Alta, Média, Baixa)
+  isCritical  Boolean @default(false)
 
   // Revisão periódica de acessos (90 dias)
-  lastReviewAt        DateTime?  // data da última revisão concluída
-  nextReviewAt        DateTime?  // calculado: lastReviewAt + 90 dias
+  lastReviewAt DateTime? // data da última revisão concluída
+  nextReviewAt DateTime? // calculado: lastReviewAt + 90 dias
 
-  createdAt           DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  accessLevels        ToolAccessLevel[]
+  accessLevels ToolAccessLevel[]
 }
 
 // Níveis de acesso cadastrados no Catálogo (Slack /acessos, KBS, etc.)
@@ -192,10 +202,10 @@ model ToolAccessLevel {
 }
 
 model RevisaoNotificacaoEnviada {
-  id        String   @id @default(uuid())
-  ownerId   String
-  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  sentAt    DateTime @default(now())
+  id      String   @id @default(uuid())
+  ownerId String
+  owner   User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  sentAt  DateTime @default(now())
 }
 
 model ToolGroup {
@@ -205,74 +215,74 @@ model ToolGroup {
 }
 
 model Access {
-  id        String   @id @default(uuid())
-  status    String   @default("ACTIVE") 
-  
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  toolId    String
-  tool      Tool     @relation(fields: [toolId], references: [id], onDelete: Cascade)
-  
+  id     String @id @default(uuid())
+  status String @default("ACTIVE")
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  toolId String
+  tool   Tool   @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
-  
+
   // Detalhes Extraordinários
-  isExtraordinary Boolean   @default(false)
-  level           String?   // ex: "NÍVEL 3 (CP-1)"
-  duration        Int?      
-  unit            String?   // horas, dias, meses
-  expiresAt       DateTime?
+  isExtraordinary              Boolean   @default(false)
+  level                        String? // ex: "NÍVEL 3 (CP-1)"
+  duration                     Int?
+  unit                         String? // horas, dias, meses
+  expiresAt                    DateTime?
   /// DM de recertificação (90d / menor prazo) enviado ao Owner; após +2d sem ação → revogação JC + REVOKED.
-  recertificationNotifiedAt DateTime?
+  recertificationNotifiedAt    DateTime?
   /// Data em que o aviso de 7 dias antes da recertificação foi enviado ao colaborador.
   preRecertificationNotifiedAt DateTime?
 }
 
 model Request {
-  id                  String   @id @default(uuid())
-  
-  requesterId         String?
-  requester           User?    @relation("Requester", fields: [requesterId], references: [id], onDelete: SetNull)
-  
+  id String @id @default(uuid())
+
+  requesterId String?
+  requester   User?   @relation("Requester", fields: [requesterId], references: [id], onDelete: SetNull)
+
   // --- MUDANÇA 2: Campos para Auditoria ---
-  approverId          String?
-  approver            User?    @relation("Approver", fields: [approverId], references: [id], onDelete: SetNull)
-  adminNote           String?  // O motivo da aprovação/reprovação
+  approverId String?
+  approver   User?   @relation("Approver", fields: [approverId], references: [id], onDelete: SetNull)
+  adminNote  String? // O motivo da aprovação/reprovação
   // ----------------------------------------
-  assigneeId          String?  // Responsável pelo atendimento (Service Desk)
-  assignee            User?    @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId String? // Responsável pelo atendimento (Service Desk)
+  assignee   User?   @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   // Inbox compartilhada (Infra): departamento + cargo (KBS) que atende o chamado
-  inboxDepartmentId   String?
-  inboxDepartment     Department? @relation("RequestInbox", fields: [inboxDepartmentId], references: [id], onDelete: SetNull)
-  inboxRoleId         String?
-  inboxRole           Role?       @relation("RequestInboxRole", fields: [inboxRoleId], references: [id], onDelete: SetNull)
+  inboxDepartmentId String?
+  inboxDepartment   Department? @relation("RequestInbox", fields: [inboxDepartmentId], references: [id], onDelete: SetNull)
+  inboxRoleId       String?
+  inboxRole         Role?       @relation("RequestInboxRole", fields: [inboxRoleId], references: [id], onDelete: SetNull)
 
-  type                String
-  status              String   @default("PENDENTE_GESTOR")
-  scheduledAt         DateTime?  // Para status Agendado (Service Desk)
-  actionDate          DateTime?  // Data de Ação (ex: /pessoas Movimentação, Desligamento)
-  
-  currentApproverRole String? 
-  
-  details             String   // JSON string
-  justification       String?
-  isExtraordinary     Boolean  @default(false)
-  
+  type        String
+  status      String    @default("PENDENTE_GESTOR")
+  scheduledAt DateTime? // Para status Agendado (Service Desk)
+  actionDate  DateTime? // Data de Ação (ex: /pessoas Movimentação, Desligamento)
+
+  currentApproverRole String?
+
+  details         String // JSON string
+  justification   String?
+  isExtraordinary Boolean @default(false)
+
   // AEX: Owner approval flow
-  ownerApprovedAt     DateTime?
-  ownerApprovedBy     String?   // Slack ID de quem aprovou como Owner
-  ownerApprovedByName String?   // Nome do Owner que aprovou (para exibição)
-  ownerRejectedAt     DateTime?
-  ownerRejectedBy     String?
-  siApprovedBy        String?   // AEX: Slack ID de quem aprovou como SI (painel)
-  siApprovedAt        DateTime? // AEX: data da aprovação pelo SI
-  toolName            String?   // Para AEX — nome da ferramenta
-  accessLevel         String?   // Para AEX — nível solicitado
-  extraordinaryDuration Int?     // Ex: 48
-  extraordinaryUnit     String?  // Ex: "horas", "dias", "meses"
-  accessPeriodDays      Int?     // Período em dias convertido (AEX /acessos)
-  accessPeriodRaw       String?  // Ex: "30 dias", "2 meses"
+  ownerApprovedAt       DateTime?
+  ownerApprovedBy       String? // Slack ID de quem aprovou como Owner
+  ownerApprovedByName   String? // Nome do Owner que aprovou (para exibição)
+  ownerRejectedAt       DateTime?
+  ownerRejectedBy       String?
+  siApprovedBy          String? // AEX: Slack ID de quem aprovou como SI (painel)
+  siApprovedAt          DateTime? // AEX: data da aprovação pelo SI
+  toolName              String? // Para AEX — nome da ferramenta
+  accessLevel           String? // Para AEX — nível solicitado
+  extraordinaryDuration Int? // Ex: 48
+  extraordinaryUnit     String? // Ex: "horas", "dias", "meses"
+  accessPeriodDays      Int? // Período em dias convertido (AEX /acessos)
+  accessPeriodRaw       String? // Ex: "30 dias", "2 meses"
 
   /// Onboarding (/pessoas Contratação): nome completo e e-mail do gestor (denormalizado; também em details JSON).
   onboardingFullName     String?
@@ -283,14 +293,14 @@ model Request {
   siSlackRootChannelTs   String?
 
   /// ROOT_ACCESS: revogação antecipada (admin) ou após expiração + revoke no JumpCloud (cron).
-  revokedAt       DateTime?
-  revokedById     String?
-  revokedBy       User?          @relation("RequestRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
-  revokeReason    String?
-  revokeTrigger   RevokeTrigger?
+  revokedAt     DateTime?
+  revokedById   String?
+  revokedBy     User?          @relation("RequestRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
+  revokeReason  String?
+  revokeTrigger RevokeTrigger?
 
-  jumpcloudCreatedAt     DateTime?
-  googleCreatedAt        DateTime?
+  jumpcloudCreatedAt        DateTime?
+  googleCreatedAt           DateTime?
   /// Lembrete único: data de ação (Slack workspace) atingida — cron onboarding.
   slackActionDateNotifiedAt DateTime?
 
@@ -302,22 +312,22 @@ model Request {
   /// Leaver: `notificarOwnersDesligamento` efetivamente disparado (null = aguardando cron 17h BRT no último dia).
   ownersNotifiedAt DateTime?
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  comments            RequestComment[]
-  attachments         RequestAttachment[]
+  comments    RequestComment[]
+  attachments RequestAttachment[]
 }
 
 model RequestComment {
-  id          String   @id @default(uuid())
-  requestId   String
-  request     Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  authorId    String?
-  author      User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  body        String
-  kind        String   @default("COMMENT")  // COMMENT | SOLUTION | SCHEDULED_TASK
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid())
+  requestId String
+  request   Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  body      String
+  kind      String   @default("COMMENT") // COMMENT | SOLUTION | SCHEDULED_TASK
+  createdAt DateTime @default(now())
 }
 
 model RequestAttachment {
@@ -327,17 +337,87 @@ model RequestAttachment {
   uploadedById String?
   uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   filename     String
-  fileUrl      String   // URL ou path do arquivo
+  fileUrl      String // URL ou path do arquivo
   mimeType     String?
   createdAt    DateTime @default(now())
 }
 
-// Sessão por usuário: timeout por inatividade (60 min)
+// === AUTH REFACTOR (26/abr/2026) ===
+// Session: 1 row por dispositivo/login ativo (NÃO mais @unique em userId).
+// Token opaco aleatório (32 bytes) hasheado via HMAC-SHA256(token, SESSION_PEPPER) em tokenHash.
 model Session {
-  id           String   @id @default(uuid())
-  userId       String   @unique
-  lastActivity DateTime @default(now())
-  createdAt    DateTime @default(now())
+  id                String               @id @default(cuid())
+  tokenHash         Bytes                @unique
+  userId            String
+  user              User                 @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+  family            String // UUID compartilhado com RefreshTokens da cadeia
+  authMethod        String               @default("google")
+  acr               String               @default("pwd") // RFC 9470
+  amr               String[]             @default(["pwd"])
+  authTime          DateTime
+  createdAt         DateTime             @default(now())
+  lastUsedAt        DateTime             @default(now())
+  idleExpiresAt     DateTime
+  absoluteExpiresAt DateTime
+  ipHash            Bytes?
+  uaHash            Bytes?
+  isActive          Boolean              @default(true)
+  revokedAt         DateTime?
+  revokedReason     SessionRevokeReason?
+  refreshTokens     RefreshToken[]
+
+  @@index([userId, createdAt])
+  @@index([family])
+  @@index([isActive, idleExpiresAt])
+}
+
+model RefreshToken {
+  id         String    @id @default(cuid())
+  tokenHash  Bytes     @unique
+  sessionId  String
+  session    Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation("UserRefreshTokens", fields: [userId], references: [id], onDelete: Cascade)
+  family     String
+  generation Int       @default(0)
+  createdAt  DateTime  @default(now())
+  usedAt     DateTime?
+  expiresAt  DateTime
+  isActive   Boolean   @default(true)
+
+  @@index([sessionId])
+  @@index([family, generation])
+  @@index([userId, createdAt])
+}
+
+// Estado intermediário: Google id_token validado MAS MFA pendente.
+// Sessão real só nasce após MFA confirmado (bloqueia bypass via localStorage).
+model MfaChallenge {
+  id            String    @id @default(cuid())
+  challengeHash Bytes     @unique
+  userId        String
+  user          User      @relation("UserMfaChallenges", fields: [userId], references: [id], onDelete: Cascade)
+  codeHash      Bytes
+  attemptsLeft  Int       @default(5)
+  ipHash        Bytes?
+  uaHash        Bytes?
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  consumedAt    DateTime?
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+enum SessionRevokeReason {
+  USER_LOGOUT
+  USER_LOGOUT_ALL
+  IDLE_TIMEOUT
+  ABSOLUTE_TIMEOUT
+  REFRESH_REUSE
+  ADMIN_REVOKE
+  PASSWORD_CHANGED
+  GLOBAL_INVALIDATION
 }
 
 // Kit Básico Universal (KBU) — ferramentas padrão para todos os colaboradores
@@ -345,8 +425,8 @@ model KBUFerramenta {
   id         String   @id @default(uuid())
   nome       String
   sigla      String?
-  ownerNome  String?  // Nome do responsável
-  ownerEmail String?  // E-mail do responsável
+  ownerNome  String? // Nome do responsável
+  ownerEmail String? // E-mail do responsável
   ativo      Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -359,7 +439,7 @@ model LoginAttempt {
   ipAddress  String
   userAgent  String?
   success    Boolean
-  failReason String?  // USER_NOT_FOUND, MFA_INVALID, MFA_EXPIRED, MFA_SEND_FAILED, RATE_LIMITED, GOOGLE_AUTH_FAILED
+  failReason String? // USER_NOT_FOUND, MFA_INVALID, MFA_EXPIRED, MFA_SEND_FAILED, RATE_LIMITED, GOOGLE_AUTH_FAILED
   createdAt  DateTime @default(now())
 
   @@index([email])

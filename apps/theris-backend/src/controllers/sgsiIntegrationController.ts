@@ -103,41 +103,23 @@ export async function verifyToken(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutos
-
-    const session = await prisma.session.findUnique({ where: { userId } });
-    if (!session) {
-      res.status(401).json({ error: 'Sessão inválida ou expirada.' });
-      return;
-    }
-
-    const elapsed = new Date().getTime() - session.lastActivity.getTime();
-    if (elapsed > SESSION_TIMEOUT_MS) {
-      res.status(401).json({ error: 'Sessão expirada por inatividade.' });
-      return;
-    }
-
+    // TODO(auth-refactor): re-implementar com nova Session no Bloco 6.
+    // Por ora aceita o x-user-id se o user existir e estiver ativo (mesmo critério antigo, sem session check).
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, name: true, email: true, systemProfile: true, isActive: true },
+      select: { id: true, email: true, name: true, systemProfile: true, isActive: true },
     });
-
-    if (!user) {
-      res.status(403).json({ error: 'Usuário não encontrado.' });
+    if (!user || !user.isActive) {
+      res.status(401).json({ error: 'SESSION_INVALID' });
       return;
     }
-
-    if (!user.isActive) {
-      res.status(403).json({ error: 'Usuário inativo.' });
-      return;
-    }
-
     res.json({
       id: user.id,
-      name: user.name,
       email: user.email,
+      name: user.name,
       systemProfile: user.systemProfile,
     });
+    return;
   } catch {
     res.status(500).json({ error: 'Erro ao verificar sessão.' });
   }
