@@ -1922,7 +1922,6 @@ export default function App() {
               <div className="mfa-icon-wrapper" style={{ margin: '0 auto 20px' }}><Lock size={32} color="#0EA5E9" /></div>
               <h2 style={{ color: 'white', margin: 0, fontSize: 20 }}>Código de Segurança</h2>
               <p className="subtitle" style={{ marginBottom: 24 }}>Enviamos um código para <strong>{emailHint ?? currentUser?.email ?? 'seu e-mail'}</strong>.</p>
-              {emailHint && <p className="text-xs text-slate-400 mt-1">Código enviado para {emailHint}</p>}
               <input
                 className="mfa-input-single"
                 type="text"
