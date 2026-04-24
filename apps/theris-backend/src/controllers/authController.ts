@@ -1,343 +1,42 @@
-import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { sendMfaEmail } from '../services/emailService';
-import { getClientIp, getClientUserAgent } from '../lib/requestContext';
-import { sendSuspiciousIpAlertToSI } from '../services/suspiciousIpSlackAlert';
-import { registrarMudanca } from '../lib/auditLog';
+/**
+ * Handlers de auth legados (DEPRECATED).
+ *
+ * Substituidos pelos endpoints do src/auth/:
+ *   - POST /api/login/google        -> POST /api/auth/google-login-challenge
+ *   - POST /api/auth/send-mfa       -> POST /api/auth/google-login-challenge (inclui MFA send)
+ *   - POST /api/auth/verify-mfa     -> POST /api/auth/verify-mfa-and-login
+ *
+ * Retornamos HTTP 410 Gone ao inves de remover as rotas pra dar erro
+ * explicativo a qualquer cliente externo ou versao legada do frontend
+ * que ainda bater nesses endpoints (vs 404 que seria ambiguo).
+ *
+ * Imports preservados em src/index.ts linha 27 pra manter compatibilidade
+ * do roteador; os symbols continuam existindo como handlers-stub.
+ *
+ * Deletados neste commit (agora vivos apenas no git history):
+ *   - Validacao de access_token via userinfo endpoint (vulneravel a
+ *     confused deputy attack — substituido por verifyIdToken com aud check)
+ *   - mfaCode em texto puro na tabela User (substituido por MfaChallenge
+ *     com HMAC)
+ *   - logLoginAttempt privada (substituido por logAuthEvent em
+ *     src/auth/auditAuth.ts, reusada pelos novos handlers)
+ *   - normalizeEmail, CORPORATE_EMAIL_REGEX, getClientIp helpers
+ *     (nao-usados pelos novos handlers; email check feito em googleVerify.ts)
+ *
+ * Refs: refactor-auth bloco-8/16.
+ */
 
-const prisma = new PrismaClient();
+import type { Request, Response } from 'express';
 
-const CORPORATE_EMAIL_REGEX = /^[^@\s]+@grupo-3c\.com$/i;
-
-async function logLoginAttempt(params: {
-  req: Request;
-  email?: string | null;
-  success: boolean;
-  failReason?: string | null;
-  userId?: string | null;
-}) {
-  const { req, email, success, failReason, userId } = params;
-  const clientIp = getClientIp(req);
-  const userAgent = getClientUserAgent(req);
-  try {
-    await prisma.loginAttempt.create({
-      data: {
-        email: email ?? null,
-        ipAddress: clientIp,
-        userAgent: userAgent ?? undefined,
-        success,
-        failReason: failReason ?? null,
-      },
+function deprecated410(redirectHint: string) {
+  return async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: 'ENDPOINT_DEPRECATED',
+      message: `Este endpoint foi removido. Use ${redirectHint} no lugar.`,
     });
-
-    if (!success) {
-      await registrarMudanca({
-        tipo: 'LOGIN_FAILED',
-        entidadeTipo: 'User',
-        entidadeId: userId ?? 'LOGIN_ATTEMPT',
-        descricao: `Tentativa de login com falha: ${failReason ?? 'DESCONHECIDO'}`,
-        dadosDepois: { ip: clientIp, email: email ?? null, failReason: failReason ?? null },
-        autorId: undefined,
-      }).catch((e) => console.error('[logLoginAttempt] HistoricoMudanca:', e));
-      const recentFails = await prisma.loginAttempt.count({
-        where: {
-          ipAddress: clientIp,
-          success: false,
-          createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-        },
-      });
-      if (recentFails === 5) {
-        sendSuspiciousIpAlertToSI({
-          ipAddress: clientIp,
-          email: email ?? null,
-          failReason: failReason ?? null,
-          timestamp: new Date(),
-        }).catch((e) => console.error('[logLoginAttempt] Alerta IP suspeito:', e));
-      }
-    }
-  } catch (e) {
-    console.error('[logLoginAttempt]', e);
-  }
+  };
 }
 
-// FUNÇÃO DE NORMALIZAÇÃO DE E-MAIL (nome.sobrenome@grupo-3c.com)
-const normalizeEmail = (email: string): string => {
-  const [localPart, domain] = email.toLowerCase().split('@');
-  const parts = localPart.split('.');
-
-  // Se tiver mais de 2 partes (ex: nome.nome.sobrenome), pega apenas a primeira e a última
-  const normalizedLocal = parts.length > 2
-    ? `${parts[0]}.${parts[parts.length - 1]}`
-    : localPart;
-
-  return `${normalizedLocal}@grupo-3c.com`; // Força o domínio correto também
-};
-
-// LOGIN COM GOOGLE
-export const googleLogin = async (req: Request, res: Response) => {
-  const { accessToken } = req.body;
-
-  try {
-    // 1. Validar token no Google (OpenID userinfo — inclui `hd` para Google Workspace quando aplicável)
-    const googleRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
-    });
-
-    if (!googleRes.ok) {
-      await logLoginAttempt({ req, email: req.body?.email ?? null, success: false, failReason: 'GOOGLE_AUTH_FAILED', userId: undefined });
-      return res.status(401).json({ error: 'Token Google inválido' });
-    }
-
-    const googleData = await googleRes.json() as {
-      email?: string;
-      hd?: string;
-      name?: string;
-    };
-    const rawEmail = typeof googleData.email === 'string' ? googleData.email.trim() : '';
-
-    // 2a. Domínio no e-mail retornado pelo Google (antes de qualquer normalização — não confiar em rewrite de domínio)
-    if (!rawEmail || !CORPORATE_EMAIL_REGEX.test(rawEmail)) {
-      await logLoginAttempt({
-        req,
-        email: rawEmail || null,
-        success: false,
-        failReason: 'DOMAIN_DENIED',
-        userId: undefined,
-      });
-      return res.status(403).json({
-        error: 'Acesso não autorizado. Utilize sua conta corporativa @grupo-3c.com',
-      });
-    }
-
-    // 2b. Hosted domain (hd) no perfil Google Workspace — reforço quando o campo vem preenchido
-    const hdRaw = typeof googleData.hd === 'string' ? googleData.hd.trim().toLowerCase() : '';
-    if (hdRaw !== '' && hdRaw !== 'grupo-3c.com') {
-      await logLoginAttempt({
-        req,
-        email: rawEmail,
-        success: false,
-        failReason: 'DOMAIN_HD_DENIED',
-        userId: undefined,
-      });
-      return res.status(403).json({
-        error: 'Acesso não autorizado. Utilize sua conta corporativa @grupo-3c.com',
-      });
-    }
-
-    const email = normalizeEmail(rawEmail);
-
-    const googleUserSelect = {
-      id: true,
-      name: true,
-      email: true,
-      jobTitle: true,
-      departmentId: true,
-      unitId: true,
-      roleId: true,
-      managerId: true,
-      systemProfile: true,
-      isActive: true,
-      lastPasswordChangeAt: true,
-      myDeputyId: true,
-      manager: { select: { id: true, name: true } as const }
-    } as const;
-
-    // 3. Buscar ou Criar Usuário (com manager para exibir Gestor Direto no Dashboard)
-    let user = await prisma.user.findUnique({
-      where: { email },
-      select: googleUserSelect
-    });
-
-    if (!user) {
-      const deptGeral = await prisma.department.findFirst({ where: { name: { equals: 'Geral', mode: 'insensitive' } } });
-      const created = await prisma.user.create({
-        data: {
-          email,
-          name: googleData.name || 'Usuário Google',
-          jobTitle: 'Colaborador',
-          departmentId: deptGeral?.id ?? null
-        }
-      });
-      user = (await prisma.user.findUnique({
-        where: { id: created.id },
-        select: googleUserSelect
-      }))!;
-    }
-
-    // 3b. Conta desativada no Theris (terceira camada)
-    if (!user.isActive) {
-      await logLoginAttempt({
-        req,
-        email,
-        success: false,
-        failReason: 'USER_INACTIVE',
-        userId: user.id,
-      });
-      return res.status(403).json({
-        error: 'Acesso não autorizado. Sua conta está desativada; contate o time de SI.',
-      });
-    }
-
-    // 4. Definir Perfil de Sistema Persistente
-    // Super Admins definidos pelo usuário
-    const superAdminEmails = [
-      'luan.silva@grupo-3c.com',
-      'vladimir.sesar@grupo-3c.com',
-      'allan.vonstein@grupo-3c.com',
-      'si@grupo-3c.com'
-    ];
-
-    let systemProfile = (user as any).systemProfile;
-
-    // Se o usuário está na lista de Super Admins e ainda é VIEWER, promove automaticamente
-    if (superAdminEmails.includes(email.toLowerCase()) && systemProfile === 'VIEWER') {
-      systemProfile = 'SUPER_ADMIN';
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { systemProfile: 'SUPER_ADMIN' }
-      });
-    }
-    // Se for um gestor e ainda for VIEWER, vira APPROVER por padrão
-    else if (systemProfile === 'VIEWER') {
-      if (user.jobTitle && (user.jobTitle.includes('Coord') || user.jobTitle.includes('Gerente') || user.jobTitle.includes('Head'))) {
-        systemProfile = 'APPROVER';
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { systemProfile: 'APPROVER' }
-        });
-      }
-    }
-
-    await logLoginAttempt({ req, email, success: true, userId: user.id });
-    // Nunca retornar mfaCode, mfaExpiresAt ou outros campos sensíveis
-    const { mfaCode, mfaExpiresAt, ...safeUser } = user as typeof user & { mfaCode?: string; mfaExpiresAt?: Date };
-    return res.json({
-      user: safeUser,
-      profile: systemProfile,
-      token: 'fake-jwt-token'
-    });
-
-  } catch (error) {
-    console.error(error);
-    await logLoginAttempt({ req, email: null, success: false, failReason: 'GOOGLE_AUTH_FAILED', userId: undefined });
-    return res.status(500).json({ error: 'Erro no login Google' });
-  }
-};
-
-// ENVIAR MFA
-export const sendMfa = async (req: Request, res: Response) => {
-  const { userId } = req.body;
-
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, email: true }
-    });
-    if (!user) {
-      await logLoginAttempt({ req, email: null, success: false, failReason: 'USER_NOT_FOUND', userId: undefined });
-      return res.status(404).json({ error: 'Usuário não encontrado' });
-    }
-
-    // Gera código de 6 dígitos
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
-
-    // Salva no banco
-    await prisma.user.update({
-      where: { id: userId },
-      data: { mfaCode: code, mfaExpiresAt: expiresAt }
-    });
-
-    // Envia Email
-    await sendMfaEmail(user.email, code);
-
-    await logLoginAttempt({ req, email: user.email, success: true, userId: user.id });
-    await registrarMudanca({
-      tipo: 'MFA_SENT',
-      entidadeTipo: 'User',
-      entidadeId: user.id,
-      descricao: 'Código MFA enviado por e-mail',
-      dadosDepois: { ip: getClientIp(req) },
-      autorId: user.id,
-    }).catch((e) => console.error('[sendMfa] HistoricoMudanca:', e));
-    res.json({ success: true, userId: user.id, message: 'Código enviado' });
-  } catch (error) {
-    await logLoginAttempt({ req, email: null, success: false, failReason: 'MFA_SEND_FAILED', userId: undefined });
-    res.status(500).json({ error: 'Erro ao enviar MFA' });
-  }
-};
-
-// VERIFICAR MFA
-export const verifyMfa = async (req: Request, res: Response) => {
-  console.log('[verifyMfa] body recebido:', {
-    userId: req.body.userId,
-    hasCode: !!req.body.code,
-    bodyKeys: Object.keys(req.body ?? {})
-  });
-  const { userId, code } = req.body;
-
-  if (!userId || !code) {
-    return res.status(400).json({
-      error: 'userId e code são obrigatórios',
-      valid: false
-    });
-  }
-
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, email: true, mfaCode: true, mfaExpiresAt: true }
-    });
-
-    if (!user || user.mfaCode !== code) {
-      await logLoginAttempt({ req, email: user?.email ?? null, success: false, failReason: 'MFA_INVALID', userId: user?.id ?? undefined });
-      if (user) {
-        await registrarMudanca({
-          tipo: 'MFA_FAILED',
-          entidadeTipo: 'User',
-          entidadeId: user.id,
-          descricao: 'Falha na verificação MFA: MFA_INVALID',
-          dadosDepois: { ip: getClientIp(req), failReason: 'MFA_INVALID' },
-          autorId: user.id,
-        }).catch((e) => console.error('[verifyMfa] HistoricoMudanca:', e));
-      }
-      return res.status(400).json({ error: 'Código inválido', valid: false });
-    }
-
-    if (user.mfaExpiresAt && new Date() > user.mfaExpiresAt) {
-      await logLoginAttempt({ req, email: user.email, success: false, failReason: 'MFA_EXPIRED', userId: user.id });
-      await registrarMudanca({
-        tipo: 'MFA_FAILED',
-        entidadeTipo: 'User',
-        entidadeId: user.id,
-        descricao: 'Falha na verificação MFA: MFA_EXPIRED',
-        dadosDepois: { ip: getClientIp(req), failReason: 'MFA_EXPIRED' },
-        autorId: user.id,
-      }).catch((e) => console.error('[verifyMfa] HistoricoMudanca:', e));
-      return res.status(400).json({ error: 'Código expirado', valid: false });
-    }
-
-    // Limpa o código após uso (opcional, mas recomendado)
-    await prisma.user.update({
-      where: { id: userId },
-      data: { mfaCode: null, mfaExpiresAt: null }
-    });
-
-    // TODO(auth-refactor): substituído pelo fluxo MFA→issueSessionPair no Bloco 4.
-    // Mantido como no-op até o novo endpoint /api/auth/verify-mfa-and-login estar pronto.
-
-    await logLoginAttempt({ req, email: user.email, success: true, userId: user.id });
-    await registrarMudanca({
-      tipo: 'LOGIN_SUCCESS',
-      entidadeTipo: 'User',
-      entidadeId: user.id,
-      descricao: 'Login realizado com sucesso',
-      dadosDepois: { ip: getClientIp(req), userAgent: getClientUserAgent(req) ?? undefined },
-      autorId: user.id,
-    }).catch((e) => console.error('[verifyMfa] HistoricoMudanca:', e));
-    res.json({ valid: true });
-  } catch (error) {
-    console.error('[verifyMfa] Erro inesperado:', error);
-    res.status(500).json({ error: 'Erro ao verificar MFA' });
-  }
-};
+export const googleLogin = deprecated410('POST /api/auth/google-login-challenge');
+export const sendMfa = deprecated410('POST /api/auth/google-login-challenge (inclui envio de MFA)');
+export const verifyMfa = deprecated410('POST /api/auth/verify-mfa-and-login');
