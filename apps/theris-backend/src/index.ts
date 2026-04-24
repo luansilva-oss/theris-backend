@@ -111,7 +111,10 @@ app.use(
   helmet({
     contentSecurityPolicy: false, // CSP gerenciado caso a caso (Vite dev tem requirements diferentes); revisitar no Bloco 8
     strictTransportSecurity: { maxAge: 63072000, includeSubDomains: true, preload: true },
-    crossOriginOpenerPolicy: { policy: 'same-origin' },
+    // Google Identity Services usa popup + postMessage; same-origin bloqueia.
+    // 'same-origin-allow-popups' ainda protege contra cross-origin attacks reais
+    // mas permite janelas que NOS abrimos (caso do GIS) comunicarem de volta.
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     crossOriginResourcePolicy: { policy: 'same-origin' },
     referrerPolicy: { policy: 'no-referrer' },
   }),
@@ -142,7 +145,8 @@ app.use((_req, res, next) => {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com; " +
     "img-src 'self' data: https:; " +
-    "connect-src 'self' https: wss:; " +
+    // connect-src: prod usa HTTPS only; dev permite localhost HTTP pro Vite chamar backend.
+    `connect-src 'self' https: wss:${process.env.NODE_ENV !== 'production' ? ' http://localhost:3000 ws://localhost:3000' : ''}; ` +
     "frame-src 'self' https://accounts.google.com; " +
     "frame-ancestors 'none'; " +
     "base-uri 'self';"
@@ -182,11 +186,13 @@ startDailyOwnersLeaverNotificationsCron();
 // --- CORS ---
 app.use(cors({
   origin: [
-    'http://localhost:5173',
-    'http://localhost:5174',
     'https://theris.grupo-3c.com',
     'https://theris-backend.onrender.com',
-    'https://sgsi-frontend.onrender.com'
+    'https://sgsi-frontend.onrender.com',
+    // Dev local: Vite roda em :5173, backend em :3000
+    ...(process.env.NODE_ENV !== 'production'
+      ? ['http://localhost:5173', 'http://localhost:3000']
+      : []),
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']

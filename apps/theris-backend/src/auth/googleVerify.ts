@@ -3,7 +3,7 @@
  *
  * vs fluxo legado (validacao de access_token via userinfo endpoint):
  * - id_token e JWT assinado pelo Google; verifyIdToken valida JWKS
- * - audience check (aud === GOOGLE_CLIENT_ID) bloqueia confused deputy attack
+ * - audience check (aud === GOOGLE_ID_CLIENT) bloqueia confused deputy attack
  *   (atacante usar access_token de OUTRA app onde user @grupo-3c.com consentiu)
  * - Single-source-of-truth: dados vem dos claims, nao de fetch separado
  *
@@ -12,11 +12,11 @@
 
 import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '';
-const HD = (process.env.GOOGLE_WORKSPACE_HD ?? 'grupo-3c.com').toLowerCase();
+const CLIENT_ID = process.env.GOOGLE_ID_CLIENT ?? '';
+const HD = (process.env.GOOGLE_WORKSPACE_HOSTED_DOMAIN ?? 'grupo-3c.com').toLowerCase();
 
 if (!CLIENT_ID) {
-  throw new Error('GOOGLE_CLIENT_ID nao configurado');
+  throw new Error('GOOGLE_ID_CLIENT nao configurado');
 }
 
 const oauthClient = new OAuth2Client(CLIENT_ID);
@@ -45,9 +45,9 @@ export class GoogleVerifyError extends Error {
  *
  * Validacoes (em ordem):
  *  1. Assinatura JWKS, iss, exp, iat (verifyIdToken faz internamente)
- *  2. audience === GOOGLE_CLIENT_ID
+ *  2. audience === GOOGLE_ID_CLIENT
  *  3. email_verified === true
- *  4. hd === GOOGLE_WORKSPACE_HD (Workspace correto)
+ *  4. hd === GOOGLE_WORKSPACE_HOSTED_DOMAIN (Workspace correto)
  *  5. email termina em @${HD}
  */
 export async function verifyGoogleIdToken(idToken: string): Promise<VerifiedGoogleIdentity> {
