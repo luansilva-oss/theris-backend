@@ -9,6 +9,8 @@
     "build:prod": "npx prisma generate && npx vite build && npx tsc -p tsconfig.json && npx prisma migrate deploy && node prisma/scripts/invalidate-sessions-if-flagged.js",
     "start": "node dist/index.js",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview",
     "db:push": "npx prisma db push",
     "db:seed": "npx ts-node prisma/seed_master.ts",
@@ -60,6 +62,7 @@
     "seed": "npx ts-node prisma/seed_master.ts"
   },
   "devDependencies": {
+    "vitest": "^3.0.5",
     "@types/cookie-parser": "^1.4.8",
     "@types/dagre": "^0.7.53",
     "@types/node-cron": "^3.0.11",

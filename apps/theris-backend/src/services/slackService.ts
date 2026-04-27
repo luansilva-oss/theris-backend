@@ -3331,7 +3331,15 @@ slackApp.view('submit_infra_root', async ({ ack, body, view, client }) => {
           const msg = `Device \`${hostname}\` não encontrado no JumpCloud. Confira o patrimônio ou use hostname customizado.`;
           jcErrors[usouHostnameCustom ? 'blk_root_hostname_custom' : 'blk_root_patrimonio'] = msg;
         } else if (deviceRes.error === 'MULTIPLE') {
-          jcErrors.blk_root_hostname_custom = `Múltiplos devices com hostname \`${hostname}\`. Use hostname customizado ou contate SI.`;
+          if (deviceRes.candidates?.length) {
+            const list = deviceRes.candidates.map((c) => `\`${c.displayName}\``).join(', ');
+            const targetBlock = usouHostnameCustom ? 'blk_root_hostname_custom' : 'blk_root_patrimonio';
+            jcErrors[targetBlock] =
+              `Encontrei ${deviceRes.candidates.length} devices ativos com esse patrimônio: ${list}. ` +
+              `Use o hostname customizado com o nome exato.`;
+          } else {
+            jcErrors.blk_root_hostname_custom = `Múltiplos devices com hostname \`${hostname}\`. Use hostname customizado ou contate SI.`;
+          }
         } else {
           jcErrors.blk_root_justificativa = 'Erro ao validar device, tente novamente em instantes.';
         }
