@@ -136,9 +136,70 @@ export async function revokeAccessRequest(accessRequestId: string): Promise<Revo
   }
 }
 
+export type DeviceMatchStrategy = 'hostname_exact' | 'displayname_exact' | 'patrimonio_search';
+
+export type DeviceLookupCandidate = {
+  displayName: string;
+  hostname: string;
+};
+
 export type DeviceLookupResult =
-  | { ok: true; deviceId: string; active: boolean }
-  | { ok: false; error: 'NOT_FOUND' | 'MULTIPLE' | 'API_ERROR'; details?: string };
+  | {
+      ok: true;
+      deviceId: string;
+      active: boolean;
+      matchedBy: DeviceMatchStrategy;
+    }
+  | {
+      ok: false;
+      error: 'NOT_FOUND' | 'API_ERROR';
+      details?: string;
+    }
+  | {
+      ok: false;
+      error: 'MULTIPLE';
+      candidates?: DeviceLookupCandidate[];
+      details?: string;
+    };
+
+type RawSystemRecord = {
+  _id?: string;
+  id?: string;
+  displayName?: string | null;
+  hostname?: string | null;
+  active?: boolean;
+};
+
+type SearchOutcome =
+  | { ok: true; records: RawSystemRecord[] }
+  | { ok: false; error: 'API_ERROR'; details?: string };
+
+function deviceLookupWarn(event: string, payload: Record<string, unknown>): void {
+  console.warn(`${event} ${JSON.stringify(payload)}`);
+}
+
+/** Extrai sufixo numérico de "3C-PLUS-LIN-0824" → "0824". Aceita 3-5 dígitos. */
+function extractPatrimonioFromHostname(input: string): string | null {
+  const match = input.match(/-(\d{3,5})$/);
+  return match ? match[1] : null;
+}
+
+function patrimonioEquals(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const numA = parseInt(a, 10);
+  const numB = parseInt(b, 10);
+  if (Number.isNaN(numA) || Number.isNaN(numB)) return false;
+  return numA === numB;
+}
+
+function recordMatchesPatrimonio(
+  record: { displayName?: string | null; hostname?: string | null },
+  patrimonio: string
+): boolean {
+  const fromDisplay = record.displayName ? extractPatrimonioFromHostname(record.displayName) : null;
+  const fromHostname = record.hostname ? extractPatrimonioFromHostname(record.hostname) : null;
+  return patrimonioEquals(fromDisplay, patrimonio) || patrimonioEquals(fromHostname, patrimonio);
+}
 
 export function jumpCloudListPayloadToRecords(data: unknown): Record<string, unknown>[] {
   if (Array.isArray(data)) {
@@ -152,15 +213,24 @@ export function jumpCloudListPayloadToRecords(data: unknown): Record<string, unk
   return [];
 }
 
-export async function findDeviceByHostname(hostname: string): Promise<DeviceLookupResult> {
-  const h = (hostname || '').trim();
-  if (!h) {
-    return { ok: false, error: 'NOT_FOUND' };
-  }
+function toRawRecords(data: unknown): RawSystemRecord[] {
+  return jumpCloudListPayloadToRecords(data) as RawSystemRecord[];
+}
 
+function deviceIdFromRecord(r: RawSystemRecord): string | null {
+  const idRaw = r._id ?? r.id;
+  if (typeof idRaw === 'string' && idRaw.length > 0) return idRaw;
+  if (typeof idRaw === 'number' && Number.isFinite(idRaw)) return String(idRaw);
+  return null;
+}
+
+/**
+ * GET systems com `?filter=...` — tenta /api/systems e /api/v2/systems (mesmo contrato do legado).
+ */
+async function searchSystemsByQuery(filterExpr: string): Promise<SearchOutcome> {
   const urls = [
-    `https://console.jumpcloud.com/api/systems?filter=hostname:eq:${encodeURIComponent(h)}`,
-    `https://console.jumpcloud.com/api/v2/systems?filter=hostname:eq:${encodeURIComponent(h)}`
+    `https://console.jumpcloud.com/api/systems?filter=${filterExpr}`,
+    `https://console.jumpcloud.com/api/v2/systems?filter=${filterExpr}`
   ];
 
   let lastApiError: string | undefined;
@@ -183,39 +253,13 @@ export async function findDeviceByHostname(hostname: string): Promise<DeviceLook
       }
 
       const data: unknown = await response.json();
-      const results = jumpCloudListPayloadToRecords(data);
+      const records = toRawRecords(data);
 
-      if (results.length === 0) {
+      if (records.length === 0) {
         continue;
       }
 
-      let candidates = results;
-      if (candidates.length > 1) {
-        const activeOnly = candidates.filter((d) => d.active === true);
-        if (activeOnly.length === 1) {
-          candidates = activeOnly;
-        } else {
-          console.warn(
-            `[ROOT_ACCESS] findDeviceByHostname(${h}): ${candidates.length} candidates, ${activeOnly.length} active, ambíguo`
-          );
-          return { ok: false, error: 'MULTIPLE' };
-        }
-      }
-
-      const device = candidates[0];
-      const idRaw = device._id ?? device.id;
-      const deviceId =
-        typeof idRaw === 'string' ? idRaw : typeof idRaw === 'number' && Number.isFinite(idRaw) ? String(idRaw) : null;
-
-      if (!deviceId) {
-        return { ok: false, error: 'API_ERROR', details: 'ID do device não encontrado na response' };
-      }
-
-      return {
-        ok: true,
-        deviceId,
-        active: device.active === true
-      };
+      return { ok: true, records };
     } catch (err) {
       lastApiError = String(err);
     }
@@ -223,6 +267,174 @@ export async function findDeviceByHostname(hostname: string): Promise<DeviceLook
 
   if (lastApiError) {
     return { ok: false, error: 'API_ERROR', details: lastApiError };
+  }
+
+  return { ok: true, records: [] };
+}
+
+/**
+ * GET systems com `?search=...` (fallback por patrimônio).
+ */
+async function searchSystemsBySearchParam(patrimonio: string): Promise<SearchOutcome> {
+  const enc = encodeURIComponent(patrimonio);
+  const urls = [
+    `https://console.jumpcloud.com/api/systems?search=${enc}`,
+    `https://console.jumpcloud.com/api/v2/systems?search=${enc}`
+  ];
+
+  let lastApiError: string | undefined;
+
+  for (const url of urls) {
+    try {
+      const response = await jumpcloudFetch(url, { method: 'GET' });
+
+      if (response.status === 404) {
+        continue;
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        lastApiError = `${response.status} - ${text}`;
+        if (response.status >= 500) {
+          return { ok: false, error: 'API_ERROR', details: lastApiError };
+        }
+        continue;
+      }
+
+      const data: unknown = await response.json();
+      const records = toRawRecords(data);
+
+      if (records.length === 0) {
+        continue;
+      }
+
+      return { ok: true, records };
+    } catch (err) {
+      lastApiError = String(err);
+    }
+  }
+
+  if (lastApiError) {
+    return { ok: false, error: 'API_ERROR', details: lastApiError };
+  }
+
+  return { ok: true, records: [] };
+}
+
+function resolveFromRecords(
+  records: RawSystemRecord[],
+  matchedBy: DeviceMatchStrategy
+): { kind: 'ok'; result: Extract<DeviceLookupResult, { ok: true }> } | { kind: 'ambiguous' } | { kind: 'missing_id' } {
+  if (records.length === 0) {
+    return { kind: 'ambiguous' };
+  }
+
+  if (records.length === 1) {
+    const r = records[0];
+    const deviceId = deviceIdFromRecord(r);
+    if (!deviceId) {
+      return { kind: 'missing_id' };
+    }
+    return {
+      kind: 'ok',
+      result: { ok: true, deviceId, active: r.active === true, matchedBy }
+    };
+  }
+
+  const actives = records.filter((r) => r.active === true);
+  if (actives.length === 1) {
+    const r = actives[0];
+    const deviceId = deviceIdFromRecord(r);
+    if (!deviceId) {
+      return { kind: 'missing_id' };
+    }
+    return {
+      kind: 'ok',
+      result: { ok: true, deviceId, active: true, matchedBy }
+    };
+  }
+
+  return { kind: 'ambiguous' };
+}
+
+export async function findDeviceByHostname(hostname: string): Promise<DeviceLookupResult> {
+  const target = (hostname || '').trim();
+  if (!target) {
+    return { ok: false, error: 'NOT_FOUND' };
+  }
+
+  const encoded = encodeURIComponent(target);
+  const filterHostname = `hostname:eq:${encoded}`;
+  const filterDisplay = `displayName:eq:${encoded}`;
+
+  const layer1 = await searchSystemsByQuery(filterHostname);
+  if (layer1.ok === false) {
+    return { ok: false, error: 'API_ERROR', details: layer1.details };
+  }
+
+  const r1 = resolveFromRecords(layer1.records, 'hostname_exact');
+  if (r1.kind === 'ok') {
+    return r1.result;
+  }
+  if (r1.kind === 'missing_id' && layer1.records.length === 1) {
+    return { ok: false, error: 'API_ERROR', details: 'ID do device não encontrado na response' };
+  }
+
+  const layer2 = await searchSystemsByQuery(filterDisplay);
+  if (layer2.ok === false) {
+    deviceLookupWarn('jumpcloud.device_lookup.layer2_api_error', { input: target, details: layer2.details });
+  } else {
+    const r2 = resolveFromRecords(layer2.records, 'displayname_exact');
+    if (r2.kind === 'ok') {
+      deviceLookupWarn('jumpcloud.device_lookup.fallback.displayname_exact', {
+        input: target,
+        deviceId: r2.result.deviceId
+      });
+      return r2.result;
+    }
+    if (r2.kind === 'missing_id' && layer2.records.length === 1) {
+      return { ok: false, error: 'API_ERROR', details: 'ID do device não encontrado na response' };
+    }
+  }
+
+  const patrimonio = extractPatrimonioFromHostname(target);
+  if (!patrimonio) {
+    return { ok: false, error: 'NOT_FOUND' };
+  }
+
+  const layer3 = await searchSystemsBySearchParam(patrimonio);
+  if (layer3.ok === false) {
+    return { ok: false, error: 'API_ERROR', details: layer3.details };
+  }
+
+  const candidatesAll = layer3.records.filter((r) => recordMatchesPatrimonio(r, patrimonio));
+  const candidatesActive = candidatesAll.filter((r) => r.active === true);
+
+  if (candidatesActive.length === 1) {
+    const r = candidatesActive[0];
+    const id = deviceIdFromRecord(r);
+    if (id) {
+      deviceLookupWarn('jumpcloud.device_lookup.fallback.patrimonio_search', {
+        input: target,
+        patrimonio,
+        deviceId: id,
+        resolvedDisplayName: r.displayName ?? null,
+        resolvedHostname: r.hostname ?? null
+      });
+      return { ok: true, deviceId: id, active: true, matchedBy: 'patrimonio_search' };
+    }
+    return { ok: false, error: 'API_ERROR', details: 'ID do device não encontrado na response' };
+  }
+
+  if (candidatesActive.length > 1) {
+    return {
+      ok: false,
+      error: 'MULTIPLE',
+      candidates: candidatesActive.slice(0, 5).map((c) => ({
+        displayName: c.displayName ?? '(sem displayName)',
+        hostname: c.hostname ?? '(sem hostname)'
+      }))
+    };
   }
 
   return { ok: false, error: 'NOT_FOUND' };

@@ -29,6 +29,8 @@
     "node_modules",
     "dist",
     "dist-server",
+    "src/**/__tests__/**",
+    "src/**/*.test.ts",
     "src/App.tsx",
     "src/main.tsx",
     "src/lib/api.ts",
