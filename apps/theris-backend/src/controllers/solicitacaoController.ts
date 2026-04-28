@@ -961,7 +961,7 @@ async function findRoleByThreeLayers(
  * Resolução por texto: camada 2 equals case-insensitive, camada 3 contains + similaridade.
  * Retorna payload para notificarOwnersFerramenta quando success.
  */
-async function runChangeRoleAutomation(
+export async function runChangeRoleAutomation(
   requestId: string,
   request: { type: string; requesterId: string | null; details: string | null; actionDate?: string | Date | null; requester?: { name?: string; email?: string } | null },
   approverId?: string | null
@@ -970,6 +970,8 @@ async function runChangeRoleAutomation(
   collaboratorName?: string;
   /** E-mail do colaborador após update (sync JumpCloud). */
   userEmail?: string;
+  /** Role Theris aplicado após update (para syncUserToJumpCloud com ap_*). */
+  newRoleId?: string | null;
   /** Códigos KBS (Role.code) antes/depois do update — para rebind explícito nos usergroups JumpCloud. */
   oldRoleCode?: string | null;
   newRoleCode?: string | null;
@@ -1181,6 +1183,7 @@ async function runChangeRoleAutomation(
     success: true,
     collaboratorName: targetUser.name,
     userEmail: targetUser.email,
+    newRoleId: roleId,
     oldRoleCode: oldRole?.code ?? null,
     newRoleCode: newRole?.code ?? null,
     notifPayload: {
@@ -1274,7 +1277,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
     // ROTA B: GESTÃO DE PESSOAS / DEPUTY — gestor aprova; exceção: Renata Czapiewski Silva vai direto para SI
     // Para CHANGE_ROLE: ao criar o chamado, enviar details.newRoleId e details.newDepartmentId (ou future.roleId / future.departmentId) quando disponíveis, para priorizar busca por ID na automação.
     else if (['DEPUTY_DESIGNATION', 'CHANGE_ROLE', 'HIRING', 'FIRING', 'PROMOCAO', 'DEMISSAO', 'ADMISSAO'].includes(safeType)) {
-      if (safeType === 'FIRING') {
+      if (safeType === 'FIRING' || safeType === 'CHANGE_ROLE') {
         status = 'PENDING_SI';
         currentApproverRole = 'SI_ANALYST';
         approverId = null;
@@ -1386,7 +1389,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
 
     console.log('[Chamado] Tentando enviar notificação SI (novo ticket) para chamado:', newRequest.id, 'tipo:', newRequest.type);
     try {
-      if (safeType !== 'FIRING' && safeType !== 'ROOT_ACCESS') {
+      if (safeType !== 'FIRING' && safeType !== 'ROOT_ACCESS' && safeType !== 'CHANGE_ROLE') {
         const { notificarSINovoTicket } = await import('../services/slackService');
         await notificarSINovoTicket({
           id: newRequest.id,
@@ -1407,7 +1410,7 @@ export const createSolicitacao = async (req: Request, res: Response) => {
       void (async () => {
         try {
           const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
-          const { sendSiTeamFiringApprovalDms } = await import('../services/siSlackApprovalService');
+          const { sendSiTeamFiringApprovalSurfaces } = await import('../services/siSlackApprovalService');
           const app = getSlackApp();
           if (!app?.client) return;
 
@@ -1439,13 +1442,48 @@ export const createSolicitacao = async (req: Request, res: Response) => {
             app.client,
             `🔴 Offboarding aberto — ${collab}, ${role}, ${dept} | Ticket: #${short}`
           );
-          await sendSiTeamFiringApprovalDms(app.client, newRequest.id, summary, requesterSlackId);
+          await sendSiTeamFiringApprovalSurfaces(app.client, newRequest.id, summary, requesterSlackId);
           await postSlackAcessosChannel(
             app.client,
             `ℹ️ Solicitação de aprovação SI enviada (DM) · ${collab} · #${short} · ${formatTimestampBrt()} BRT`
           );
         } catch (e) {
           console.error('[createSolicitacao FIRING] Slack flow:', e);
+        }
+      })();
+    }
+
+    if (safeType === 'CHANGE_ROLE' && status === 'PENDING_SI') {
+      void (async () => {
+        try {
+          const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+          const { sendSiTeamChangeRoleApprovalSurfaces } = await import('../services/changeRoleSlackInteractive');
+          const app = getSlackApp();
+          if (!app?.client) return;
+          const row = await prisma.request.findUnique({
+            where: { id: newRequest.id },
+            include: { requester: { select: { name: true, email: true } } }
+          });
+          if (!row) return;
+          let nome = '—';
+          try {
+            const d = JSON.parse(row.details || '{}');
+            nome = String(d.collaboratorName || d.info || '—').replace(/^[^:]+:\s*/, '') || '—';
+          } catch {
+            nome = '—';
+          }
+          const short = newRequest.id.slice(0, 8);
+          await postSlackAcessosChannel(
+            app.client,
+            `🔄 Mudança de cargo aberta — ${nome} | #${short} · ${formatTimestampBrt()} BRT`
+          );
+          await sendSiTeamChangeRoleApprovalSurfaces(app.client, row as never);
+          await postSlackAcessosChannel(
+            app.client,
+            `ℹ️ Aprovação SI enviada (canal + DM) · ${nome} · #${short} · ${formatTimestampBrt()} BRT`
+          );
+        } catch (e) {
+          console.error('[createSolicitacao CHANGE_ROLE] Slack flow:', e);
         }
       })();
     }
@@ -1475,6 +1513,126 @@ export const createSolicitacao = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('SOLICITACOES ERROR (createSolicitacao):', error);
     if (error instanceof Error) console.error('Stack:', error.stack);
+    return res.status(500).json({ error: 'Erro interno.' });
+  }
+};
+
+/** POST /api/requests/change-role — mesmo contrato do modal Slack (P&C); cria Request PENDING_SI + superfícies SI. */
+export const postChangeRoleFromApi = async (req: Request, res: Response) => {
+  try {
+    const authUser = (req as Request & { authUser?: { id: string } }).authUser;
+    if (!authUser?.id) return res.status(401).json({ error: 'Não autenticado.' });
+
+    const collaboratorId = String((req.body as { colaboradorId?: string })?.colaboradorId || '').trim();
+    const roleNovoId = String((req.body as { roleNovoId?: string })?.roleNovoId || '').trim();
+    const justificativa = String((req.body as { justificativa?: string })?.justificativa || '').trim();
+    if (!collaboratorId || !roleNovoId || !justificativa) {
+      return res.status(400).json({ error: 'Dados incompletos.', code: 'INVALID_BODY' });
+    }
+
+    const [target, roleNova] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: collaboratorId },
+        select: {
+          id: true,
+          name: true,
+          roleId: true,
+          departmentId: true,
+          jobTitle: true,
+          departmentRef: { select: { name: true } }
+        }
+      }),
+      prisma.role.findUnique({
+        where: { id: roleNovoId },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          departmentId: true,
+          department: { select: { name: true } }
+        }
+      })
+    ]);
+
+    if (!target) return res.status(404).json({ error: 'Colaborador não encontrado.' });
+    if (!roleNova) return res.status(404).json({ error: 'Cargo não encontrado.' });
+    if (target.roleId === roleNovoId) {
+      return res.status(400).json({ error: 'O novo cargo deve ser diferente do atual.', code: 'SAME_ROLE' });
+    }
+    const code = (roleNova.code || '').trim();
+    if (!code) {
+      return res.status(400).json({
+        error: 'ROLE_SEM_CODE',
+        message: `Cargo "${roleNova.name}" sem código KBS. Cadastre antes de criar a solicitação.`
+      });
+    }
+
+    const oldRole = target.roleId
+      ? await prisma.role.findUnique({ where: { id: target.roleId }, select: { name: true } })
+      : null;
+
+    const details = {
+      info: `Mudança de Cargo: ${target.name}`,
+      collaboratorName: target.name,
+      collaboratorId: target.id,
+      ...(target.roleId ? { oldRoleId: target.roleId } : {}),
+      subtipo: 'MUDANCA_CARGO',
+      current: {
+        role: oldRole?.name || target.jobTitle || '',
+        dept: target.departmentRef?.name || ''
+      },
+      future: {
+        role: roleNova.name,
+        dept: roleNova.department?.name || target.departmentRef?.name || ''
+      },
+      newRoleId: roleNova.id,
+      ...(roleNova.departmentId ? { newDepartmentId: roleNova.departmentId } : {}),
+      reason: justificativa,
+      source: 'api'
+    };
+
+    const created = await prisma.request.create({
+      data: {
+        requesterId: authUser.id,
+        type: 'CHANGE_ROLE',
+        details: JSON.stringify(details),
+        justification: justificativa,
+        status: 'PENDING_SI',
+        currentApproverRole: 'SI_ANALYST',
+        approverId: null,
+        assigneeId: authUser.id
+      },
+      include: { requester: { select: { name: true, email: true } } }
+    });
+
+    void (async () => {
+      try {
+        const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+        const { sendSiTeamChangeRoleApprovalSurfaces } = await import('../services/changeRoleSlackInteractive');
+        const app = getSlackApp();
+        if (!app?.client) return;
+        const row = await prisma.request.findUnique({
+          where: { id: created.id },
+          include: { requester: { select: { name: true, email: true } } }
+        });
+        if (!row) return;
+        await postSlackAcessosChannel(
+          app.client,
+          `🔄 Mudança de cargo (API) — ${target.name} | #${created.id.slice(0, 8)} · ${formatTimestampBrt()} BRT`
+        );
+        await sendSiTeamChangeRoleApprovalSurfaces(app.client, row as never);
+        await postSlackAcessosChannel(
+          app.client,
+          `ℹ️ Aprovação SI enviada (canal + DM) · #${created.id.slice(0, 8)} · ${formatTimestampBrt()} BRT`
+        );
+      } catch (e) {
+        console.error('[postChangeRoleFromApi] Slack:', e);
+      }
+    })();
+
+    return res.status(201).json(created);
+  } catch (error) {
+    console.error('postChangeRoleFromApi:', error);
     return res.status(500).json({ error: 'Erro interno.' });
   }
 };
@@ -1721,7 +1879,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
       (action === 'APROVADO' || action === 'REPROVADO') &&
       !isVpn &&
       request.status === 'PENDING_SI' &&
-      (isAexPendingSI || request.type === 'HIRING' || request.type === 'FIRING')
+      (isAexPendingSI || request.type === 'HIRING' || request.type === 'FIRING' || request.type === 'CHANGE_ROLE')
     ) {
       return res.status(403).json({
         error: 'USE_SLACK_ACTION',
@@ -2297,7 +2455,7 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
               // Employment no JC; em seguida rebind explícito KBS (remove grupo antigo + add novo) — tryRebindJumpCloudKbsGroupAfterRoleChange
               // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY para garantir correspondência exata
               const { firePostSlackAcessosChannel } = await import('../services/slackService');
-              void syncUserToJumpCloud(result.userEmail)
+              void syncUserToJumpCloud(result.userEmail, result.newRoleId ?? null)
                 .then(() => {
                   firePostSlackAcessosChannel(
                     `🔧 JumpCloud atualizado — novo cargo/departamento sincronizado | Ticket: #${id.slice(0, 8)}`
@@ -2305,7 +2463,8 @@ export const updateSolicitacao = async (req: Request, res: Response) => {
                   return tryRebindJumpCloudKbsGroupAfterRoleChange({
                     userEmail: result.userEmail!,
                     oldRoleCode: result.oldRoleCode ?? null,
-                    newRoleCode: result.newRoleCode ?? null
+                    newRoleCode: result.newRoleCode ?? null,
+                    requestId: id
                   });
                 })
                 .catch((err) => console.error('[JumpCloud Sync / CHANGE_ROLE KBS] Erro:', err));
@@ -2663,7 +2822,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
     if (
       status !== undefined &&
       String(status) === 'APROVADO' &&
-      (existing.type === 'HIRING' || existing.type === 'FIRING') &&
+      (existing.type === 'HIRING' || existing.type === 'FIRING' || existing.type === 'CHANGE_ROLE') &&
       existing.status === 'PENDING_SI'
     ) {
       return res.status(403).json({
@@ -2671,7 +2830,9 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
         message:
           existing.type === 'HIRING'
             ? 'Onboarding: aprove ou recuse pelos botões na DM do Slack.'
-            : 'Offboarding: aprove ou recuse pelos botões na DM do Slack.'
+            : existing.type === 'FIRING'
+              ? 'Offboarding: aprove ou recuse pelos botões na DM do Slack.'
+              : 'Mudança de cargo: aprove ou recuse pelos botões no Slack (canal SI ou DM).'
       });
     }
 
@@ -2805,7 +2966,7 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
               // Employment no JC; em seguida rebind explícito KBS — tryRebindJumpCloudKbsGroupAfterRoleChange
               // ATENÇÃO: company deve usar UNIT_TO_JC_COMPANY para garantir correspondência exata
               const { firePostSlackAcessosChannel } = await import('../services/slackService');
-              void syncUserToJumpCloud(result.userEmail)
+              void syncUserToJumpCloud(result.userEmail, result.newRoleId ?? null)
                 .then(() => {
                   firePostSlackAcessosChannel(
                     `🔧 JumpCloud atualizado — novo cargo/departamento sincronizado | Ticket: #${id.slice(0, 8)}`
@@ -2813,7 +2974,8 @@ export const updateSolicitacaoMetadata = async (req: Request, res: Response) => 
                   return tryRebindJumpCloudKbsGroupAfterRoleChange({
                     userEmail: result.userEmail!,
                     oldRoleCode: result.oldRoleCode ?? null,
-                    newRoleCode: result.newRoleCode ?? null
+                    newRoleCode: result.newRoleCode ?? null,
+                    requestId: id
                   });
                 })
                 .catch((err) => console.error('[JumpCloud Sync / CHANGE_ROLE KBS] Erro:', err));
@@ -4075,6 +4237,232 @@ export async function rejectHiringViaSlack(
       const d = JSON.parse(req?.details || '{}');
       const collab = (d.collaboratorName as string) || '—';
       const line = `❌ Onboarding recusado pelo SI · ${collab} · #${requestId.slice(0, 8)} · ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`;
+      await postSlackAcessosChannel(app.client, line);
+    }
+  } catch (_) {}
+
+  return 'ok';
+}
+
+export async function approveChangeRoleViaSlack(
+  requestId: string,
+  actorSlackId: string,
+  therisApproverId: string | null,
+  deciderName: string
+): Promise<'ok' | 'race' | 'bad_status' | 'exec_failed'> {
+  const reqRow = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, name: true, email: true } } }
+  });
+  if (!reqRow || reqRow.status !== 'PENDING_SI' || reqRow.type !== 'CHANGE_ROLE') return 'bad_status';
+
+  const cnt = await prisma.request.updateMany({
+    where: { id: requestId, status: 'PENDING_SI', siApprovedBy: null, type: 'CHANGE_ROLE' },
+    data: {
+      status: 'APROVADO',
+      siApprovedBy: actorSlackId,
+      siApprovedAt: new Date(),
+      approverId: therisApproverId,
+      ...(therisApproverId ? { assigneeId: therisApproverId } : {}),
+      adminNote: 'Aprovado pelo SI (Slack) — mudança de cargo.',
+      updatedAt: new Date()
+    }
+  });
+  if (cnt.count === 0) return 'race';
+
+  const fresh = await prisma.request.findUnique({
+    where: { id: requestId },
+    include: { requester: { select: { id: true, name: true, email: true } } }
+  });
+  if (!fresh) return 'bad_status';
+
+  const parseDetails = (): { nome: string; cargoAtual: string; cargoNovo: string } => {
+    try {
+      const d = JSON.parse(fresh.details || '{}') as Record<string, unknown>;
+      const nome = String(d.collaboratorName || d.info || '—').replace(/^[^:]+:\s*/, '') || '—';
+      const cur = (d.current as { role?: string }) || {};
+      const fut = (d.future as { role?: string }) || {};
+      return { nome, cargoAtual: String(cur.role || '—'), cargoNovo: String(fut.role || '—') };
+    } catch {
+      return { nome: '—', cargoAtual: '—', cargoNovo: '—' };
+    }
+  };
+  const labels = parseDetails();
+
+  const result = await runChangeRoleAutomation(requestId, fresh, therisApproverId);
+  if (!result.success) {
+    console.warn(JSON.stringify({ event: 'change_role.automation_failed', requestId }));
+    try {
+      const { finalizeChangeRoleSiInteractiveSurfaces } = await import('../services/changeRoleSlackInteractive');
+      const { getSlackApp } = await import('../services/slackService');
+      const app = getSlackApp();
+      if (app?.client) {
+        await finalizeChangeRoleSiInteractiveSurfaces(app.client, requestId, {
+          kind: 'approve_automation_failed',
+          actorSlackId,
+          collaboratorName: labels.nome,
+          detail: 'Automação Theris não aplicou cargo/departamento (revise collaboratorId, future e roles no chamado).'
+        });
+      }
+    } catch (_) {}
+    return 'exec_failed';
+  }
+
+  if (result.userEmail) {
+    try {
+      await tryRebindJumpCloudKbsGroupAfterRoleChange({
+        userEmail: result.userEmail,
+        oldRoleCode: result.oldRoleCode ?? null,
+        newRoleCode: result.newRoleCode ?? null,
+        requestId
+      });
+    } catch (e) {
+      console.warn(JSON.stringify({ event: 'change_role.jc_rebind_exception', requestId, err: String(e) }));
+    }
+    try {
+      await syncUserToJumpCloud(result.userEmail, result.newRoleId ?? null);
+    } catch (e) {
+      console.warn(JSON.stringify({ event: 'change_role.jc_sync_exception', requestId, err: String(e) }));
+    }
+  }
+
+  let ownersNotified = 0;
+  if (result.notifPayload) {
+    try {
+      const details = JSON.parse(fresh.details || '{}') as Record<string, unknown>;
+      const subtipo = (details.subtipo as string | undefined)?.trim()?.toUpperCase() || '';
+      const isCargo = subtipo === 'MUDANCA_CARGO';
+      const isDepto = subtipo === 'MUDANCA_DEPARTAMENTO';
+      const { notificarOwnersMudancaCargo, notificarOwnersMudancaDepto, notificarOwnersFerramenta } = await import(
+        '../services/slackService'
+      );
+      if (isCargo) {
+        ownersNotified += await notificarOwnersMudancaCargo(
+          result.notifPayload.colaborador,
+          result.notifPayload.kbsAnterior,
+          result.notifPayload.kbsNovo,
+          requestId,
+          result.notifPayload.dataAcao
+        );
+      } else if (isDepto) {
+        ownersNotified += await notificarOwnersMudancaDepto(
+          result.notifPayload.colaborador,
+          result.notifPayload.kbsAnterior,
+          result.notifPayload.kbsNovo,
+          requestId,
+          result.notifPayload.dataAcao
+        );
+      } else {
+        await notificarOwnersFerramenta(
+          result.notifPayload.colaborador,
+          result.notifPayload.kbsAnterior,
+          result.notifPayload.kbsNovo,
+          requestId,
+          result.notifPayload.dataAcao
+        );
+        ownersNotified = 1;
+      }
+    } catch (notifErr) {
+      console.error('[CHANGE_ROLE] Falha ao notificar owners:', notifErr);
+    }
+  }
+
+  try {
+    const { finalizeChangeRoleSiInteractiveSurfaces } = await import('../services/changeRoleSlackInteractive');
+    const { getSlackApp } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      await finalizeChangeRoleSiInteractiveSurfaces(app.client, requestId, {
+        kind: 'approve',
+        actorSlackId,
+        collaboratorName: labels.nome,
+        cargoAtual: labels.cargoAtual,
+        cargoNovo: labels.cargoNovo,
+        ownersNotified
+      });
+    }
+  } catch (e) {
+    console.error('[CHANGE_ROLE] finalize SI surfaces:', e);
+  }
+
+  if (fresh.requester?.email) {
+    try {
+      const { sendChangeRoleApprovedDM } = await import('../services/slackService');
+      await sendChangeRoleApprovedDM(fresh.requester.email, result.collaboratorName || 'Colaborador');
+    } catch (_) {}
+  }
+
+  try {
+    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      const nm = await prisma.user.findUnique({ where: { id: therisApproverId || '' }, select: { name: true } });
+      const line = `✅ Mudança de cargo aplicada · ${result.collaboratorName || '—'} · #${requestId.slice(0, 8)} · ${nm?.name || deciderName} · ${formatTimestampBrt()} BRT`;
+      await postSlackAcessosChannel(app.client, line);
+    }
+  } catch (_) {}
+
+  return 'ok';
+}
+
+export async function rejectChangeRoleViaSlack(
+  requestId: string,
+  actorSlackId: string,
+  therisApproverId: string | null
+): Promise<'ok' | 'race'> {
+  const cnt = await prisma.request.updateMany({
+    where: { id: requestId, status: 'PENDING_SI', type: 'CHANGE_ROLE' },
+    data: {
+      status: 'REPROVADO',
+      adminNote: 'Recusado pelo SI (Slack) — mudança de cargo.',
+      updatedAt: new Date(),
+      ...(therisApproverId ? { approverId: therisApproverId, assigneeId: therisApproverId } : {})
+    }
+  });
+  if (cnt.count === 0) return 'race';
+
+  const req = await prisma.request.findUnique({ where: { id: requestId }, include: { requester: { select: { email: true } } } });
+  if (req?.requester?.email) {
+    try {
+      const { getSlackApp, sendDmToSlackUser } = await import('../services/slackService');
+      const app = getSlackApp();
+      if (app?.client) {
+        const lookup = await app.client.users.lookupByEmail({ email: req.requester.email });
+        if (lookup.user?.id) {
+          await sendDmToSlackUser(
+            app.client,
+            lookup.user.id,
+            `❌ Seu pedido de mudança de cargo (#${requestId.slice(0, 8)}) foi recusado pelo time de SI.`
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[CHANGE_ROLE] reject notify:', e);
+    }
+  }
+
+  try {
+    const { finalizeChangeRoleSiInteractiveSurfaces } = await import('../services/changeRoleSlackInteractive');
+    const { getSlackApp } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      await finalizeChangeRoleSiInteractiveSurfaces(app.client, requestId, {
+        kind: 'reject',
+        actorSlackId
+      });
+    }
+  } catch (e) {
+    console.error('[CHANGE_ROLE] finalize reject:', e);
+  }
+
+  try {
+    const { getSlackApp, postSlackAcessosChannel, formatTimestampBrt } = await import('../services/slackService');
+    const app = getSlackApp();
+    if (app?.client) {
+      const nm = await prisma.user.findUnique({ where: { id: therisApproverId || '' }, select: { name: true } });
+      const d = JSON.parse(req?.details || '{}');
+      const collab = (d.collaboratorName as string) || '—';
+      const line = `❌ Mudança de cargo recusada pelo SI · ${collab} · #${requestId.slice(0, 8)} · ${nm?.name || 'SI'} · ${formatTimestampBrt()} BRT`;
       await postSlackAcessosChannel(app.client, line);
     }
   } catch (_) {}

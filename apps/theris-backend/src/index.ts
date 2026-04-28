@@ -10,6 +10,7 @@ import helmet from 'helmet';
 // --- IMPORTAÇÕES DOS CONTROLADORES ---
 import {
   createSolicitacao,
+  postChangeRoleFromApi,
   getSolicitacoes,
   getMyTickets,
   updateSolicitacao,
@@ -456,6 +457,7 @@ app.get('/api/root-access/:id', getRootAccessDetail);
 app.get('/api/solicitacoes/my-tickets', getMyTickets);
 app.get('/api/solicitacoes/:id', getSolicitacaoById);
 app.post('/api/solicitacoes', createSolicitacao);
+app.post('/api/requests/change-role', postChangeRoleFromApi);
 app.patch('/api/solicitacoes/:id/metadata', updateSolicitacaoMetadata);
 app.patch('/api/solicitacoes/:id/assignee', patchRequestAssignee);
 app.patch('/api/solicitacoes/:id/inbox', patchRequestInbox);
