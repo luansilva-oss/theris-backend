@@ -127,25 +127,26 @@ export async function tryRebindJumpCloudKbsGroupAfterRoleChange(params: {
   userEmail: string;
   oldRoleCode: string | null;
   newRoleCode: string | null;
+  /** Para correlação em logs (ex.: id do Request). */
+  requestId?: string | null;
 }): Promise<void> {
   const email = (params.userEmail || '').trim();
   if (!email) return;
 
   const oldRaw = params.oldRoleCode != null ? String(params.oldRoleCode).trim() : '';
   const newRaw = params.newRoleCode != null ? String(params.newRoleCode).trim() : '';
+  const rid = (params.requestId || '').trim() || undefined;
 
   const newValid = Boolean(newRaw && KBS_ROLE_CODE_RE.test(newRaw));
   if (!newValid) {
     console.warn(
-      `[CHANGE_ROLE] KBS novo inválido ou ausente para ${email}: old=${oldRaw || 'null'}, new=${newRaw || 'null'}`
-    );
-    await notifySiSlackJumpCloudKbsIssue(
-      `⚠️ *CHANGE_ROLE — KBS*\n` +
-        `CHANGE_ROLE sem código KBS válido para o **novo** cargo (grupo KBS no JumpCloud não será atualizado).\n` +
-        `• E-mail: \`${email}\`\n` +
-        `• Antigo: \`${oldRaw || '—'}\`\n` +
-        `• Novo: \`${newRaw || '—'}\`\n` +
-        `_Ação:_ corrigir \`role.code\` no Theris e vincular manualmente no JumpCloud se necessário.`
+      JSON.stringify({
+        event: 'change_role.kbs_rebind.skipped_invalid_new',
+        requestId: rid,
+        userEmail: email,
+        kbsAntigo: oldRaw || null,
+        kbsNovo: newRaw || null
+      })
     );
     return;
   }
@@ -159,25 +160,26 @@ export async function tryRebindJumpCloudKbsGroupAfterRoleChange(params: {
   try {
     jumpcloudUserId = await getSystemUserIdByEmail(email);
   } catch (e) {
-    console.error(`[CHANGE_ROLE] Erro ao resolver JumpCloud ID para ${email}:`, e);
-    await notifySiSlackJumpCloudKbsIssue(
-      `⚠️ *CHANGE_ROLE — KBS*\n` +
-        `Erro ao resolver utilizador JumpCloud por e-mail.\n` +
-        `• E-mail: \`${email}\`\n` +
-        `• Novo KBS: \`${newRaw}\`\n` +
-        `_Ação:_ verificar JumpCloud / Theris e vincular KBS manualmente.`
+    console.warn(
+      JSON.stringify({
+        event: 'change_role.kbs_rebind.jc_user_resolve_error',
+        requestId: rid,
+        userEmail: email,
+        kbsNovo: newRaw,
+        err: e instanceof Error ? e.message : String(e)
+      })
     );
     return;
   }
 
   if (!jumpcloudUserId) {
-    console.warn(`[CHANGE_ROLE] JumpCloud: ${email} sem ID JC — rebind KBS ignorado.`);
-    await notifySiSlackJumpCloudKbsIssue(
-      `⚠️ *CHANGE_ROLE — KBS*\n` +
-        `Utilizador sem ID no JumpCloud (não encontrado por e-mail).\n` +
-        `• E-mail: \`${email}\`\n` +
-        `• Novo KBS: \`${newRaw}\`\n` +
-        `_Ação:_ após existir no JC, vincular ao usergroup \`${newRaw}\` manualmente.`
+    console.warn(
+      JSON.stringify({
+        event: 'change_role.kbs_rebind.skipped_no_jc_user',
+        requestId: rid,
+        userEmail: email,
+        kbsNovo: newRaw
+      })
     );
     return;
   }
@@ -187,65 +189,75 @@ export async function tryRebindJumpCloudKbsGroupAfterRoleChange(params: {
     try {
       const oldGroupId = await findGroupIdByKbsCode(oldRaw);
       if (!oldGroupId) {
-        await notifySiSlackJumpCloudKbsIssue(
-          `⚠️ *CHANGE_ROLE — KBS*\n` +
-            `Grupo antigo \`${oldRaw}\` não encontrado na API JumpCloud (remoção ignorada; segue adição ao novo).\n` +
-            `• E-mail: \`${email}\`\n` +
-            `• Novo KBS: \`${newRaw}\`\n` +
-            `_Ação:_ alinhar nome do usergroup no JumpCloud ou remover membro manualmente.`
+        console.warn(
+          JSON.stringify({
+            event: 'change_role.kbs_unbind.old_group_not_found',
+            requestId: rid,
+            userEmail: email,
+            kbsAntigo: oldRaw,
+            kbsNovo: newRaw
+          })
         );
       } else {
         try {
           const removed = await removeUserFromGroup(jumpcloudUserId, oldGroupId);
           if (!removed) {
-            await notifySiSlackJumpCloudKbsIssue(
-              `⚠️ *CHANGE_ROLE — KBS*\n` +
-                `Falha ao remover \`${email}\` do usergroup \`${oldRaw}\` (POST members remove não OK).\n` +
-                `• Novo KBS previsto: \`${newRaw}\`\n` +
-                `_Ação:_ rever membros no JumpCloud; o fluxo seguiu para tentar adicionar ao novo grupo.`
+            console.warn(
+              JSON.stringify({
+                event: 'change_role.kbs_unbind.remove_not_ok',
+                requestId: rid,
+                userEmail: email,
+                kbsAntigo: oldRaw,
+                kbsNovo: newRaw
+              })
             );
           }
         } catch (rmErr) {
-          const rmMsg = rmErr instanceof Error ? rmErr.message : String(rmErr);
-          console.error(`[CHANGE_ROLE] Exceção ao remover ${email} do grupo ${oldRaw}:`, rmErr);
-          await notifySiSlackJumpCloudKbsIssue(
-            `⚠️ *CHANGE_ROLE — KBS*\n` +
-              `Exceção ao remover \`${email}\` do usergroup \`${oldRaw}\`: ${rmMsg}\n` +
-              `• Novo KBS previsto: \`${newRaw}\`\n` +
-              `_Ação:_ rever JumpCloud manualmente; segue tentativa de adicionar ao novo grupo.`
+          console.warn(
+            JSON.stringify({
+              event: 'change_role.kbs_unbind.exception',
+              requestId: rid,
+              userEmail: email,
+              kbsAntigo: oldRaw,
+              kbsNovo: newRaw,
+              err: rmErr instanceof Error ? rmErr.message : String(rmErr)
+            })
           );
         }
       }
     } catch (e) {
-      console.error(`[CHANGE_ROLE] Erro ao resolver grupo antigo ${oldRaw}:`, e);
-      await notifySiSlackJumpCloudKbsIssue(
-        `⚠️ *CHANGE_ROLE — KBS*\n` +
-          `Erro ao resolver grupo antigo \`${oldRaw}\` para \`${email}\`.\n` +
-          `• Novo KBS: \`${newRaw}\`\n` +
-          `_Ação:_ verificar JumpCloud.`
+      console.warn(
+        JSON.stringify({
+          event: 'change_role.kbs_unbind.resolve_old_group_error',
+          requestId: rid,
+          userEmail: email,
+          kbsAntigo: oldRaw,
+          err: e instanceof Error ? e.message : String(e)
+        })
       );
     }
   } else {
-    console.info(
-      `[CHANGE_ROLE] Cargo antigo de ${email} sem code KBS válido (${oldRaw || 'null'}) — pulando remoção de grupo KBS antigo no JumpCloud.`
-    );
-    await notifySiSlackJumpCloudKbsIssue(
-      `⚠️ *CHANGE_ROLE — KBS*\n` +
-        `Cargo **antigo** sem \`role.code\` KBS válido (\`${oldRaw || 'null'}\`) — *pulada* remoção do usergroup KBS antigo no JumpCloud.\n` +
-        `• E-mail: \`${email}\`\n` +
-        `• Novo KBS: \`${newRaw}\`\n` +
-        `_Ação:_ rever membros antigos manualmente no JumpCloud se aplicável.`
+    console.warn(
+      JSON.stringify({
+        event: 'change_role.kbs_unbind.skipped_no_code',
+        requestId: rid,
+        userEmail: email,
+        kbsAntigo: oldRaw || null,
+        kbsNovo: newRaw
+      })
     );
   }
 
   try {
     const newGroupId = await findGroupIdByKbsCode(newRaw);
     if (!newGroupId) {
-      console.error(`[CHANGE_ROLE] Grupo novo ${newRaw} não encontrado no JumpCloud — ${email} sem KBS após CHANGE_ROLE.`);
-      await notifySiSlackJumpCloudKbsIssue(
-        `⚠️ *CHANGE_ROLE — KBS*\n` +
-          `Grupo novo \`${newRaw}\` não encontrado na API JumpCloud — utilizador \`${email}\` pode ficar sem KBS explícito.\n` +
-          `_Ação:_ criar/alinhar o usergroup no JumpCloud ou vincular manualmente.`
+      console.warn(
+        JSON.stringify({
+          event: 'change_role.kbs_add.new_group_not_found',
+          requestId: rid,
+          userEmail: email,
+          kbsNovo: newRaw
+        })
       );
       return;
     }
@@ -254,12 +266,16 @@ export async function tryRebindJumpCloudKbsGroupAfterRoleChange(params: {
     console.info(`[CHANGE_ROLE] ${email}: removido de ${removedPart}, adicionado a ${newRaw}`);
   } catch (addErr) {
     const addMsg = addErr instanceof Error ? addErr.message : String(addErr);
-    console.error(`[CHANGE_ROLE] Falha ao adicionar ${email} ao KBS ${newRaw}:`, addErr);
-    await notifySiSlackJumpCloudKbsIssue(
-      `⚠️ *CHANGE_ROLE — KBS*\n` +
-        `Falha ao adicionar \`${email}\` ao usergroup \`${newRaw}\` (POST members add).\n` +
-        `• Erro: ${addMsg}\n` +
-        `_Ação:_ vincular ao grupo KBS manualmente no JumpCloud.`
+    const statusMatch = addMsg.match(/\b409\b/);
+    console.warn(
+      JSON.stringify({
+        event: 'jumpcloud.kbs_add.error',
+        requestId: rid,
+        userEmail: email,
+        groupCode: newRaw,
+        status: statusMatch ? 409 : undefined,
+        err: addMsg.slice(0, 500)
+      })
     );
   }
 }

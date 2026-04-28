@@ -28,3 +28,6 @@ dist/
 /src/generated/prisma
 .env.swp
 *.swp
+
+# JumpCloud divergence reports (output local de scripts)
+divergencias-*.csv

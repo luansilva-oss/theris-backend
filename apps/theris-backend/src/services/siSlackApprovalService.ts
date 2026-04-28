@@ -1,18 +1,21 @@
 /**
  * Aprovação do time de SI via Slack (AEX, Onboarding, Offboarding, Acesso Root).
- * DMs SI: `siSlackMessageTs` [{ userId, ts }]. ROOT_ACCESS também persiste `siSlackRootChannelTs` (ts no canal SI).
+ * `siSlackMessageTs` [{ userId, ts }]; `siSlackRootChannelTs` no canal SI — ROOT_ACCESS, CHANGE_ROLE, HIRING e FIRING.
  */
 import type { WebClient } from '@slack/web-api';
 import type { Request } from '@prisma/client';
 import { prisma } from '../lib/prisma';
+import { clearSiSlackTrackingFields } from '../slack/siSlackTracking';
 import { REQUEST_TYPES } from '../types/requestTypes';
 import type { RootAccessDetails } from '../types/rootAccess';
 import { URGENCIA_LABELS, isTipoUrgencia } from '../types/rootAccess';
 import {
   approveAexViaSlack,
+  approveChangeRoleViaSlack,
   approveFiringViaSlack,
   approveHiringViaSlack,
   rejectAexViaSlack,
+  rejectChangeRoleViaSlack,
   rejectFiringViaSlack,
   rejectHiringViaSlack
 } from '../controllers/solicitacaoController';
@@ -206,53 +209,256 @@ export async function sendSiTeamAexApprovalDms(
   }
 }
 
-export async function sendSiTeamOnboardingApprovalDms(
+/** Canal SI + DMs (exclui solicitante). Mesmos `action_id` que AEX (`aex_si_*`). */
+export async function sendSiTeamHiringApprovalSurfaces(
   client: WebClient,
   requestId: string,
   summary: string,
   requesterSlackId?: string | null
 ): Promise<void> {
-  const recipients = getSiRecipientSlackIdsForOnboarding(requesterSlackId);
   const blocks = onboardingSiBlocks(requestId, summary);
+  const channelId = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+  const plain = `👤 Contratação — #${requestId.slice(0, 8)} — aprovação SI`;
+
+  let channelTs: string | undefined;
+  if (channelId) {
+    try {
+      const pm = await client.chat.postMessage({
+        channel: channelId,
+        text: plain,
+        blocks: blocks as never
+      });
+      channelTs = pm.ts ?? undefined;
+    } catch (e) {
+      console.error('[HIRING] Falha ao postar no canal SI:', e);
+    }
+  }
+
+  const recipients = getSiRecipientSlackIdsForOnboarding(requesterSlackId ?? undefined);
   const refs: SiDmRef[] = [];
   for (const uid of recipients) {
     try {
-      const { ts } = await openDmPostReturnTs(client, uid, `Onboarding #${requestId.slice(0, 8)} — aprovação SI`, blocks);
+      const { ts } = await openDmPostReturnTs(client, uid, plain, blocks);
       refs.push({ userId: uid, ts });
     } catch (e) {
-      console.error('[SI Slack] Falha DM Onboarding para', uid, e);
+      console.error('[HIRING] Falha DM SI para', uid, e);
     }
   }
-  if (refs.length > 0) {
-    await prisma.request.update({
-      where: { id: requestId },
-      data: { siSlackMessageTs: refs as unknown as object[] }
-    });
+
+  const data: { siSlackRootChannelTs?: string; siSlackMessageTs?: object[] } = {};
+  if (channelTs) data.siSlackRootChannelTs = channelTs;
+  if (refs.length > 0) data.siSlackMessageTs = refs as unknown as object[];
+  if (Object.keys(data).length > 0) {
+    await prisma.request.update({ where: { id: requestId }, data });
   }
 }
 
-export async function sendSiTeamFiringApprovalDms(
+/** Canal SI + DMs (exclui solicitante). Mesmos `action_id` que AEX (`aex_si_*`). */
+export async function sendSiTeamFiringApprovalSurfaces(
   client: WebClient,
   requestId: string,
   summary: string,
   requesterSlackId?: string | null
 ): Promise<void> {
-  const recipients = getSiRecipientSlackIdsForOnboarding(requesterSlackId);
   const blocks = firingSiBlocks(requestId, summary);
+  const channelId = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+  const plain = `🔴 Offboarding — #${requestId.slice(0, 8)} — aprovação SI`;
+
+  let channelTs: string | undefined;
+  if (channelId) {
+    try {
+      const pm = await client.chat.postMessage({
+        channel: channelId,
+        text: plain,
+        blocks: blocks as never
+      });
+      channelTs = pm.ts ?? undefined;
+    } catch (e) {
+      console.error('[FIRING] Falha ao postar no canal SI:', e);
+    }
+  }
+
+  const recipients = getSiRecipientSlackIdsForOnboarding(requesterSlackId ?? undefined);
   const refs: SiDmRef[] = [];
   for (const uid of recipients) {
     try {
-      const { ts } = await openDmPostReturnTs(client, uid, `Offboarding #${requestId.slice(0, 8)} — aprovação SI`, blocks);
+      const { ts } = await openDmPostReturnTs(client, uid, plain, blocks);
       refs.push({ userId: uid, ts });
     } catch (e) {
-      console.error('[SI Slack] Falha DM Offboarding para', uid, e);
+      console.error('[FIRING] Falha DM SI para', uid, e);
     }
   }
-  if (refs.length > 0) {
-    await prisma.request.update({
-      where: { id: requestId },
-      data: { siSlackMessageTs: refs as unknown as object[] }
-    });
+
+  const data: { siSlackRootChannelTs?: string; siSlackMessageTs?: object[] } = {};
+  if (channelTs) data.siSlackRootChannelTs = channelTs;
+  if (refs.length > 0) data.siSlackMessageTs = refs as unknown as object[];
+  if (Object.keys(data).length > 0) {
+    await prisma.request.update({ where: { id: requestId }, data });
+  }
+}
+
+function parseHiringFiringDetailsForSiFinalize(detailsJson: string | null): { name: string; jobTitle: string } {
+  try {
+    const d = typeof detailsJson === 'string' ? JSON.parse(detailsJson || '{}') : (detailsJson as object) || {};
+    const name = String(d.collaboratorName || d.info || '—').replace(/^[^:]+:\s*/, '') || '—';
+    const jobTitle = String(d.role || d.jobTitle || '—');
+    return { name, jobTitle };
+  } catch {
+    return { name: '—', jobTitle: '—' };
+  }
+}
+
+export type HiringSiFinalizeKind = { kind: 'reject'; actorSlackId: string } | { kind: 'approve'; actorSlackId: string };
+
+// Cleanup de siSlack* sempre roda (try/finally), mesmo se chat.update
+// falhar — evita ts órfãos que virariam message_not_found em crons.
+/** Atualiza card no canal SI + DMs SI após decisão SI (HIRING). */
+export async function finalizeHiringSiInteractiveSurfaces(
+  client: WebClient,
+  requestId: string,
+  opts: HiringSiFinalizeKind
+): Promise<void> {
+  const row = await prisma.request.findUnique({
+    where: { id: requestId },
+    select: { siSlackRootChannelTs: true, siSlackMessageTs: true, siApprovedAt: true, details: true }
+  });
+  if (!row) {
+    console.warn(JSON.stringify({ event: 'hiring.finalize_skipped', requestId, reason: 'request_not_found' }));
+    return;
+  }
+
+  const siCh = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+  const dmRefsEarly = parseSiRefs(row.siSlackMessageTs as unknown);
+  if (!(siCh && row.siSlackRootChannelTs) && dmRefsEarly.length === 0) {
+    await clearSiSlackTrackingFields(requestId);
+    return;
+  }
+
+  const when = formatSiDecisionTimestampBrt(row.siApprovedAt);
+  const { name, jobTitle } = parseHiringFiringDetailsForSiFinalize(row.details);
+  let mrkdwn: string;
+  let plain: string;
+
+  if (opts.kind === 'reject') {
+    mrkdwn =
+      `❌ *Contratação recusada*\n` +
+      `*Reprovado por* <@${opts.actorSlackId}> *em* ${when}\n` +
+      `*Chamado:* #${requestId.slice(0, 8)}`;
+    plain = `Contratação recusada — #${requestId.slice(0, 8)}`;
+  } else {
+    mrkdwn =
+      `✅ *Contratação concluída*\n` +
+      `*Colaborador:* ${name}\n` +
+      `*Cargo:* ${jobTitle}\n` +
+      `*Aprovado por* <@${opts.actorSlackId}> *em* ${when}`;
+    plain = `Contratação concluída — ${name}: ${jobTitle} · SI`;
+  }
+
+  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }];
+
+  try {
+    if (siCh && row.siSlackRootChannelTs) {
+      await client.chat.update({
+        channel: siCh,
+        ts: row.siSlackRootChannelTs,
+        text: plain,
+        blocks: blocks as never
+      });
+    } else if (!row.siSlackRootChannelTs) {
+      console.warn(JSON.stringify({ event: 'hiring.finalize_si_channel_ts_null', requestId }));
+    }
+
+    for (const r of parseSiRefs(row.siSlackMessageTs as unknown)) {
+      await chatUpdateDmMessage(client, r.userId, r.ts, plain, blocks);
+    }
+  } catch (err: unknown) {
+    console.warn(
+      JSON.stringify({
+        event: 'slack.finalize.partial_failure',
+        requestType: 'HIRING',
+        requestId,
+        err: err instanceof Error ? err.message : String(err)
+      })
+    );
+  } finally {
+    await clearSiSlackTrackingFields(requestId);
+  }
+}
+
+export type FiringSiFinalizeKind = { kind: 'reject'; actorSlackId: string } | { kind: 'approve'; actorSlackId: string };
+
+// Cleanup de siSlack* sempre roda (try/finally), mesmo se chat.update
+// falhar — evita ts órfãos que virariam message_not_found em crons.
+/** Atualiza card no canal SI + DMs SI após decisão SI (FIRING). */
+export async function finalizeFiringSiInteractiveSurfaces(
+  client: WebClient,
+  requestId: string,
+  opts: FiringSiFinalizeKind
+): Promise<void> {
+  const row = await prisma.request.findUnique({
+    where: { id: requestId },
+    select: { siSlackRootChannelTs: true, siSlackMessageTs: true, siApprovedAt: true, details: true }
+  });
+  if (!row) {
+    console.warn(JSON.stringify({ event: 'firing.finalize_skipped', requestId, reason: 'request_not_found' }));
+    return;
+  }
+
+  const siCh = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+  const dmRefsEarly = parseSiRefs(row.siSlackMessageTs as unknown);
+  if (!(siCh && row.siSlackRootChannelTs) && dmRefsEarly.length === 0) {
+    await clearSiSlackTrackingFields(requestId);
+    return;
+  }
+
+  const when = formatSiDecisionTimestampBrt(row.siApprovedAt);
+  const { name, jobTitle } = parseHiringFiringDetailsForSiFinalize(row.details);
+  let mrkdwn: string;
+  let plain: string;
+
+  if (opts.kind === 'reject') {
+    mrkdwn =
+      `❌ *Offboarding recusado*\n` +
+      `*Reprovado por* <@${opts.actorSlackId}> *em* ${when}\n` +
+      `*Chamado:* #${requestId.slice(0, 8)}`;
+    plain = `Offboarding recusado — #${requestId.slice(0, 8)}`;
+  } else {
+    mrkdwn =
+      `✅ *Offboarding concluído*\n` +
+      `*Colaborador:* ${name}\n` +
+      `*Cargo:* ${jobTitle}\n` +
+      `*Aprovado por* <@${opts.actorSlackId}> *em* ${when}`;
+    plain = `Offboarding concluído — ${name}: ${jobTitle} · SI`;
+  }
+
+  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }];
+
+  try {
+    if (siCh && row.siSlackRootChannelTs) {
+      await client.chat.update({
+        channel: siCh,
+        ts: row.siSlackRootChannelTs,
+        text: plain,
+        blocks: blocks as never
+      });
+    } else if (!row.siSlackRootChannelTs) {
+      console.warn(JSON.stringify({ event: 'firing.finalize_si_channel_ts_null', requestId }));
+    }
+
+    for (const r of parseSiRefs(row.siSlackMessageTs as unknown)) {
+      await chatUpdateDmMessage(client, r.userId, r.ts, plain, blocks);
+    }
+  } catch (err: unknown) {
+    console.warn(
+      JSON.stringify({
+        event: 'slack.finalize.partial_failure',
+        requestType: 'FIRING',
+        requestId,
+        err: err instanceof Error ? err.message : String(err)
+      })
+    );
+  } finally {
+    await clearSiSlackTrackingFields(requestId);
   }
 }
 
@@ -851,7 +1057,7 @@ export async function refreshPeerSiDmsAfterDecision(
   client: WebClient,
   refs: SiDmRef[] | null | undefined,
   actorSlackId: string,
-  opts: { approved: boolean; deciderName: string; kind: 'aex' | 'onboarding' | 'firing' | 'root' }
+  opts: { approved: boolean; deciderName: string; kind: 'aex' | 'onboarding' | 'firing' | 'root' | 'change_role' }
 ): Promise<void> {
   if (!refs || !Array.isArray(refs)) return;
   for (const r of refs) {
@@ -903,6 +1109,8 @@ export type RootAccessSiFinalizeKind =
   | { kind: 'approve_jc_failed'; failureSummary: string }
   | { kind: 'revalidate_rejected' };
 
+// Cleanup de siSlack* sempre roda (try/finally), mesmo se chat.update
+// falhar — evita ts órfãos que virariam message_not_found em crons.
 /** Remove botões: atualiza post no canal SI (`siSlackRootChannelTs`) + cada DM em `siSlackMessageTs`. */
 async function finalizeRootAccessSiInteractiveSurfaces(
   client: WebClient,
@@ -914,6 +1122,13 @@ async function finalizeRootAccessSiInteractiveSurfaces(
     select: { siSlackRootChannelTs: true, siSlackMessageTs: true, details: true, siApprovedAt: true }
   });
   if (!row) return;
+
+  const siCh = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+  const dmRefsEarly = parseSiRefs(row.siSlackMessageTs as unknown);
+  if (!(siCh && row.siSlackRootChannelTs) && dmRefsEarly.length === 0) {
+    await clearSiSlackTrackingFields(requestId);
+    return;
+  }
 
   const details = parseRootAccessDetails(row.details);
   const hostname = details?.hostname ?? '—';
@@ -975,22 +1190,30 @@ async function finalizeRootAccessSiInteractiveSurfaces(
 
   const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }];
 
-  const siCh = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
-  if (siCh && row.siSlackRootChannelTs) {
-    try {
+  try {
+    if (siCh && row.siSlackRootChannelTs) {
       await client.chat.update({
         channel: siCh,
         ts: row.siSlackRootChannelTs,
         text: plain,
         blocks: blocks as never
       });
-    } catch (e) {
-      console.error('[ROOT_ACCESS] chat.update canal SI (final):', e);
     }
-  }
 
-  for (const r of parseSiRefs(row.siSlackMessageTs as unknown)) {
-    await chatUpdateDmMessage(client, r.userId, r.ts, plain, blocks);
+    for (const r of parseSiRefs(row.siSlackMessageTs as unknown)) {
+      await chatUpdateDmMessage(client, r.userId, r.ts, plain, blocks);
+    }
+  } catch (err: unknown) {
+    console.warn(
+      JSON.stringify({
+        event: 'slack.finalize.partial_failure',
+        requestType: 'ROOT_ACCESS',
+        requestId,
+        err: err instanceof Error ? err.message : String(err)
+      })
+    );
+  } finally {
+    await clearSiSlackTrackingFields(requestId);
   }
 }
 
@@ -1007,6 +1230,13 @@ export async function finalizeRootAccessSlackMessagesForRevoke(opts: {
   const app = getSlackApp();
   if (!app?.client) return;
   const client = app.client;
+
+  const siCh = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
+  const revokeDmRefs = parseSiRefs(opts.siSlackMessageTs as unknown);
+  if (!(siCh && opts.siSlackRootChannelTs) && revokeDmRefs.length === 0) {
+    return;
+  }
+
   const triggerLine =
     opts.trigger === 'ADMIN_EARLY'
       ? `*Revogação:* antecipada (${opts.actorLabel}).`
@@ -1024,7 +1254,6 @@ export async function finalizeRootAccessSlackMessagesForRevoke(opts: {
 
   const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: mrkdwn } }];
 
-  const siCh = (process.env.SLACK_SI_CHANNEL_ID || '').trim();
   if (siCh && opts.siSlackRootChannelTs) {
     try {
       await client.chat.update({
@@ -1078,8 +1307,9 @@ export async function handleSiDualApprovalSlackAction(params: {
     req.type === 'ACCESS_TOOL_EXTRA' ||
     (['ACCESS_TOOL', 'ACESSO_FERRAMENTA', 'EXTRAORDINARIO'].includes(req.type) && req.isExtraordinary);
   const isRootAccess = req.type === REQUEST_TYPES.ROOT_ACCESS;
+  const isChangeRole = req.type === 'CHANGE_ROLE';
 
-  if (!isHiring && !isFiring && !isAex && !isRootAccess) return;
+  if (!isHiring && !isFiring && !isAex && !isRootAccess && !isChangeRole) return;
 
   let requesterSlackIdForFilter: string | null = null;
   if ((isHiring || isFiring) && req.requester?.email) {
@@ -1155,6 +1385,10 @@ export async function handleSiDualApprovalSlackAction(params: {
         deciderName,
         kind: 'aex'
       });
+      // AEX é o único tipo sem finalize* dedicado — cleanup inline aqui.
+      // ROOT_ACCESS, CHANGE_ROLE, HIRING e FIRING limpam dentro dos respectivos
+      // finalize*SiInteractiveSurfaces. Ver `slack/siSlackTracking.ts`.
+      await clearSiSlackTrackingFields(requestId);
     } else if (isHiring) {
       const r = await approveHiringViaSlack(requestId, actorSlackId, therisApproverId);
       if (r === 'bad_status') return;
@@ -1166,6 +1400,10 @@ export async function handleSiDualApprovalSlackAction(params: {
         return;
       }
       if (r !== 'ok') return;
+      await finalizeHiringSiInteractiveSurfaces(params.client, requestId, {
+        kind: 'approve',
+        actorSlackId
+      });
       await updateActorSiDmConfirmed(
         params.client,
         actorSlackId,
@@ -1188,6 +1426,10 @@ export async function handleSiDualApprovalSlackAction(params: {
         return;
       }
       if (r !== 'ok') return;
+      await finalizeFiringSiInteractiveSurfaces(params.client, requestId, {
+        kind: 'approve',
+        actorSlackId
+      });
       await updateActorSiDmConfirmed(
         params.client,
         actorSlackId,
@@ -1288,6 +1530,46 @@ export async function handleSiDualApprovalSlackAction(params: {
         deciderName,
         kind: 'root'
       });
+    } else if (isChangeRole) {
+      const r = await approveChangeRoleViaSlack(requestId, actorSlackId, therisApproverId, deciderName);
+      if (r === 'bad_status') return;
+      if (r === 'race') {
+        await params.respond?.({
+          response_type: 'ephemeral',
+          text: `Este chamado já foi tratado por ${await resolveSlackDisplayName(params.client, req.siApprovedBy || '')}.`
+        });
+        return;
+      }
+      if (r === 'exec_failed') {
+        await updateActorSiDmConfirmed(
+          params.client,
+          actorSlackId,
+          actorTs,
+          `⚠️ Aprovação registrada, mas a automação não aplicou a mudança. Verifique o chamado no Theris.`
+        );
+        await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
+          approved: true,
+          deciderName,
+          kind: 'change_role'
+        });
+        await params.respond?.({
+          response_type: 'ephemeral',
+          text: 'O SI registrou a aprovação, mas a mudança automática falhou (dados do colaborador/cargo). Corrija no Theris ou reabra o chamado.'
+        });
+        return;
+      }
+      if (r !== 'ok') return;
+      await updateActorSiDmConfirmed(
+        params.client,
+        actorSlackId,
+        actorTs,
+        `✅ Você aprovou a mudança de cargo #${requestId.slice(0, 8)}. Concluído.`
+      );
+      await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
+        approved: true,
+        deciderName,
+        kind: 'change_role'
+      });
     }
   } else {
     if (isAex) {
@@ -1311,6 +1593,10 @@ export async function handleSiDualApprovalSlackAction(params: {
         deciderName,
         kind: 'aex'
       });
+      // AEX é o único tipo sem finalize* dedicado — cleanup inline aqui.
+      // ROOT_ACCESS, CHANGE_ROLE, HIRING e FIRING limpam dentro dos respectivos
+      // finalize*SiInteractiveSurfaces. Ver `slack/siSlackTracking.ts`.
+      await clearSiSlackTrackingFields(requestId);
     } else if (isHiring) {
       const r = await rejectHiringViaSlack(requestId, actorSlackId, therisApproverId);
       if (r === 'race') {
@@ -1321,6 +1607,10 @@ export async function handleSiDualApprovalSlackAction(params: {
         return;
       }
       if (r !== 'ok') return;
+      await finalizeHiringSiInteractiveSurfaces(params.client, requestId, {
+        kind: 'reject',
+        actorSlackId
+      });
       await updateActorSiDmConfirmed(
         params.client,
         actorSlackId,
@@ -1342,6 +1632,10 @@ export async function handleSiDualApprovalSlackAction(params: {
         return;
       }
       if (r !== 'ok') return;
+      await finalizeFiringSiInteractiveSurfaces(params.client, requestId, {
+        kind: 'reject',
+        actorSlackId
+      });
       await updateActorSiDmConfirmed(
         params.client,
         actorSlackId,
@@ -1366,6 +1660,27 @@ export async function handleSiDualApprovalSlackAction(params: {
       await finalizeRootAccessSiInteractiveSurfaces(params.client, requestId, {
         kind: 'reject',
         actorSlackId
+      });
+    } else if (isChangeRole) {
+      const r = await rejectChangeRoleViaSlack(requestId, actorSlackId, therisApproverId);
+      if (r === 'race') {
+        await params.respond?.({
+          response_type: 'ephemeral',
+          text: `Este chamado já foi tratado por ${await resolveSlackDisplayName(params.client, req.siApprovedBy || '')}.`
+        });
+        return;
+      }
+      if (r !== 'ok') return;
+      await updateActorSiDmConfirmed(
+        params.client,
+        actorSlackId,
+        actorTs,
+        `❌ Você recusou a mudança de cargo #${requestId.slice(0, 8)}.`
+      );
+      await refreshPeerSiDmsAfterDecision(params.client, refs, actorSlackId, {
+        approved: false,
+        deciderName,
+        kind: 'change_role'
       });
     }
   }

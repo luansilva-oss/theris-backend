@@ -853,7 +853,8 @@ export default function App() {
   // Removido header x-user-id explicito (deixa o cliente decidir).
   useEffect(() => {
     if (!isLoggedIn || !currentUser?.id) return;
-    fetch(`${API_URL}/api/users/me`)
+    const headers: HeadersInit = { 'x-user-id': currentUser.id };
+    fetch(`${API_URL}/api/users/me`, { headers })
       .then((res) => res.ok ? res.json() : null)
       .then((profile) => { if (profile) setCurrentUser(profile); })
       .catch(() => {});
@@ -865,9 +866,9 @@ export default function App() {
       const headers: Record<string, string> = {};
       if (currentUser?.id) headers['x-user-id'] = currentUser.id;
       const [resTools, resReqs, resKbu] = await Promise.all([
-        fetch(`${API_URL}/api/tools`),
+        fetch(`${API_URL}/api/tools`, { headers }),
         fetch(`${API_URL}/api/solicitacoes`, { headers }),
-        fetch(`${API_URL}/api/kbu`)
+        fetch(`${API_URL}/api/kbu`, { headers })
       ]);
 
       if (resTools.ok) {
@@ -891,11 +892,11 @@ export default function App() {
 
       // Carrega usuários se estiver na aba de gestão ou Gestão de Chamados (para select Responsável)
       if (activeTab === 'PEOPLE' || activeTab === 'TICKETS') {
-        const resUsers = await fetch(`${API_URL}/api/users`);
+        const resUsers = await fetch(`${API_URL}/api/users`, { headers });
         if (resUsers.ok) setAllUsers(await resUsers.json());
       }
       if (activeTab === 'PEOPLE') {
-        const resDepts = await fetch(`${API_URL}/api/structure`, { credentials: 'include' });
+        const resDepts = await fetch(`${API_URL}/api/structure`, { credentials: 'include', headers });
         if (resDepts.ok) {
           const structData = await resDepts.json();
           const unitList = structData.units || [];
@@ -1545,7 +1546,9 @@ export default function App() {
       confirmLabel: "Sim, Excluir",
       onConfirm: async () => {
         try {
-          const res = await fetch(`${API_URL}/api/tools/${id}`, { method: 'DELETE' });
+          const delHeaders: Record<string, string> = {};
+          if (currentUser?.id) delHeaders['x-user-id'] = currentUser.id;
+          const res = await fetch(`${API_URL}/api/tools/${id}`, { method: 'DELETE', headers: delHeaders });
           if (res.ok) {
             setSelectedTool(null);
             loadData();
@@ -1679,7 +1682,9 @@ export default function App() {
 
   const handleDeleteUnit = async (unit: { id: string; name: string }) => {
     try {
-      const res = await fetch(`${API_URL}/api/structure/units/${unit.id}`, { method: 'DELETE' });
+      const delHeaders: Record<string, string> = {};
+      if (currentUser?.id) delHeaders['x-user-id'] = currentUser.id;
+      const res = await fetch(`${API_URL}/api/structure/units/${unit.id}`, { method: 'DELETE', headers: delHeaders });
       if (res.ok) {
         loadData();
         showToast('Unidade excluída.', 'success');

@@ -1179,7 +1179,6 @@ slackApp.action('acessos_tool_select', async ({ ack, body, client }) => {
 // 3. PROCESSAMENTO E BANCO (HANDLERS DE VIEW)
 // ============================================================
 
-const PEOPLE_REQUEST_TYPES_SLACK = ['CHANGE_ROLE', 'HIRING', 'FIRING'];
 const OFFBOARDING_REQUEST_TYPES = ['FIRING', 'DEMISSAO', 'OFFBOARDING'];
 const ONBOARDING_REQUEST_TYPES_SLACK = ['HIRING', 'ADMISSAO', 'ONBOARDING'];
 const RH_BYPASS_REQUESTER_NAME = 'Renata Czapiewski Silva';
@@ -1187,6 +1186,38 @@ const RH_BYPASS_REQUESTER_NAME = 'Renata Czapiewski Silva';
 function isRhBypassRequester(name: string | null | undefined): boolean {
   const n = (name || '').trim();
   return n === RH_BYPASS_REQUESTER_NAME || n.toLowerCase().includes('renata czapiewski');
+}
+
+/** Resolve colaborador por nome + departamento (e opcionalmente cargo atual) para CHANGE_ROLE. */
+async function tryResolveCollaboratorUserId(
+  name: string,
+  departmentId: string,
+  currentRoleId: string | null
+): Promise<string | null> {
+  const clean = name.trim();
+  if (!clean) return null;
+  let u = await prisma.user.findFirst({
+    where: { isActive: true, departmentId, name: { equals: clean, mode: 'insensitive' } },
+    select: { id: true }
+  });
+  if (!u && currentRoleId) {
+    u = await prisma.user.findFirst({
+      where: {
+        isActive: true,
+        departmentId,
+        roleId: currentRoleId,
+        name: { contains: clean, mode: 'insensitive' }
+      },
+      select: { id: true }
+    });
+  }
+  if (!u) {
+    u = await prisma.user.findFirst({
+      where: { isActive: true, name: { equals: clean, mode: 'insensitive' } },
+      select: { id: true }
+    });
+  }
+  return u?.id ?? null;
 }
 
 /** Pós-criação HIRING: canal acessos + DMs ao SI (solicitante não recebe botão de aprovação). */
@@ -1217,12 +1248,12 @@ async function runHiringSlackFlowAfterCreate(
     }
   ]);
 
-  const { sendSiTeamOnboardingApprovalDms } = await import('./siSlackApprovalService');
-  await sendSiTeamOnboardingApprovalDms(client, created.id, summaryLines, requesterSlackId ?? null);
+  const { sendSiTeamHiringApprovalSurfaces } = await import('./siSlackApprovalService');
+  await sendSiTeamHiringApprovalSurfaces(client, created.id, summaryLines, requesterSlackId ?? null);
 
   await postSlackAcessosChannel(
     client,
-    `ℹ️ Solicitação de aprovação SI enviada (DM) · ${collab} · #${short} · ${formatTimestampBrt()} BRT`
+    `ℹ️ Aprovação SI enviada (canal SI + DMs) · ${collab} · #${short} · ${formatTimestampBrt()} BRT`
   );
 }
 
@@ -1248,12 +1279,45 @@ async function runFiringSlackFlowAfterCreate(
     `🔴 Offboarding aberto — ${nome}, ${cargo}, ${dept} | Solicitante: ${requesterName} | Ticket: #${short}`
   );
 
-  const { sendSiTeamFiringApprovalDms } = await import('./siSlackApprovalService');
-  await sendSiTeamFiringApprovalDms(client, created.id, summaryBody, requesterSlackId ?? null);
+  const { sendSiTeamFiringApprovalSurfaces } = await import('./siSlackApprovalService');
+  await sendSiTeamFiringApprovalSurfaces(client, created.id, summaryBody, requesterSlackId ?? null);
 
   await postSlackAcessosChannel(
     client,
-    `ℹ️ Solicitação de aprovação SI enviada (DM) · ${nome} · #${short} · ${formatTimestampBrt()} BRT`
+    `ℹ️ Aprovação SI enviada (canal SI + DMs) · ${nome} · #${short} · ${formatTimestampBrt()} BRT`
+  );
+}
+
+/** Pós-criação CHANGE_ROLE: canal acessos + SI (canal + DMs) com botões Aprovar/Recusar. */
+async function runChangeRoleSlackFlowAfterCreate(
+  client: WebClient,
+  created: { id: string },
+  _detailsWithMeta: Record<string, unknown>,
+  requesterName: string,
+  _requesterSlackId?: string | null
+): Promise<void> {
+  const short = created.id.slice(0, 8);
+  const row = await prisma.request.findUnique({
+    where: { id: created.id },
+    include: { requester: { select: { name: true, email: true } } }
+  });
+  if (!row) return;
+  let nome = '—';
+  try {
+    const d = typeof row.details === 'string' ? JSON.parse(row.details || '{}') : (row.details || {});
+    nome = String(d.collaboratorName || d.info || '—').replace(/^[^:]+:\s*/, '') || '—';
+  } catch {
+    nome = '—';
+  }
+  await postSlackAcessosChannel(
+    client,
+    `🔄 Mudança de cargo aberta — ${nome} | Solicitante: ${requesterName} | #${short} · ${formatTimestampBrt()} BRT`
+  );
+  const { sendSiTeamChangeRoleApprovalSurfaces } = await import('./changeRoleSlackInteractive');
+  await sendSiTeamChangeRoleApprovalSurfaces(client, row as never);
+  await postSlackAcessosChannel(
+    client,
+    `ℹ️ Aprovação SI enviada (canal + DM) · Mudança de cargo · ${nome} · #${short} · ${formatTimestampBrt()} BRT`
   );
 }
 
@@ -1338,18 +1402,10 @@ async function saveRequest(
       status = 'PENDING_SI';
       currentApproverRole = 'SI_ANALYST';
       approverId = null;
-    } else if (PEOPLE_REQUEST_TYPES_SLACK.includes(dbType)) {
-      // Regra de bypass /pessoas: Renata pula gestor Theris e vai direto para SI
-      if (isRhBypassRequester(requesterPeople?.name)) {
-        status = 'PENDENTE_SI';
-        currentApproverRole = 'SI_ANALYST';
-        approverId = null;
-        detailsWithMeta = { ...detailsWithMeta, bypassGestor: true };
-      } else if (requesterPeople?.managerId) {
-        status = 'PENDENTE_GESTOR';
-        currentApproverRole = 'MANAGER';
-        approverId = requesterPeople.managerId;
-      }
+    } else if (dbType === 'CHANGE_ROLE') {
+      status = 'PENDING_SI';
+      currentApproverRole = 'SI_ANALYST';
+      approverId = null;
     }
 
     // Inclui Slack ID e e-mail do solicitante nos detalhes (auditoria e exibição no painel)
@@ -1393,7 +1449,7 @@ async function saveRequest(
 
     console.log('[Chamado] Tentando enviar notificação SI para chamado:', created.id, 'tipo:', created.type);
     try {
-      if (dbType !== 'HIRING' && dbType !== 'FIRING') {
+      if (dbType !== 'HIRING' && dbType !== 'FIRING' && dbType !== 'CHANGE_ROLE') {
         await notificarSINovoTicket({
           id: created.id,
           type: created.type,
@@ -1437,18 +1493,21 @@ async function saveRequest(
       ).catch((e) => console.error('[FIRING] pós-criação Slack:', e));
     }
     if (dbType === 'CHANGE_ROLE') {
-      const short = created.id.slice(0, 8);
-      const d = detailsWithMeta;
-      const nome = String(d.collaboratorName || '—');
-      const cur = (d.current as { role?: string; dept?: string }) || {};
-      const fut = (d.future as { role?: string; dept?: string }) || {};
-      const cargoAtual = String(cur.role || '—');
-      const novoCargo = String(fut.role || '—');
-      const dept = String(fut.dept || cur.dept || '—');
-      const sol = requesterPeople?.name || 'Solicitante';
-      firePostSlackAcessosChannel(
-        `🔄 Movimentação interna aberta — ${nome}: ${cargoAtual} → ${novoCargo}, ${dept} | Solicitante: ${sol} | Ticket: #${short}`
-      );
+      let requesterSlackIdForCr: string | null = null;
+      const reqUser = await prisma.user.findUnique({ where: { id: requesterId }, select: { email: true } });
+      if (reqUser?.email) {
+        try {
+          const lu = await client.users.lookupByEmail({ email: reqUser.email });
+          requesterSlackIdForCr = lu.user?.id ?? null;
+        } catch (_) {}
+      }
+      void runChangeRoleSlackFlowAfterCreate(
+        client,
+        created,
+        detailsWithMeta,
+        requesterPeople?.name || 'Solicitante',
+        requesterSlackIdForCr
+      ).catch((e) => console.error('[CHANGE_ROLE] pós-criação Slack:', e));
     }
 
     if (isExtraordinary && toolName) {
@@ -2371,75 +2430,31 @@ slackApp.action('cargo_review_done', async ({ ack, body, client }) => {
   if (!value || !clickerSlackId) return;
   let requestId: string;
   let toolId: string;
+  let dmChannel: string | undefined;
+  let dmTs: string | undefined;
   try {
     const parsed = JSON.parse(value);
     requestId = parsed.requestId;
     toolId = parsed.toolId;
+    if (typeof parsed.dmChannel === 'string') dmChannel = parsed.dmChannel;
+    if (typeof parsed.dmTs === 'string') dmTs = parsed.dmTs;
   } catch (_) {
     return;
   }
   runAsync(async () => {
     try {
-      const request = await prisma.request.findUnique({ where: { id: requestId } });
-      const tool = await prisma.tool.findUnique({
-        where: { id: toolId },
-        include: { owner: { select: { name: true } } }
+      const { handleCargoReviewDoneAction } = await import('./changeRoleOwnerLevelAction');
+      await handleCargoReviewDoneAction(client, {
+        clickerSlackId,
+        bodyChannel: b.channel?.id,
+        parsed: { requestId, toolId, dmChannel, dmTs }
       });
-      if (!request || !tool) return;
-      let clickerUserId: string | null = null;
       try {
-        const info = await client.users.info({ user: clickerSlackId });
-        const email = info.user?.profile?.email;
-        if (email) {
-          const u = await prisma.user.findUnique({ where: { email }, select: { id: true, name: true } });
-          if (u) clickerUserId = u.id;
-        }
-      } catch (_) {}
-      const ownerName = tool.owner?.name || 'Owner';
-      let colaboradorName = 'Colaborador';
-      let cargoAnterior = '';
-      let cargoNovo = '';
-      try {
-        const d = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
-        colaboradorName = (d.collaboratorName || d.info || 'Colaborador')?.toString().replace(/^[^:]+:\s*/, '') || 'Colaborador';
-        const curr = d.current as Record<string, string> | undefined;
-        const fut = d.future as Record<string, string> | undefined;
-        cargoAnterior = curr?.role || '';
-        cargoNovo = fut?.role || '';
-      } catch (_) {}
-      const { registrarMudanca } = await import('../lib/auditLog');
-      await registrarMudanca({
-        tipo: 'CARGO_REVIEW_CONCLUIDO',
-        entidadeTipo: 'Request',
-        entidadeId: requestId,
-        descricao: `Owner ${ownerName} confirmou ajuste de nível de ${colaboradorName} em ${tool.name}. Cargo anterior: ${cargoAnterior} → Novo: ${cargoNovo}`,
-        dadosDepois: { ownerName, toolName: tool.name, colaboradorName, cargoAnterior, cargoNovo, confirmedAt: new Date().toISOString() },
-        autorId: clickerUserId ?? undefined
-      });
-      const now = new Date();
-      const dataHora = now.toLocaleString('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-      const text = `✅ *Mudança de Cargo Concluída*\n\nO Owner *${ownerName}* confirmou o ajuste de nível de acesso de *${colaboradorName}* em *${tool.name}*.\nCargo anterior: ${cargoAnterior} → Novo cargo: ${cargoNovo}\n🕒 ${dataHora}`;
-      const targets: string[] = [];
-      if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
-      if (SLACK_ID_RENATA) targets.push(SLACK_ID_RENATA);
-      if (SLACK_SI_CHANNEL_ID) targets.push(SLACK_SI_CHANNEL_ID);
-      for (const ch of targets) {
-        try {
-          await client.chat.postMessage({ channel: ch, text });
-        } catch (e) {
-          console.error('[cargo_review_done] Notify:', e);
-        }
-      }
-      try {
-        await client.chat.postEphemeral({ channel: b.channel?.id || clickerSlackId, user: clickerSlackId, text: '✅ Confirmação registrada. O time de SI foi notificado.' });
+        await client.chat.postEphemeral({
+          channel: b.channel?.id || clickerSlackId,
+          user: clickerSlackId,
+          text: '✅ Confirmação registrada.'
+        });
       } catch (_) {}
     } catch (e) {
       console.error('[cargo_review_done] Erro:', e);
@@ -2457,68 +2472,48 @@ slackApp.action('dept_review_done', async ({ ack, body, client }) => {
   let requestId: string;
   let toolId: string;
   let tipo: string;
+  let dmChannel: string | undefined;
+  let dmTs: string | undefined;
+  let nivelAnt: string | undefined;
+  let nivelNovo: string | undefined;
+  let dataAcaoPayload: string | undefined;
   try {
     const parsed = JSON.parse(value);
     requestId = parsed.requestId;
     toolId = parsed.toolId;
     tipo = parsed.tipo || 'revisao';
+    if (typeof parsed.dmChannel === 'string') dmChannel = parsed.dmChannel;
+    if (typeof parsed.dmTs === 'string') dmTs = parsed.dmTs;
+    if (typeof parsed.nivelAnt === 'string') nivelAnt = parsed.nivelAnt;
+    if (typeof parsed.nivelNovo === 'string') nivelNovo = parsed.nivelNovo;
+    if (typeof parsed.dataAcao === 'string') dataAcaoPayload = parsed.dataAcao;
   } catch (_) {
     return;
   }
+  const messageTs = typeof b.message?.ts === 'string' ? b.message.ts : undefined;
   runAsync(async () => {
     try {
-      const request = await prisma.request.findUnique({ where: { id: requestId } });
-      const tool = await prisma.tool.findUnique({
-        where: { id: toolId },
-        include: { owner: { select: { name: true } } }
-      });
-      if (!request || !tool) return;
-      const ownerName = tool.owner?.name || 'Owner';
-      let colaboradorName = 'Colaborador';
-      let deptAnterior = '';
-      let deptNovo = '';
-      try {
-        const d = typeof request.details === 'string' ? JSON.parse(request.details || '{}') : (request.details || {});
-        colaboradorName = (d.collaboratorName || d.info || 'Colaborador')?.toString().replace(/^[^:]+:\s*/, '') || 'Colaborador';
-        const curr = d.current as Record<string, string> | undefined;
-        const fut = d.future as Record<string, string> | undefined;
-        deptAnterior = curr?.dept || '';
-        deptNovo = fut?.dept || '';
-      } catch (_) {}
-      const tipoLabel = tipo === 'revogacao' ? 'Revogação' : tipo === 'provisionamento' ? 'Provisionamento' : 'Revisão';
-      const { registrarMudanca } = await import('../lib/auditLog');
-      await registrarMudanca({
-        tipo: 'DEPT_REVIEW_CONCLUIDO',
-        entidadeTipo: 'Request',
-        entidadeId: requestId,
-        descricao: `Owner ${ownerName} confirmou ação de acesso de ${colaboradorName} em ${tool.name}. Tipo: ${tipoLabel}`,
-        dadosDepois: { ownerName, toolName: tool.name, colaboradorName, tipo, deptAnterior, deptNovo, confirmedAt: new Date().toISOString() },
-        autorId: undefined
-      });
-      const now = new Date();
-      const dataHora = now.toLocaleString('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-      const text = `✅ *Mudança de Departamento Concluída*\n\nO Owner *${ownerName}* confirmou a ação de acesso de *${colaboradorName}* em *${tool.name}*.\nTipo: ${tipoLabel}\nDepto anterior: ${deptAnterior} → Novo depto: ${deptNovo}\n🕒 ${dataHora}`;
-      const targets: string[] = [];
-      if (SLACK_ID_LUAN) targets.push(SLACK_ID_LUAN);
-      if (SLACK_ID_RENATA) targets.push(SLACK_ID_RENATA);
-      if (SLACK_SI_CHANNEL_ID) targets.push(SLACK_SI_CHANNEL_ID);
-      for (const ch of targets) {
-        try {
-          await client.chat.postMessage({ channel: ch, text });
-        } catch (e) {
-          console.error('[dept_review_done] Notify:', e);
+      const { handleDeptReviewDoneAction } = await import('./changeDeptOwnerLevelAction');
+      await handleDeptReviewDoneAction(client, {
+        clickerSlackId,
+        bodyChannel: b.channel?.id,
+        parsed: {
+          requestId,
+          toolId,
+          tipo: tipo as 'revogacao' | 'provisionamento' | 'revisao',
+          dmChannel: dmChannel || (typeof b.channel?.id === 'string' ? b.channel.id : undefined),
+          dmTs: dmTs || messageTs,
+          nivelAnt,
+          nivelNovo,
+          dataAcao: dataAcaoPayload
         }
-      }
+      });
       try {
-        await client.chat.postEphemeral({ channel: b.channel?.id || clickerSlackId, user: clickerSlackId, text: '✅ Confirmação registrada. O time de SI foi notificado.' });
+        await client.chat.postEphemeral({
+          channel: b.channel?.id || clickerSlackId,
+          user: clickerSlackId,
+          text: '✅ Confirmação registrada.'
+        });
       } catch (_) {}
     } catch (e) {
       console.error('[dept_review_done] Erro:', e);
@@ -2868,6 +2863,20 @@ slackApp.view('submit_move_dept', async ({ ack, body, view, client }) => {
     await ack({ response_action: 'errors', errors: errs });
     return;
   }
+  const newRoleP0 = parsePessoasPipeSelect(v.blk_new_role!.move_dept_new_role.selected_option?.value);
+  if (newRoleP0?.id) {
+    const roleNova = await prisma.role.findUnique({ where: { id: newRoleP0.id }, select: { name: true, code: true } });
+    const code = (roleNova?.code || '').trim();
+    if (!code) {
+      await ack({
+        response_action: 'errors',
+        errors: {
+          blk_new_role: `O cargo "${roleNova?.name ?? '—'}" não possui código KBS configurado. Contate SI para cadastrar o code antes de prosseguir.`
+        }
+      });
+      return;
+    }
+  }
   await ack();
   const name = v.blk_name.inp.value;
   const currRoleP = parsePessoasPipeSelect(v.blk_curr_role.move_dept_curr_role.selected_option?.value);
@@ -2905,6 +2914,11 @@ slackApp.view('submit_move_dept', async ({ ack, body, view, client }) => {
   if (newRoleName) details.newRoleName = newRoleName;
   if (newDepartmentId) details.newDepartmentId = newDepartmentId;
   if (newDeptName) details.newDeptName = newDeptName;
+  if (currRoleP?.id) details.oldRoleId = currRoleP.id;
+  if (newDepartmentId && name.trim()) {
+    const cid = await tryResolveCollaboratorUserId(name.trim(), newDepartmentId, currRoleP?.id ?? null);
+    if (cid) details.collaboratorId = cid;
+  }
   await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value!, `✅ Solicitação de mudança de departamento para *${name}* criada com sucesso.`, false, actionDate);
 });
 
@@ -2922,12 +2936,32 @@ slackApp.view('submit_move_cargo', async ({ ack, body, view, client }) => {
     await ack({ response_action: 'errors', errors: errs });
     return;
   }
+  const currRoleP = parsePessoasPipeSelect(v.blk_mc_role_curr!.mc_role_curr_select.selected_option?.value);
+  const futRoleP = parsePessoasPipeSelect(v.blk_mc_role_fut!.mc_role_fut_select.selected_option?.value);
+  if (currRoleP?.id && futRoleP?.id && currRoleP.id === futRoleP.id) {
+    await ack({
+      response_action: 'errors',
+      errors: { blk_mc_role_fut: 'O novo cargo deve ser diferente do cargo atual.' }
+    });
+    return;
+  }
+  if (futRoleP?.id) {
+    const roleNova = await prisma.role.findUnique({ where: { id: futRoleP.id }, select: { name: true, code: true } });
+    const code = (roleNova?.code || '').trim();
+    if (!code) {
+      await ack({
+        response_action: 'errors',
+        errors: {
+          blk_mc_role_fut: `O cargo "${roleNova?.name ?? '—'}" não possui código KBS configurado. Contate SI para cadastrar o code antes de prosseguir.`
+        }
+      });
+      return;
+    }
+  }
   await ack();
   const name = v.blk_name.inp.value;
   const unitP = parsePessoasPipeSelect(v.blk_mc_unit.mc_unit_select.selected_option?.value);
   const deptP = parsePessoasPipeSelect(v.blk_mc_dept.mc_dept_select.selected_option?.value);
-  const currRoleP = parsePessoasPipeSelect(v.blk_mc_role_curr.mc_role_curr_select.selected_option?.value);
-  const futRoleP = parsePessoasPipeSelect(v.blk_mc_role_fut.mc_role_fut_select.selected_option?.value);
   const unitValue = unitP && unitP.id !== '__noid__' ? unitP.id : undefined;
   const deptSelectVal = deptP ? `${deptP.id}|${deptP.name}` : '';
   const roleSelectVal = futRoleP ? `${futRoleP.id}|${futRoleP.name}` : '';
@@ -2958,6 +2992,11 @@ slackApp.view('submit_move_cargo', async ({ ack, body, view, client }) => {
   if (newRoleName) details.newRoleName = newRoleName;
   if (newDepartmentId) details.newDepartmentId = newDepartmentId;
   if (newDeptName) details.newDeptName = newDeptName;
+  if (currRoleP?.id) details.oldRoleId = currRoleP.id;
+  if (deptP?.id && name.trim()) {
+    const cid = await tryResolveCollaboratorUserId(name.trim(), deptP.id, currRoleP?.id ?? null);
+    if (cid) details.collaboratorId = cid;
+  }
   await saveRequest(body, client, 'CHANGE_ROLE', details, v.blk_reason.inp.value!, `✅ Solicitação de mudança de cargo para *${name}* criada com sucesso.`, false, actionDate);
 });
 
@@ -5000,7 +5039,16 @@ export async function notificarOwnersJoiner(ctx: HiringKbsNotificationContext): 
 }
 
 /**
- * JML — Mudança de Cargo: notifica Owners com mensagem específica e botão "✅ Nível Ajustado" (cargo_review_done).
+ * JML — Mudança de Cargo (mesmo departamento): notifica owners das ferramentas do
+ * KBS novo para revisar nível de acesso (DM + botão `cargo_review_done`).
+ *
+ * **Exclusividade:** par exclusivo de `notificarOwnersMudancaDepto`. Não invocar
+ * as duas para o mesmo `Request` — a UX assume disjunção (mudança de **cargo**
+ * OU de **departamento**, nunca as duas no mesmo chamado).
+ *
+ * @returns Número de DMs efetivamente enviadas (`postMessage` sem throw), incluindo
+ * fallback para Luan quando o owner não tem Slack no workspace. Post só no canal SI
+ * (owner sem Slack) não entra nessa contagem — alinhado ao fluxo de cargo existente.
  */
 export async function notificarOwnersMudancaCargo(
   colaborador: { nome: string; cargoAnterior: string; deptAnterior: string; cargoNovo: string; deptNovo: string },
@@ -5008,12 +5056,13 @@ export async function notificarOwnersMudancaCargo(
   kbsNovo: KBSItem[],
   chamadoId: string,
   dataAcao: string
-): Promise<void> {
-  if (!slackApp?.client) return;
+): Promise<number> {
+  if (!slackApp?.client) return 0;
   const client = slackApp.client;
   const anteriorByName = new Map<string, string | null>();
   kbsAnterior.forEach((k) => anteriorByName.set(k.toolName, k.accessLevelDesc ?? null));
   const linkChamado = `${FRONTEND_URL}/tickets?id=${chamadoId}`;
+  let notified = 0;
   for (const n of kbsNovo) {
     try {
       const tool = await prisma.tool.findFirst({
@@ -5032,50 +5081,119 @@ export async function notificarOwnersMudancaCargo(
           slackUserId = lookup.user?.id ?? null;
         } catch (_) {}
       }
-      if (!slackUserId && SLACK_ID_LUAN) slackUserId = SLACK_ID_LUAN;
+      let usedSiFallback = false;
+      const ownerEmail = tool?.owner?.email?.trim();
+      if (!slackUserId && ownerEmail && SLACK_SI_CHANNEL_ID) {
+        const ownerLabel = tool?.owner?.name || '—';
+        console.warn(
+          JSON.stringify({
+            event: 'change_role.owner_lookup_failed',
+            chamadoId,
+            toolName: n.toolName,
+            ownerEmail
+          })
+        );
+        void client.chat
+          .postMessage({
+            channel: SLACK_SI_CHANNEL_ID,
+            mrkdwn: true,
+            text:
+              `⚠️ *Mudança de cargo — Owner sem Slack*\n` +
+              `Ferramenta *${tool!.name}* · Owner *${ownerLabel}* (\`${ownerEmail}\`) não localizado no Slack. Ação manual pode ser necessária.`
+          })
+          .catch((e) => console.error('[notificarOwnersMudancaCargo] SI owner-miss post:', e));
+      }
+      if (!slackUserId && SLACK_ID_LUAN) {
+        slackUserId = SLACK_ID_LUAN;
+        usedSiFallback = true;
+      }
       if (!slackUserId) {
-        console.warn(`[notificarOwnersMudancaCargo] Owner não encontrado no Slack para ferramenta ${n.toolName}.`);
+        console.warn(
+          JSON.stringify({
+            event: 'change_role.owner_dm.skipped_no_slack',
+            chamadoId,
+            toolName: n.toolName
+          })
+        );
         continue;
       }
       const nivelAnterior = anteriorByName.get(n.toolName) ?? '—';
       const nivelNovo = n.accessLevelDesc ?? '—';
-      const blocks: any[] = [
+      const bodyMrkdwn =
+        `Um colaborador sob sua ferramenta mudou de cargo dentro do mesmo departamento.\n\n` +
+        `*Colaborador:* ${colaborador.nome}\n` +
+        `*Cargo anterior:* ${colaborador.cargoAnterior}\n` +
+        `*Novo cargo:* ${colaborador.cargoNovo}\n` +
+        `*Departamento:* ${colaborador.deptNovo}\n` +
+        `*Data da mudança:* ${dataAcao}\n\n` +
+        `🛠 *Ferramenta sob sua responsabilidade:* *${tool!.name}*\n` +
+        `• Nível anterior: ${nivelAnterior}\n` +
+        `• Novo nível: ${nivelNovo}\n\n` +
+        `Por favor, revise e ajuste o nível de acesso no sistema.\n` +
+        `👉 Ver chamado: <${linkChamado}|link no Theris>` +
+        (usedSiFallback
+          ? `\n\n_📋 Owner não localizado no Slack — esta DM foi enviada ao SI (fallback)._`
+          : '');
+      const blocksBase: any[] = [
         { type: 'header', text: { type: 'plain_text', text: '🔄 Mudança de Cargo — Revisão de Acesso', emoji: true } },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text:
-              `Um colaborador sob sua ferramenta mudou de cargo dentro do mesmo departamento.\n\n` +
-              `*Colaborador:* ${colaborador.nome}\n` +
-              `*Cargo anterior:* ${colaborador.cargoAnterior}\n` +
-              `*Novo cargo:* ${colaborador.cargoNovo}\n` +
-              `*Departamento:* ${colaborador.deptNovo}\n` +
-              `*Data da mudança:* ${dataAcao}\n\n` +
-              `🛠 *Ferramenta sob sua responsabilidade:* *${tool!.name}*\n` +
-              `• Nível anterior: ${nivelAnterior}\n` +
-              `• Novo nível: ${nivelNovo}\n\n` +
-              `Por favor, revise e ajuste o nível de acesso no sistema.\n` +
-              `👉 Ver chamado: <${linkChamado}|link no Theris>`
-          }
-        },
-        { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: '✅ Nível Ajustado', emoji: true }, action_id: 'cargo_review_done', value: JSON.stringify({ requestId: chamadoId, toolId: tool!.id }), style: 'primary' }] }
+        { type: 'section', text: { type: 'mrkdwn', text: bodyMrkdwn } }
       ];
-      await client.chat.postMessage({
+      const plainLine = `🔄 Mudança de Cargo — ${colaborador.nome} — ${tool!.name}. Ajuste o nível.`;
+      const pm = await client.chat.postMessage({
         channel: slackUserId,
-        text: `🔄 Mudança de Cargo — ${colaborador.nome} — ${tool!.name}. Ajuste o nível.`,
-        blocks
+        text: plainLine,
+        blocks: blocksBase
       });
+      const dmChannel = pm.channel;
+      const dmTs = pm.ts;
+      if (dmChannel && dmTs) {
+        const actionValue = JSON.stringify({
+          requestId: chamadoId,
+          toolId: tool!.id,
+          dmChannel,
+          dmTs
+        });
+        await client.chat.update({
+          channel: dmChannel,
+          ts: dmTs,
+          text: plainLine,
+          blocks: [
+            ...blocksBase,
+            {
+              type: 'actions',
+              elements: [
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: '✅ Nível Ajustado', emoji: true },
+                  action_id: 'cargo_review_done',
+                  value: actionValue,
+                  style: 'primary'
+                }
+              ]
+            }
+          ]
+        });
+      }
+      notified += 1;
       console.log(`[notificarOwnersMudancaCargo] DM enviada para owner de ${tool!.name}.`);
     } catch (e) {
       console.error(`[notificarOwnersMudancaCargo] Erro ao notificar owner de ${n.toolName}:`, e);
     }
   }
+  return notified;
 }
 
 /**
- * JML — Mudança de Departamento: duas notificações — Owner KBS anterior (revogar) e Owner KBS novo (provisionar).
- * Botão: dept_review_done com value { requestId, toolId, tipo: 'revogacao' | 'provisionamento' | 'revisao' }.
+ * JML — Mudança de Departamento: notifica owners (revogação / provisionamento / revisão
+ * de nível) com botão `dept_review_done` — `postMessage` + `chat.update` como em cargo.
+ *
+ * **Exclusividade:** par exclusivo de `notificarOwnersMudancaCargo`. Não invocar
+ * as duas para o mesmo `Request` — disjunção por `subtipo` no fluxo CHANGE_ROLE
+ * (`MUDANCA_DEPARTAMENTO` vs `MUDANCA_CARGO`).
+ *
+ * @returns Número de DMs efetivamente enviadas (uma por chamada bem-sucedida a
+ * `sendDeptDm`), incluindo fallback Luan. Mesma regra de contagem que
+ * `notificarOwnersMudancaCargo`.
  */
 export async function notificarOwnersMudancaDepto(
   colaborador: { nome: string; cargoAnterior: string; deptAnterior: string; cargoNovo: string; deptNovo: string },
@@ -5083,9 +5201,10 @@ export async function notificarOwnersMudancaDepto(
   kbsNovo: KBSItem[],
   chamadoId: string,
   dataAcao: string
-): Promise<void> {
-  if (!slackApp?.client) return;
+): Promise<number> {
+  if (!slackApp?.client) return 0;
   const client = slackApp.client;
+  let notified = 0;
   const anteriorByName = new Map<string, string | null>();
   const novoByName = new Map<string, string | null>();
   kbsAnterior.forEach((k) => anteriorByName.set(k.toolName, k.accessLevelDesc ?? null));
@@ -5101,8 +5220,9 @@ export async function notificarOwnersMudancaDepto(
     tipo: 'revogacao' | 'provisionamento' | 'revisao',
     header: string,
     body: string,
-    buttonText: string
-  ) => {
+    buttonText: string,
+    revisaoLevels?: { nivelAnt: string; nivelNovo: string }
+  ): Promise<number> => {
     let slackUserId: string | null = null;
     if (tool.owner?.email) {
       try {
@@ -5110,15 +5230,103 @@ export async function notificarOwnersMudancaDepto(
         slackUserId = lookup.user?.id ?? null;
       } catch (_) {}
     }
-    if (!slackUserId && SLACK_ID_LUAN) slackUserId = SLACK_ID_LUAN;
-    if (!slackUserId) return;
-    const value = JSON.stringify({ requestId: chamadoId, toolId: tool.id, tipo });
-    const blocks: any[] = [
+    const ownerEmail = tool.owner?.email?.trim();
+    if (!slackUserId && ownerEmail && SLACK_SI_CHANNEL_ID) {
+      const ownerLabel = tool.owner?.name || '—';
+      console.warn(
+        JSON.stringify({
+          event: 'change_role.dept_owner_lookup_failed',
+          chamadoId,
+          toolName: tool.name,
+          ownerEmail
+        })
+      );
+      void client.chat
+        .postMessage({
+          channel: SLACK_SI_CHANNEL_ID,
+          mrkdwn: true,
+          text:
+            `⚠️ *Mudança de departamento — Owner sem Slack*\n` +
+            `Ferramenta *${tool.name}* · Owner *${ownerLabel}* (\`${ownerEmail}\`) não localizado no Slack. Ação manual pode ser necessária.`
+        })
+        .catch((e) => console.error('[notificarOwnersMudancaDepto] SI owner-miss post:', e));
+    }
+    let usedSiFallback = false;
+    if (!slackUserId && SLACK_ID_LUAN) {
+      slackUserId = SLACK_ID_LUAN;
+      usedSiFallback = true;
+    }
+    if (!slackUserId) {
+      console.warn(
+        JSON.stringify({
+          event: 'change_role.dept_owner_dm.skipped_no_slack',
+          chamadoId,
+          toolName: tool.name
+        })
+      );
+      return 0;
+    }
+
+    const blocksBase: any[] = [
       { type: 'header', text: { type: 'plain_text', text: header, emoji: true } },
-      { type: 'section', text: { type: 'mrkdwn', text: body + `\n👉 Ver chamado: <${linkChamado}|link no Theris>` } },
-      { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: buttonText, emoji: true }, action_id: 'dept_review_done', value, style: 'primary' }] }
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text:
+            body +
+            `\n👉 Ver chamado: <${linkChamado}|link no Theris>` +
+            (usedSiFallback ? `\n\n_📋 Owner não localizado no Slack — esta DM foi enviada ao SI (fallback)._` : '')
+        }
+      }
     ];
-    await client.chat.postMessage({ channel: slackUserId, text: header + ' — ' + tool.name, blocks });
+    const plainLine = `${header} — ${tool.name}`;
+    try {
+      const pm = await client.chat.postMessage({
+        channel: slackUserId,
+        text: plainLine,
+        blocks: blocksBase
+      });
+      const dmChannel = pm.channel;
+      const dmTs = pm.ts;
+      if (dmChannel && dmTs) {
+        const actionValue = JSON.stringify({
+          requestId: chamadoId,
+          toolId: tool.id,
+          tipo,
+          dmChannel,
+          dmTs,
+          dataAcao,
+          ...(revisaoLevels
+            ? { nivelAnt: revisaoLevels.nivelAnt, nivelNovo: revisaoLevels.nivelNovo }
+            : {})
+        });
+        await client.chat.update({
+          channel: dmChannel,
+          ts: dmTs,
+          text: plainLine,
+          blocks: [
+            ...blocksBase,
+            {
+              type: 'actions',
+              elements: [
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: buttonText, emoji: true },
+                  action_id: 'dept_review_done',
+                  value: actionValue,
+                  style: 'primary'
+                }
+              ]
+            }
+          ]
+        });
+      }
+      return 1;
+    } catch (e) {
+      console.error('[notificarOwnersMudancaDepto] sendDeptDm falhou:', tool.name, e);
+      return 0;
+    }
   };
 
   for (const a of onlyAnterior) {
@@ -5128,7 +5336,7 @@ export async function notificarOwnersMudancaDepto(
         include: { owner: { select: { email: true, name: true } } }
       });
       if (!tool) continue;
-      await sendDeptDm(
+      notified += await sendDeptDm(
         tool,
         'revogacao',
         '🔄 Mudança de Departamento — Revogação de Acesso',
@@ -5152,7 +5360,7 @@ export async function notificarOwnersMudancaDepto(
         include: { owner: { select: { email: true, name: true } } }
       });
       if (!tool) continue;
-      await sendDeptDm(
+      notified += await sendDeptDm(
         tool,
         'provisionamento',
         '🔄 Mudança de Departamento — Provisionamento de Acesso',
@@ -5178,7 +5386,7 @@ export async function notificarOwnersMudancaDepto(
       if (!tool) continue;
       const nivelAnt = anteriorByName.get(n.toolName) ?? '—';
       const nivelNovo = n.accessLevelDesc ?? '—';
-      await sendDeptDm(
+      notified += await sendDeptDm(
         tool,
         'revisao',
         '🔄 Mudança de Departamento — Revisão de Nível',
@@ -5188,12 +5396,14 @@ export async function notificarOwnersMudancaDepto(
           `*Data:* ${dataAcao}\n\n` +
           `🛠 *${tool.name}:* Nível anterior: ${nivelAnt} → Novo nível: ${nivelNovo}\n\n` +
           `Revise e ajuste o nível no sistema.`,
-        '✅ Nível Ajustado'
+        '✅ Nível Ajustado',
+        { nivelAnt, nivelNovo }
       );
     } catch (e) {
       console.error(`[notificarOwnersMudancaDepto] Erro revisão ${n.toolName}:`, e);
     }
   }
+  return notified;
 }
 
 /** Item de kit (KBS) do cargo para notificação de desligamento. */
