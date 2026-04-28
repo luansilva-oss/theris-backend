@@ -26,12 +26,31 @@ function resolveAuthMode(): AuthMode {
 
 const AUTH_MODE: AuthMode = resolveAuthMode();
 
-let getUserId: (() => string | undefined) | null = null;
+/** Fallback quando o getter do React ainda não devolveu id (ex.: antes do primeiro commit com user). */
+function readLegacyUserIdFromLocalStorage(): string | undefined {
+  try {
+    if (typeof localStorage === 'undefined') return undefined;
+    const raw = localStorage.getItem('theris_user');
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as { id?: string };
+    return typeof parsed?.id === 'string' ? parsed.id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+let getUserIdFromState: (() => string | undefined) | null = null;
 let onSessionExpired: (() => void) | null = null;
+
+function resolveLegacyUserId(): string | undefined {
+  const fromState = getUserIdFromState?.();
+  if (fromState) return fromState;
+  return readLegacyUserIdFromLocalStorage();
+}
 
 /** Setter de getter do userId (modo legacy). No-op em modo cookie. */
 export function setUserIdGetter(getter: () => string | undefined) {
-  getUserId = getter;
+  getUserIdFromState = getter;
 }
 
 /** Callback chamado em SESSION_EXPIRED ou refresh failure. */
@@ -147,7 +166,7 @@ export function initApiClient() {
 
     if (AUTH_MODE === 'legacy') {
       // === Modo legacy: injeta x-user-id, sem credentials, sem CSRF, sem refresh ===
-      const userId = getUserId?.();
+      const userId = resolveLegacyUserId();
       if (userId) headers.set('x-user-id', userId);
       const res = await originalFetch.call(window, input, { ...opts, headers });
       if (res.status === 401) {
