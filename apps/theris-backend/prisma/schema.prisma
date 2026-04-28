@@ -131,6 +131,9 @@ model User {
   // Auditoria: histórico de mudanças estruturais
   historicoMudancas HistoricoMudanca[] @relation("HistoricoMudancaAutor")
 
+  toolOwnerChangeRoleConfirmations ToolOwnerChangeRoleConfirmation[]
+  toolOwnerChangeDeptConfirmations ToolOwnerChangeDeptConfirmation[]
+
   // Controle de notificação de revisão trimestral (evitar duplicata no mesmo dia)
   revisaoNotificacoesEnviadas RevisaoNotificacaoEnviada[]
 
@@ -317,6 +320,41 @@ model Request {
 
   comments    RequestComment[]
   attachments RequestAttachment[]
+
+  /// Mudança de cargo: confirmações "Nível ajustado" por owner (idempotência + chat.update DM)
+  toolOwnerChangeRoleConfirmations ToolOwnerChangeRoleConfirmation[]
+  toolOwnerChangeDeptConfirmations ToolOwnerChangeDeptConfirmation[]
+}
+
+model ToolOwnerChangeRoleConfirmation {
+  id          String   @id @default(uuid())
+  requestId   String
+  request     Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  toolId      String
+  confirmedAt DateTime @default(now())
+  dmTs        String?
+  dmChannel   String?
+
+  @@unique([requestId, ownerId, toolId])
+  @@index([requestId])
+}
+
+/// Mudança de departamento (CHANGE_ROLE): confirmação por owner+ferramenta (idempotência + chat.update DM).
+model ToolOwnerChangeDeptConfirmation {
+  id          String   @id @default(uuid())
+  requestId   String
+  request     Request  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  toolId      String
+  confirmedAt DateTime @default(now())
+  dmTs        String?
+  dmChannel   String?
+
+  @@unique([requestId, ownerId, toolId])
+  @@index([requestId])
 }
 
 model RequestComment {
